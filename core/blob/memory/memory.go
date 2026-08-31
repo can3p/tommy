@@ -83,8 +83,14 @@ func (s *Store) Put(ctx context.Context, r io.Reader, meta blob.Ref) (blob.Ref, 
 		return blob.Ref{}, err
 	}
 
+	// Overwriting an existing id frees its bytes, so they count as headroom.
 	s.mu.RLock()
 	headroom := s.limit - s.used
+	if meta.ID != "" {
+		if prev, ok := s.items[meta.ID]; ok {
+			headroom += prev.ref.Size
+		}
+	}
 	s.mu.RUnlock()
 	if headroom <= 0 {
 		return blob.Ref{}, fmt.Errorf("%w: %d bytes in use of %d", blob.ErrCapacityExceeded, s.used, s.limit)
