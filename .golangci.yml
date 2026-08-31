@@ -29,6 +29,14 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+      # Scaffolded by kleiner and regenerated wholesale; not ours to edit.
+      - path: ^generated/
+        linters:
+          - staticcheck
+          - revive
+          - errcheck
+    paths:
+      - generated
 
 formatters:
   enable:
