@@ -28,7 +28,7 @@ var templatesFS embed.FS
 // template set.
 func FS() fs.FS { return templatesFS }
 
-// Badge is a small coloured label: a provider name, a status, an encoding.
+// Badge is a small colored label: a provider name, a status, an encoding.
 type Badge struct {
 	Label string
 	// Tone is one of "", "info", "ok", "warn", "error", "muted".

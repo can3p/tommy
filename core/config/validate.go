@@ -41,7 +41,6 @@ func (c *Config) Validate() error {
 
 	// Dedicated provider ports must not collide with each other or with a core
 	// listener. Port 0 is "ephemeral", so it never collides.
-	type claim struct{ who string }
 	claimed := map[int]string{}
 	if c.UI.Port != nil && *c.UI.Port != 0 {
 		claimed[*c.UI.Port] = "ui"

@@ -68,6 +68,7 @@ type Config struct {
 	Source string
 
 	apiShared     bool
+	apiDefaulted  bool
 	ingressShared bool
 }
 
@@ -85,13 +86,15 @@ func Default() *Config {
 }
 
 // Ephemeral returns a Config whose listeners bind port 0, for tests.
+//
+// Defaults are deliberately not applied yet: a caller may still want to set
+// API.Port explicitly, and "unset" has to stay distinguishable from "0" for
+// that to mean anything. Every entry point applies defaults before use.
 func Ephemeral() *Config {
-	c := &Config{
+	return &Config{
 		UI:      ListenerConfig{Port: Int(0)},
 		Ingress: ListenerConfig{Port: Int(0)},
 	}
-	c.ApplyDefaults()
-	return c
 }
 
 // Load reads and validates a TOML config file.
@@ -125,10 +128,19 @@ func (c *Config) ApplyDefaults() {
 	}
 
 	// The API shares the UI listener unless it is given a port of its own.
-	if c.API.Port == nil {
+	// apiDefaulted remembers that decision so re-applying defaults - which the
+	// CLI and the bootstrap both do - cannot quietly split the two listeners
+	// when the UI port is 0 (ephemeral).
+	switch {
+	case c.API.Port == nil:
 		c.API.Port = Int(*c.UI.Port)
 		c.apiShared = true
-	} else {
+		c.apiDefaulted = true
+	case c.apiDefaulted && *c.API.Port == *c.UI.Port:
+		c.apiShared = true
+	default:
+		// The caller assigned a port of its own after defaulting.
+		c.apiDefaulted = false
 		c.apiShared = *c.API.Port == *c.UI.Port && *c.UI.Port != 0
 	}
 	if c.API.Bind == "" {

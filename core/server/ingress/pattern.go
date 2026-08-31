@@ -48,7 +48,7 @@ func ParsePattern(pattern string) (Pattern, error) {
 var wildcardRe = regexp.MustCompile(`\{[^{}]*\}`)
 
 // Key returns a comparison key where wildcard names are erased, so
-// /a/{id} and /a/{sid} are recognised as the same route.
+// /a/{id} and /a/{sid} are recognized as the same route.
 func (p Pattern) Key() string {
 	path := wildcardRe.ReplaceAllStringFunc(p.Path, func(m string) string {
 		if strings.HasSuffix(m, "...}") {

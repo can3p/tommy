@@ -233,3 +233,56 @@ func TestByteSize(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyDefaultsIsIdempotent(t *testing.T) {
+	// The CLI applies defaults, then the bootstrap applies them again. A second
+	// pass must not quietly split the shared UI/API listener - with ephemeral
+	// ports that would hand the caller two different ports.
+	for _, tc := range []struct {
+		name       string
+		build      func() *config.Config
+		wantShared bool
+	}{
+		{"defaults", func() *config.Config { return &config.Config{} }, true},
+		{"ephemeral", config.Ephemeral, true},
+		{
+			name: "explicit api port",
+			build: func() *config.Config {
+				c := config.Ephemeral()
+				c.API.Port = config.Int(9001)
+				return c
+			},
+			wantShared: false,
+		},
+		{
+			name: "explicit ephemeral api port",
+			build: func() *config.Config {
+				c := config.Ephemeral()
+				c.API.Port = config.Int(0)
+				return c
+			},
+			wantShared: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := tc.build()
+			c.ApplyDefaults()
+			first := *c.API.Port
+			sharedFirst := c.APISharesUIListener()
+
+			c.ApplyDefaults()
+			c.ApplyDefaults()
+
+			if *c.API.Port != first || c.APISharesUIListener() != sharedFirst {
+				t.Errorf("second pass changed the config: port %d -> %d, shared %v -> %v",
+					first, *c.API.Port, sharedFirst, c.APISharesUIListener())
+			}
+			if c.APISharesUIListener() != tc.wantShared {
+				t.Errorf("shared = %v, want %v", c.APISharesUIListener(), tc.wantShared)
+			}
+			if err := c.Validate(); err != nil {
+				t.Errorf("validate: %v", err)
+			}
+		})
+	}
+}

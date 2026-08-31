@@ -85,7 +85,8 @@ func (i *Ingress) register(pluginName, providerName, pattern string, h http.Hand
 		i.errs = append(i.errs, fmt.Errorf("ingress: %s: bad route %q: %w", owner, pattern, err))
 		return
 	}
-	if p.Path == "/" || p.Path == "/{...}" {
+	// Key() normalizes wildcard names, so /{anything...} is caught too.
+	if p.Path == "/" || p.Key() == "/{...}" {
 		i.errs = append(i.errs, fmt.Errorf(
 			"ingress: %s: route %q would swallow every unmatched request; mount a real prefix instead",
 			owner, pattern))
