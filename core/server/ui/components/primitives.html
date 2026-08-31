@@ -1,0 +1,49 @@
+{{/*
+Primitive components: badge, copy button, key/value table, data table.
+Plugin tabs compose from these rather than hand-rolling markup, so every tab
+keeps looking like one product.
+*/}}
+
+{{define "badge"}}<span class="badge badge-{{if .Tone}}{{.Tone}}{{else}}default{{end}}"{{with .Title}} title="{{.}}"{{end}}>{{.Label}}</span>{{end}}
+
+{{define "badges"}}{{range .}}{{template "badge" .}} {{end}}{{end}}
+
+{{/* copy-button takes the string to copy. */}}
+{{define "copy-button"}}<button type="button" class="copy-btn" data-copy="{{.}}" title="Copy to clipboard">Copy</button>{{end}}
+
+{{/* kv-table takes a KVTable. */}}
+{{define "kv-table"}}
+<table class="kv">
+  {{- with .Caption}}<caption>{{.}}</caption>{{end}}
+  <tbody>
+  {{- range .Rows}}
+    <tr><th scope="row">{{.Key}}</th><td>{{if .HTML}}{{.HTML}}{{else}}{{.Value}}{{end}}</td></tr>
+  {{- else}}
+    <tr><td class="muted" colspan="2">nothing to show</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{end}}
+
+{{/* table takes a Table. A Row with an Href becomes an htmx link into Target. */}}
+{{define "table"}}
+<table class="data">
+  {{- with .Caption}}<caption>{{.}}</caption>{{end}}
+  {{- with .Columns}}
+  <thead><tr>{{range .}}<th scope="col">{{.}}</th>{{end}}</tr></thead>
+  {{- end}}
+  <tbody>
+  {{- $cols := len .Columns}}
+  {{- $empty := .Empty}}
+  {{- range .Rows}}
+    <tr class="row{{with .Class}} {{.}}{{end}}{{if .Selected}} selected{{end}}"
+        {{- with .Href}} hx-get="{{.}}" hx-push-url="true" role="link" tabindex="0"{{end}}
+        {{- with .Target}} hx-target="{{.}}"{{end}}>
+      {{- range .Cells}}<td class="{{.Class}}">{{if .HTML}}{{.HTML}}{{else}}{{.Text}}{{end}}</td>{{end}}
+    </tr>
+  {{- else}}
+    <tr><td class="muted" colspan="{{if $cols}}{{$cols}}{{else}}1{{end}}">{{if $empty}}{{$empty}}{{else}}nothing here yet{{end}}</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{end}}

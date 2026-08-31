@@ -1,0 +1,62 @@
+{{/*
+Inspectors: a collapsible JSON tree, a hex viewer for binary bodies, and the
+raw-body view that picks between them.
+*/}}
+
+{{define "json-inspector"}}
+<div class="inspector json-inspector">
+  <div class="inspector-head">
+    <span class="inspector-title">{{if .Title}}{{.Title}}{{else}}JSON{{end}}</span>
+    {{template "copy-button" .Raw}}
+  </div>
+  <div class="json-tree">{{template "json-node" .Root}}</div>
+</div>
+{{end}}
+
+{{define "json-node"}}
+{{- if or (eq .Kind "object") (eq .Kind "array")}}
+<details class="json-branch" {{if lt .Depth 2}}open{{end}}>
+  <summary>{{with .Key}}<span class="json-key">{{.}}</span>{{end}}
+    <span class="json-kind">{{if eq .Kind "object"}}{{"{"}}{{.Length}}{{"}"}}{{else}}[{{.Length}}]{{end}}</span>
+  </summary>
+  <div class="json-children">{{range .Children}}{{template "json-node" .}}{{end}}</div>
+</details>
+{{- else}}
+<div class="json-leaf">{{with .Key}}<span class="json-key">{{.}}</span>{{end}}<span class="json-value json-{{.Kind}}">{{.Value}}</span></div>
+{{- end}}
+{{end}}
+
+{{define "hex-viewer"}}
+<div class="inspector hex-viewer">
+  <div class="inspector-head">
+    <span class="inspector-title">{{if .Title}}{{.Title}}{{else}}Bytes{{end}}</span>
+    <span class="muted">{{bytesHuman (int64 .Size)}}{{if .Truncated}} (first {{bytesHuman (int64 .Shown)}} shown){{end}}</span>
+  </div>
+  <pre class="hex"><table>
+{{- range .Rows}}
+<tr><td class="hex-offset">{{.Offset}}</td><td class="hex-bytes">{{range .Hex}}{{.}} {{end}}</td><td class="hex-ascii">{{.ASCII}}</td></tr>
+{{- end}}
+</table></pre>
+</div>
+{{end}}
+
+{{/* raw-viewer takes an event.Raw. Text bodies render as text, everything else
+     falls back to the hex viewer - which is what makes binary protocols cheap. */}}
+{{define "raw-viewer"}}
+<div class="raw-viewer">
+  {{template "kv-table" rawMeta .}}
+  {{- if not .Body}}
+  <p class="muted">No body was captured.</p>
+  {{- else if or .Text (isText .Body)}}
+  <div class="inspector">
+    <div class="inspector-head">
+      <span class="inspector-title">Body</span>
+      {{template "copy-button" (asString .Body)}}
+    </div>
+    <pre class="raw-body">{{asString .Body}}</pre>
+  </div>
+  {{- else}}
+  {{template "hex-viewer" (hexView "Body" .Body)}}
+  {{- end}}
+</div>
+{{end}}

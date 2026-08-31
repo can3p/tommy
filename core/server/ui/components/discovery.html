@@ -1,0 +1,55 @@
+{{/*
+Discovery: the "How to test" panel and the empty state that shows the same
+snippets inline. An empty tab is exactly when someone needs to know how to put
+something in it, so both are fed from the provider's own Snippets().
+*/}}
+
+{{define "snippet"}}
+<figure class="snippet">
+  <figcaption>{{.Title}} <span class="badge badge-muted">{{.Lang}}</span>{{template "copy-button" .Code}}</figcaption>
+  <pre><code>{{.Code}}</code></pre>
+</figure>
+{{end}}
+
+{{/* provider-card takes a plugin.ProviderInfo. */}}
+{{define "provider-card"}}
+<section class="provider-card">
+  <h4>{{.Name}}{{if .Listener}} {{template "badge" (badge "listener" "info")}}{{end}}{{with .Addr}} <span class="muted mono">{{.}}</span>{{end}}</h4>
+  <p>{{.Description}}</p>
+  {{- with .Endpoints}}
+  <ul class="endpoints">
+    {{- range .}}
+    <li><span class="mono method">{{if .Method}}{{.Method}}{{else}}ANY{{end}}</span> <span class="mono">{{.Path}}</span> <span class="muted">{{.Description}}</span></li>
+    {{- end}}
+  </ul>
+  {{- end}}
+  {{- range .Snippets}}{{template "snippet" .}}{{end}}
+</section>
+{{end}}
+
+{{/* how-to-test takes a []plugin.PluginInfo. */}}
+{{define "how-to-test"}}
+<details class="how-to-test" {{if .}}{{else}}open{{end}}>
+  <summary>How to test</summary>
+  <div class="how-to-test-body">
+  {{- range .}}
+    <section class="plugin-card">
+      <h3>{{.Title}}</h3>
+      <p>{{.Description}}</p>
+      {{- range .Providers}}{{template "provider-card" .}}{{end}}
+    </section>
+  {{- else}}
+    <p class="muted">No plugins are enabled. Add some to your config, or run <code>tommy providers</code>.</p>
+  {{- end}}
+  </div>
+</details>
+{{end}}
+
+{{/* empty-state takes an EmptyState. */}}
+{{define "empty-state"}}
+<div class="empty-state">
+  <h3>{{.Title}}</h3>
+  <p>{{.Message}}</p>
+  {{- range .Providers}}{{template "provider-card" .}}{{end}}
+</div>
+{{end}}
