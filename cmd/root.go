@@ -3,9 +3,9 @@ package cmd
 import (
 	"os"
 
-	"github.com/can3p/tommy/generated/buildinfo"
 	cmd "github.com/can3p/kleiner/shared/cmd/cobra"
 	"github.com/can3p/kleiner/shared/published"
+	"github.com/can3p/tommy/generated/buildinfo"
 	"github.com/spf13/cobra"
 )
 
