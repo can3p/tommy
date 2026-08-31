@@ -1,0 +1,73 @@
+{{/*
+The generic event view: a filterable event table plus a raw/JSON/hex inspector.
+Mounted automatically for any plugin that does not override its tab, which is
+what makes a new protocol plugin useful on day one with zero UI code.
+*/}}
+
+{{/* event-filter takes an EventView. */}}
+{{define "event-filter"}}
+<form class="filters" hx-get="{{.ListURL}}" hx-target="#list" hx-trigger="input changed delay:250ms from:find input, change from:find select, submit" hx-push-url="false">
+  <input type="search" name="search" placeholder="Search" value="{{.Filter.Search}}" aria-label="Search events">
+  <select name="type" aria-label="Filter by type">
+    <option value="">any type</option>
+    {{- range .Types}}<option value="{{.}}" {{if eq . $.Filter.Type}}selected{{end}}>{{.}}</option>{{end}}
+  </select>
+  <select name="provider" aria-label="Filter by provider">
+    <option value="">any provider</option>
+    {{- range .ProviderNames}}<option value="{{.}}" {{if eq . $.Filter.Provider}}selected{{end}}>{{.}}</option>{{end}}
+  </select>
+  <button type="button" class="danger"
+          hx-delete="{{.Base}}/events"
+          hx-target="#list"
+          hx-confirm="Delete every captured event{{with .Plugin}} for {{.}}{{end}}?">Clear</button>
+</form>
+{{end}}
+
+{{/* event-list takes an EventView and is what the SSE stream refreshes. */}}
+{{define "event-list"}}
+<div id="list-inner" hx-get="{{.ListURL}}?search={{.Filter.Search}}&type={{.Filter.Type}}&provider={{.Filter.Provider}}"
+     hx-trigger="sse:message throttle:400ms" hx-target="#list" hx-swap="innerHTML">
+  {{template "table" .EventTable}}
+  <p class="muted count">{{len .Events}} event{{if ne (len .Events) 1}}s{{end}}</p>
+</div>
+{{end}}
+
+{{/* event-detail takes an *event.Event. */}}
+{{define "event-detail"}}
+<article class="event-detail">
+  <header>
+    <h2>{{if .Summary.Title}}{{.Summary.Title}}{{else}}(no title){{end}}</h2>
+    <p class="muted mono">{{.Type}} · {{.Provider}} · {{timeFull .ReceivedAt}}</p>
+  </header>
+  {{template "kv-table" summaryOf .}}
+  {{- if .Payload}}
+  {{template "json-inspector" (jsonView "Payload" .Payload)}}
+  {{- end}}
+  {{- if .Meta}}
+  {{template "json-inspector" (jsonView "Metadata" .Meta)}}
+  {{- end}}
+  <h3>Raw request</h3>
+  {{template "raw-viewer" .Raw}}
+</article>
+{{end}}
+
+{{/* event-pane takes an EventView: the detail of the selected event, or the
+     empty state carrying the snippets that would fill this tab. */}}
+{{define "event-pane"}}
+{{- if .Selected}}{{template "event-detail" .Selected}}{{else}}{{template "empty-state" .EmptyState}}{{end}}
+{{end}}
+
+{{/* generic-event-view takes an EventView. */}}
+{{define "generic-event-view"}}
+<div class="generic-event-view">
+  {{template "how-to-test" .Info}}
+  {{template "master-detail" (dict
+      "Title" .Title
+      "Toolbar" (render "event-filter" .)
+      "List" (render "event-list" .)
+      "ListID" "list"
+      "Detail" (render "event-pane" .)
+      "DetailID" "detail"
+      "Empty" "")}}
+</div>
+{{end}}

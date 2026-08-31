@@ -1,0 +1,29 @@
+{{/*
+Page layouts. The shell never assumes a shape: a plugin picks master-detail,
+stream, or renders something else entirely.
+*/}}
+
+{{/* master-detail takes a MasterDetail. */}}
+{{define "master-detail"}}
+<div class="master-detail">
+  <div class="master">
+    {{- with .Title}}<h2>{{.}}</h2>{{end}}
+    {{- with .Toolbar}}<div class="toolbar">{{.}}</div>{{end}}
+    <div class="master-list" id="{{if .ListID}}{{.ListID}}{{else}}list{{end}}">{{.List}}</div>
+  </div>
+  <div class="detail" id="{{if .DetailID}}{{.DetailID}}{{else}}detail{{end}}">
+    {{- if .Detail}}{{.Detail}}{{else}}{{.Empty}}{{end}}
+  </div>
+</div>
+{{end}}
+
+{{/* stream takes a Stream. */}}
+{{define "stream"}}
+<div class="stream">
+  {{- with .Title}}<h2>{{.}}</h2>{{end}}
+  {{- with .Toolbar}}<div class="toolbar">{{.}}</div>{{end}}
+  <div class="stream-items" id="{{if .ID}}{{.ID}}{{else}}stream{{end}}">
+    {{- range .Items}}<div class="stream-item">{{.}}</div>{{else}}{{$.Empty}}{{end}}
+  </div>
+</div>
+{{end}}

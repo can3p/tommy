@@ -1,0 +1,31 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if .Title}}{{.Title}} · {{end}}tommy</title>
+<link rel="icon" href="{{.UIBase}}/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="{{.UIBase}}/static/app.css">
+<script src="{{.UIBase}}/static/htmx.min.js" defer></script>
+<script src="{{.UIBase}}/static/htmx-ext-sse.js" defer></script>
+<script src="{{.UIBase}}/static/app.js" defer></script>
+</head>
+<body hx-ext="sse" sse-connect="{{.StreamURL}}">
+<header class="topbar">
+  <a class="brand" href="{{.UIBase}}/">tommy<span class="muted"> · fake services you can inspect</span></a>
+  <nav class="tabs">
+    <a class="tab{{if eq .Active ""}} active{{end}}" href="{{.UIBase}}/">Overview</a>
+    {{- range .Tabs}}
+    <a class="tab{{if .Active}} active{{end}}" href="{{.Href}}">{{.Title}}</a>
+    {{- else}}
+    <span class="tab empty muted" title="No plugins are enabled">no plugins enabled</span>
+    {{- end}}
+  </nav>
+  <span class="status"><span id="live-dot" class="dot" title="Live"></span> <span class="muted mono">{{.Version}}</span></span>
+</header>
+<main id="main">
+{{.Body}}
+</main>
+</body>
+</html>
+{{end}}
