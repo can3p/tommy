@@ -84,7 +84,10 @@ plugins/
     providers/twilio/
   files/             # Wave 4 — design validated in §7, not built yet
     vfs.go  plugin.go  api.go  ui/
-    providers/ftp/  sftp/
+    providers/ftp/  sftp/          # later: tftp/  nfs/  smb/
+  chat/              # Wave 5 — design validated in §12, not built yet
+    message.go  plugin.go  api.go  ui/
+    providers/slack/  msteams/
 .github/
   workflows/ci.yml  workflows/release.yml
   dependabot.yml
@@ -109,14 +112,26 @@ type Event struct {
     Summary    Summary        // provider-agnostic listing data
     Meta       map[string]any // provider metadata (Mailjet CustomID, SendGrid categories, ...)
     Payload    any            // *mail.Message, *sms.Message — marshalled to JSON by the API
-    Raw        Raw            // original request: method, path, headers, body
+    Raw        Raw            // the untouched request, whatever the transport
 }
 
 type Summary struct {
     From    string
     To      []string
-    Title   string // subject / first line / file path
+    Title   string // subject / first line / file path / channel
     Snippet string
+}
+
+// Raw is transport-agnostic on purpose: HL7 over MLLP, ISO 8583 over TCP and
+// SNMP over UDP have no method, path or headers, and their bodies are not text.
+type Raw struct {
+    Transport string      // "http" | "tcp" | "udp" | "smtp" | "ftp" | "ssh"
+    PeerAddr  string      // who sent it
+    Method    string      // http only
+    Path      string      // http only
+    Headers   http.Header // http/smtp; nil elsewhere
+    Body      []byte      // bytes, not string — may be binary
+    Text      bool        // hint: render as text, or fall back to the hex viewer
 }
 ```
 
@@ -344,6 +359,28 @@ Shell renders a tab bar from the plugin registry; each plugin owns its tab body
 and its own partial routes. One SSE connection at the shell level; htmx swaps
 list fragments on `sse:mail.message` / `sse:sms.message`.
 
+**The shell must never assume a list-detail layout.** A plugin renders whatever
+view actually suits its content — that is the whole reason tabs exist:
+
+| Plugin | View |
+|---|---|
+| `mail` | Three-pane inbox: message list, header table, HTML body in a sandboxed iframe with text/raw toggles |
+| `sms` | Phone-like conversation, bubbles grouped by number, segment + encoding badge per message |
+| `chat` | Channel sidebar and a message stream: avatars, bot names, threads inline under their parent, rendered Block Kit / Adaptive Cards (§12) |
+| `files` | File browser: breadcrumb, directory table with size/mtime/protocol, download links |
+| *anything new* | The generic fallback below |
+
+To make that affordable, `core/server/ui/components/` ships a small template
+library every plugin composes from: page chrome, master-detail and stream layouts,
+a **JSON inspector** (collapsible, copyable), a **hex viewer** for binary `Raw`
+bodies, a timeline/table, key-value tables, badges, and copy buttons.
+
+Crucially it also ships a **generic event view** — a filterable event table plus a
+raw/JSON/hex inspector — mounted automatically for any plugin that does not
+override it. A new protocol plugin is therefore useful on day one with zero UI
+code, and a bespoke view becomes an upgrade rather than a prerequisite. Given the
+roadmap in §13 is mostly niche protocols, this is what keeps them cheap.
+
 Every tab has a **"How to test" panel** listing each enabled provider's
 description and snippets with copy buttons, and an **empty state that shows those
 snippets inline** — an empty tab is exactly when someone needs to know how to put
@@ -536,7 +573,7 @@ A task that skips these is not done, however complete the protocol work is.
 
 | Task | Owns | Delivers |
 |---|---|---|
-| **F1 Core** | `go.mod`, `core/**`, `cmd/serve.go`, `cmd/providers.go`, `plugins/all/all.go` (empty list) | `go mod init`; event/store/blob/plugin/config packages; memory store with pub/sub and its tests; size-capped blob store; snippet rendering over `SnippetCtx`; `plugintest.Conformance`; UI shell + tab registry + "How to test" partial + vendored htmx + SSE hub; generic API routes incl. `/plugins` with rendered snippets; `tommy providers`; ingress mux with collision detection; listener supervision; graceful shutdown; `core/testutil` harness; `docs/contracts.md` restating §3 |
+| **F1 Core** | `go.mod`, `core/**`, `cmd/serve.go`, `cmd/providers.go`, `plugins/all/all.go` (empty list) | `go mod init`; event/store/blob/plugin/config packages; memory store with pub/sub and its tests; size-capped blob store; snippet rendering over `SnippetCtx`; `plugintest.Conformance`; UI shell + tab registry + "How to test" partial + vendored htmx + SSE hub; **`ui/components/` library incl. JSON inspector, hex viewer and the generic event view (§5)**; generic API routes incl. `/plugins` with rendered snippets; `tommy providers`; ingress mux with collision detection **against other providers and reserved core prefixes**; listener supervision; graceful shutdown; `core/testutil` harness; `docs/contracts.md` restating §3 |
 | **C1 CI** *(parallel — disjoint files)* | `.github/**`, `.golangci.yml`, `Makefile` | See §9 |
 
 F1 gate: `go build ./... && go test ./...` green; `tommy serve` boots;
@@ -595,7 +632,19 @@ Per §7, and it splits the same way the earlier waves did:
 | **P-sftp** | `plugins/files/providers/sftp/**` | ssh + pkg/sftp `RequestServer`, persisted host key |
 
 P-ftp and P-sftp are parallel once FS1 lands. Optional `--tls` for the HTTP
-ingress (§6.2) is independent of all three.
+ingress (§6.2) is independent of all three. `P-tftp` and `P-nfs` (§13 tier 1) are
+two more parallel providers over the same VFS whenever they are wanted.
+
+### Wave 5 — Chat · not now
+
+Per §12, and it splits cleanly:
+
+| Task | Owns | Notes |
+|---|---|---|
+| **CH1 Chat core** | `plugins/chat/*.go`, `plugins/chat/ui/**` | Canonical message, channel/thread index derived at render time, stream view. Blocks the providers |
+| **P-slack** | `plugins/chat/providers/slack/**` | Webhooks + `chat.postMessage`; `ok` as text/plain |
+| **P-msteams** | `plugins/chat/providers/msteams/**` | Power Automate + connector webhooks; MessageCard and Adaptive Card |
+| **CH2 Card rendering** | `plugins/chat/ui/blocks/**` | Block Kit + Adaptive Card renderers. Deliberately separate so fidelity never blocks capture |
 
 ## 9. CI
 
@@ -671,11 +720,119 @@ Wave 1   M1 ∥ S1                                      (2 agents)
 Wave 2   P-mailjet ∥ P-sendgrid ∥ P-twilio ∥ P-smtp   (4 agents)
 Wave 3   I1 → (U-mail ∥ U-sms ∥ X1 → T1)              (1 then 4)
 Wave 4   FS1 → (P-ftp ∥ P-sftp);  TLS ingress         (later)
+Wave 5   CH1 → (P-slack ∥ P-msteams ∥ CH2)            (later)
+Wave 6+  §13 tier 1: P-tftp ∥ P-nfs ∥ HL7 ∥ SNMP traps
 ```
 
-Out of scope for now, but the plugin interface must not preclude them: push
-notifications, dynamic templates, event persistence, webhook/callback simulation
-(Twilio `StatusCallback`, SendGrid event webhook).
+**Explicitly out of scope**, and the plugin interface must not preclude them:
+scenario simulation, and any *inbound* traffic — webhooks and callbacks (Stripe
+events, Twilio `StatusCallback`, SendGrid event webhooks, Slack interactivity and
+Events API, async AS2 MDN), which would need outbound HTTP and a scenario
+definition format. Also deferred: push notifications, dynamic templates, event
+persistence. §13's scoping rule explains why this boundary is where it is, and
+which roadmap candidates it trims.
+
+## 12. Chat: Slack and MS Teams — fits, and it earns the component library
+
+Checked against the contracts. **Nothing breaks.** One `chat` plugin, providers
+`slack` and `msteams`, both plain HTTP ingress — no new listener kinds, no store
+changes, no plugin-interface changes. What it does do is prove the UI must not be
+list-detail-shaped, which is why §5 now says so explicitly.
+
+**Slack provider**
+- `POST /services/{team}/{bot}/{token}` — incoming webhooks. Returns literally
+  `ok` as `text/plain`, not JSON. Easy to get wrong.
+- `POST /api/chat.postMessage` — Web API, `Bearer xoxb-…`, JSON or form-encoded.
+  Returns `{"ok":true,"channel":"C…","ts":"1503435956.000247","message":{…}}`.
+  Also `chat.update`, `chat.delete`, `files.upload` later — exactly the additive
+  growth §6.3 was designed for.
+- Payload carries `text`, `blocks` (Block Kit), legacy `attachments`, `thread_ts`.
+
+**MS Teams provider**
+- `POST /webhookb2/{guid}@{tenant}/IncomingWebhook/{id}/{key}` — Power Automate
+  style. O365 connector webhooks reply with `1` as text; workflow endpoints reply
+  `202`. Support both.
+- Payload is a `MessageCard` or, current-generation, an **Adaptive Card** wrapped
+  in `{"type":"message","attachments":[{"contentType":"application/vnd.microsoft.card.adaptive","content":{…}}]}`.
+- Bot Framework (`POST /v3/conversations/{id}/activities`) needs an OAuth token
+  exchange and is deliberately **not** in the first cut.
+
+**Two things worth knowing before building it**
+
+1. **Threads are a relation, and the store has none.** Slack `thread_ts` points at
+   a parent message. Do *not* add relations to `core/store` — the `chat` plugin
+   derives a channel/thread index from the event list at render time. Keeps the
+   core flat and the threading logic in the one plugin that needs it.
+2. **Block Kit and Adaptive Cards are the actual work.** Land the plain-text
+   fallback plus a collapsible JSON inspector first — that is already more than
+   most people get today — then a best-effort renderer for the common blocks
+   (`section`, `header`, `divider`, `context`, `fields`, `actions`, `image`) and
+   the Adaptive Card equivalents. Ship it as a separate task from the providers so
+   rendering fidelity never blocks message capture.
+
+Interactive components (a button POSTing to `response_url`, slash commands, Events
+API) are **out of scope** per §13's scoping rule — they are inbound traffic, not
+captured output. The design does not preclude them.
+
+## 13. Protocol roadmap — sifted
+
+**Scoping rule, and it does most of the sorting for us.** Tommy captures and
+displays what an application *sent*, and answers with whatever the protocol
+requires so the client proceeds. It does not simulate scenarios, drive inbound
+traffic, or make policy decisions. A protocol is a fit when its reply is
+*mechanical* — derivable from the request (an HL7 `ACK`, an AS2 MDN receipt, a
+Slack `ok`, an SMTP `250`). It is a poor fit when the reply encodes a *decision*
+someone has to configure (approve or decline this card payment, accept or reject
+this login), because that is scenario machinery by another name.
+
+Two contract properties, already in place, decide most of the rest:
+`ListenerProvider.Listen(ctx, Deps)` is transport-agnostic, so TCP and **UDP**
+providers need nothing new; and the state-plus-event pattern proven by the `files`
+VFS (mutable state is the plugin's, the event log stays history) is exactly what a
+Modbus register bank or an SNMP OID tree needs.
+
+### Tier 1 — do these
+
+| Candidate | Why | Shape |
+|---|---|---|
+| **TFTP** | Best effort-to-value ratio in the list. RFC 1350 is tiny, `pin/tftp` is mature, and it is a UDP `files` **provider** over the existing VFS — no new plugin, no new UI | `files` provider |
+| **NFSv3** | `willscott/go-nfs` is a real NFSv3 server library with a pluggable filesystem backend, so the VFS drops straight in. Removes genuine Docker-with-privileges pain | `files` provider |
+| **HL7 v2 over MLLP** | Your read is right and it may be the single best fit here. MLLP framing is three control bytes, HL7 v2 is pipe-delimited segments, the `ACK` is mechanical, there is no good lightweight local mock, and inspection value is enormous. A segment/field tree view (MSH, PID, OBX) is a genuinely nice UI | own plugin, TCP |
+| **SNMP trap receiver** | Pure capture, no state, `gosnmp` decodes traps already. Trivially useful to anyone writing monitoring software | own plugin, UDP |
+
+These four are additive: three reuse `files` or the generic view, and only HL7
+justifies a bespoke view.
+
+### Tier 2 — good, more work
+
+| Candidate | Assessment |
+|---|---|
+| **AS2** | Underrated fit. It is HTTP POST with S/MIME plus a **synchronous MDN receipt** — decrypt, verify, store the EDI document, sign a receipt back. Mechanical reply, high inspection value, and famously miserable to set up for real. Needs cert handling (self-generate on first run). Sync MDN only; async MDN is an outbound callback and out of scope |
+| **Modbus TCP** | Small protocol, good Go libs, and it maps onto the state-plus-event pattern: the register bank is state, writes are events, reads are polls. View is an editable register grid. Note it inverts the usual value — clients mostly *read*, so tommy is supplying data rather than capturing it |
+| **SNMP agent** | Same state-plus-event pattern with an OID tree; pairs naturally with the trap receiver but is a bigger lift than it |
+| **ISO 8583** | `moov-io/iso8583` is excellent and bitmap decoding is painful enough that a decoded-field view has real value. Held at tier 2 because a useful stub must eventually decide approve/decline — reply with a fixed approval and stop there, or it becomes scenario mocking |
+| **SMB2** | Perfect conceptual fit (another `files` provider, same VFS) and the highest cost in this table. Server-side SMB2 in Go is thin — negotiate, session setup with NTLMSSP, tree connect, create/read/write/close, find — and it drags NTLM along with it. Worth it eventually because the Docker-Samba pain is real |
+
+### Tier 3 — not now
+
+- **Kerberos KDC** — ASN.1, crypto profiles, AS-REQ/TGS-REQ, PA-DATA. Very large, and there is almost nothing to *inspect*: the value is "authentication succeeded", which is a stub, not a catcher. Wrong shape for tommy.
+- **RADIUS / TACACS+** — RADIUS is genuinely small (`layeh.com/radius`) and there is some inspection value in seeing the attributes a NAS sent, so it is the tier-3 entry most likely to graduate. Both are held back by the same thing: accept-versus-reject is a policy decision, i.e. scenario config. TACACS+ additionally has weak Go support.
+- **NTLM** — not a plugin at all. It is a mechanism inside SMB and HTTP; it gets implemented if and when SMB2 does.
+- **IBM MQ / JMS** — proprietary binary protocol without a usable public specification. Reimplementing it is a research project, not a plugin.
+- **SWIFT MT** — format-only parsing with no transport story of its own; low leverage until someone asks.
+- **BACnet** — real pain, but the object model and APDU layer are large and Go support is thin. Strictly after Modbus.
+
+### What this changes now
+
+Nothing structural — which is the point of checking. Three small things already
+folded in above, all inside F1's scope and none of them started yet:
+
+1. `Raw` is transport-agnostic, with `[]byte` body and a `Text` hint (§3).
+2. The UI component library includes a **hex viewer** and a **generic event view**
+   that any plugin gets for free (§5) — this is what makes tier-1 and tier-2
+   protocols cheap rather than each one needing bespoke UI.
+3. The ingress collision detector must also reject overlap with reserved core
+   prefixes, now that a provider legitimately wants `/api/chat.postMessage`.
 
 Sources for §6: [mailjet-apiv3-go](https://pkg.go.dev/github.com/mailjet/mailjet-apiv3-go/v4),
 [sendgrid-go](https://pkg.go.dev/github.com/sendgrid/sendgrid-go),
