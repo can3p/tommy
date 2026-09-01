@@ -75,9 +75,11 @@ type inboxView struct {
 	Providers []string
 	Selected  *messageDetail
 
-	// info describes this plugin's providers, so the empty state can offer a
-	// command that actually puts a message in.
-	info []plugin.ProviderInfo
+	// Info describes this plugin's providers, scoped to the mail tab, so the
+	// how-to-test panel and the empty state can offer a command that actually
+	// puts a message in, rendered against the ports this instance actually
+	// bound.
+	Info []plugin.PluginInfo
 }
 
 // ListURL is where the list fragment is fetched from.
@@ -110,8 +112,9 @@ func (v inboxView) RefreshURL() string {
 func (v inboxView) MessageTable() components.Table {
 	t := components.Table{
 		Columns: []string{"Time", "From", "Subject", ""},
-		Empty:   "No mail captured yet.",
+		Empty:   v.emptyMessage(),
 	}
+	now := time.Now()
 	for _, m := range v.Messages {
 		badges := fmt.Sprintf(`<span class="badge badge-info">%s</span>`, template.HTMLEscapeString(m.Provider))
 		if m.Attachments > 0 {
@@ -125,12 +128,15 @@ func (v inboxView) MessageTable() components.Table {
 		if subject == "" {
 			subject = "(no subject)"
 		}
+		absolute := m.ReceivedAt.Local().Format("2006-01-02 15:04:05.000 MST")
+		timeCell := fmt.Sprintf(`<span class="mono" title="%s">%s</span>`,
+			template.HTMLEscapeString(absolute), template.HTMLEscapeString(relativeTime(m.ReceivedAt, now)))
 		t.Rows = append(t.Rows, components.Row{
 			Href:     v.Base + "/messages/" + m.ID,
 			Target:   "#detail",
 			Selected: m.Selected,
 			Cells: []components.Cell{
-				{Text: m.ReceivedAt.Local().Format("15:04:05"), Class: "mono nowrap"},
+				{HTML: template.HTML(timeCell), Class: "nowrap"},
 				{HTML: template.HTML(`<span>` + template.HTMLEscapeString(components.Truncate(32, m.From)) +
 					`</span><br><span class="muted">to ` + template.HTMLEscapeString(components.Truncate(36, m.To)) + `</span>`)},
 				{HTML: template.HTML(`<strong>` + template.HTMLEscapeString(components.Truncate(70, subject)) +
@@ -140,6 +146,42 @@ func (v inboxView) MessageTable() components.Table {
 		})
 	}
 	return t
+}
+
+// emptyMessage tells "nothing has ever arrived" apart from "the filter matched
+// nothing", which otherwise look identical and send whoever narrowed the
+// filter looking in the wrong place.
+func (v inboxView) emptyMessage() string {
+	if len(v.Messages) > 0 {
+		return ""
+	}
+	f := v.Filter
+	if f.Search != "" || f.Provider != "" || f.Attachments != "" {
+		return "No message matches this filter."
+	}
+	return "No mail captured yet."
+}
+
+// relativeTime renders a short "how long ago", falling back to a date once a
+// message is old enough that the exact minute stops mattering.
+func relativeTime(t, now time.Time) string {
+	d := now.Sub(t)
+	switch {
+	case d < 0:
+		return t.Local().Format("15:04:05")
+	case d < 5*time.Second:
+		return "just now"
+	case d < time.Minute:
+		return fmt.Sprintf("%ds ago", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	default:
+		return t.Local().Format("2006-01-02")
+	}
 }
 
 // EmptyState is what the detail pane shows with nothing selected. With no mail
@@ -155,8 +197,19 @@ func (v inboxView) EmptyState() components.EmptyState {
 	return components.EmptyState{
 		Title:     "No mail yet",
 		Message:   "Point your application's mail client at tommy and whatever it sends lands here, live.",
-		Providers: v.info,
+		Providers: flattenProviders(v.Info),
 	}
+}
+
+// flattenProviders pulls the providers out of a plugin info list. In the mail
+// tab's own scope that list has at most one entry, but this stays correct even
+// if that scoping ever widens.
+func flattenProviders(info []plugin.PluginInfo) []plugin.ProviderInfo {
+	var out []plugin.ProviderInfo
+	for _, p := range info {
+		out = append(out, p.Providers...)
+	}
+	return out
 }
 
 // bodyView is one of the html / text / raw toggles.
@@ -255,14 +308,19 @@ func (d messageDetail) AttachmentTable() components.Table {
 		href := fmt.Sprintf("%s/attachments/%d", d.apiMessageURL(), i)
 		link := fmt.Sprintf(`<a href="%s" download>%s</a>`,
 			template.HTMLEscapeString(href), template.HTMLEscapeString(a.Name()))
+		typeCell := fmt.Sprintf(`<span class="badge badge-muted" title="%s">%s</span><br><span class="muted mono">%s</span>`,
+			template.HTMLEscapeString(a.ContentType), template.HTMLEscapeString(attachmentKind(a.ContentType)),
+			template.HTMLEscapeString(a.ContentType))
 		kind := ""
 		if a.Inline {
-			kind = fmt.Sprintf(`<span class="badge badge-muted" title="embedded in the HTML body">inline%s</span>`,
+			kind = fmt.Sprintf(`<span class="badge badge-muted" title="embedded in the HTML body, not offered as a download">inline%s</span>`,
 				template.HTMLEscapeString(cidSuffix(a.ContentID)))
+		} else {
+			kind = `<span class="badge badge-muted" title="offered as a download">attachment</span>`
 		}
 		t.Rows = append(t.Rows, components.Row{Cells: []components.Cell{
 			{HTML: template.HTML(link)},
-			{Text: a.ContentType, Class: "mono"},
+			{HTML: template.HTML(typeCell)},
 			{Text: components.BytesHuman(a.Size), Class: "mono nowrap"},
 			{HTML: template.HTML(kind), Class: "nowrap"},
 		}})
@@ -284,6 +342,34 @@ func plural(n int) string {
 	return "s"
 }
 
+// attachmentKind buckets a MIME type into something short enough for a badge.
+// The full content type stays visible right next to it, so this is purely a
+// scan aid, never the only place the real type is shown.
+func attachmentKind(contentType string) string {
+	ct := strings.ToLower(contentType)
+	switch {
+	case strings.HasPrefix(ct, "image/"):
+		return "image"
+	case strings.HasPrefix(ct, "audio/"):
+		return "audio"
+	case strings.HasPrefix(ct, "video/"):
+		return "video"
+	case strings.Contains(ct, "pdf"):
+		return "pdf"
+	case strings.Contains(ct, "zip") || strings.Contains(ct, "compressed") ||
+		strings.Contains(ct, "tar") || strings.Contains(ct, "gzip"):
+		return "archive"
+	case strings.Contains(ct, "csv") || strings.Contains(ct, "spreadsheet") || strings.Contains(ct, "excel"):
+		return "sheet"
+	case strings.Contains(ct, "word") || strings.Contains(ct, "document"):
+		return "doc"
+	case strings.HasPrefix(ct, "text/"):
+		return "text"
+	default:
+		return "file"
+	}
+}
+
 // view builds the whole tab from the store.
 func (h *uiHandler) view(r *http.Request) (inboxView, error) {
 	shell := ui.ShellFrom(r)
@@ -291,7 +377,7 @@ func (h *uiHandler) view(r *http.Request) (inboxView, error) {
 	v := inboxView{
 		Base:    UIPrefix,
 		APIBase: strings.TrimSuffix(shell.APIBase, "/"),
-		info:    providerInfo(shell),
+		Info:    providerInfo(shell),
 		Filter: inboxFilter{
 			Search:      q.Get("search"),
 			Provider:    q.Get("provider"),
@@ -516,12 +602,13 @@ func (h *uiHandler) fragment(w http.ResponseWriter, name string, data any) {
 	_, _ = w.Write([]byte(body))
 }
 
-// providerInfo pulls this plugin's providers out of the shell, so the empty
-// state can show snippets rendered against the ports actually in use.
-func providerInfo(shell *ui.Shell) []plugin.ProviderInfo {
+// providerInfo pulls this plugin's own entry out of the shell, so the
+// how-to-test panel and the empty state can show snippets rendered against the
+// ports actually in use.
+func providerInfo(shell *ui.Shell) []plugin.PluginInfo {
 	for _, p := range shell.Info() {
 		if p.Name == PluginName {
-			return p.Providers
+			return []plugin.PluginInfo{p}
 		}
 	}
 	return nil

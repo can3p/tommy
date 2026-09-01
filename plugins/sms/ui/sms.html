@@ -11,6 +11,7 @@ with CSS rather than with markup.
 {{define "sms-tab"}}
 {{template "sms-style"}}
 <div class="sms-tab">
+{{template "sms-how-to-test" .}}
 {{- if .HasMessages}}
 {{template "master-detail" (dict
     "Title" "SMS"
@@ -22,11 +23,32 @@ with CSS rather than with markup.
     "Empty" "")}}
 {{- else}}
 <div class="toolbar">{{template "sms-toolbar" .}}</div>
-<div id="list" hx-get="{{.ListURL}}" hx-trigger="sse:{{.StreamEvent}} throttle:400ms" hx-target="#main" hx-swap="innerHTML">
+<div id="list" hx-get="{{.Base}}/" hx-trigger="sse:{{.StreamEvent}} throttle:400ms" hx-target="#main" hx-swap="innerHTML">
   {{template "sms-empty" .}}
 </div>
 {{- end}}
 </div>
+{{end}}
+
+{{/* sms-how-to-test lists every enabled SMS provider with its description,
+     endpoints and copy-paste snippets rendered against this instance's real
+     ports - the panel every tab must carry (docs/implementation-plan.md §5,
+     §6.4). It is available whether or not there are messages: collapsed once
+     a conversation exists, open by default on an empty tab, since a tab with
+     nothing in it is exactly when someone needs to be told how to fill it. */}}
+{{define "sms-how-to-test"}}
+<details class="how-to-test"{{if not .HasMessages}} open{{end}}>
+  <summary>How to test</summary>
+  <div class="how-to-test-body">
+    <section class="plugin-card">
+      <h3>SMS</h3>
+      {{- range .Providers}}{{template "provider-card" .}}
+      {{- else}}
+      <p class="muted">No SMS provider is enabled, so nothing can reach this tab yet. Enable one in your config, or run <code>tommy providers</code> to see what this build ships.</p>
+      {{- end}}
+    </section>
+  </div>
+</details>
 {{end}}
 
 {{define "sms-toolbar"}}
@@ -54,7 +76,7 @@ with CSS rather than with markup.
       <a href="{{.URL}}" hx-get="{{.URL}}" hx-target="#detail" hx-swap="innerHTML" hx-push-url="true">
         <span class="sms-conv-head">
           <span class="sms-conv-peer mono">{{.Title}}</span>
-          <span class="muted mono sms-conv-time" title="{{timeFull .At}}">{{timeShort .At}}</span>
+          <span class="muted sms-conv-time" title="{{timeFull .At}}">{{since .At}} ago</span>
         </span>
         <span class="sms-conv-preview">{{.Preview}}</span>
         <span class="sms-conv-foot">
@@ -83,6 +105,7 @@ with CSS rather than with markup.
   <header class="sms-thread-head">
     <h2 class="mono">{{.Selected.Peer}}</h2>
     <p class="muted mono">via {{if .Selected.Local}}{{.Selected.Local}}{{else}}(unknown sender){{end}}</p>
+    <p class="muted sms-thread-summary">{{len .Selected.Messages}} message{{if ne (len .Selected.Messages) 1}}s{{end}} · last activity <span title="{{timeFull .Selected.At}}">{{since .Selected.At}} ago</span></p>
   </header>
   <div class="sms-bubbles">
     {{- range .Selected.Messages}}{{template "sms-bubble" .}}{{end}}
@@ -96,16 +119,28 @@ with CSS rather than with markup.
 {{- end}}
 {{end}}
 
-{{/* sms-bubble takes one message. */}}
+{{/* sms-bubble takes one message. Body and BodyPreview are untrusted text,
+     always interpolated as plain strings so html/template escapes them - never
+     as template.HTML. */}}
 {{define "sms-bubble"}}
 <div class="sms-bubble {{if .Outbound}}sms-out{{else}}sms-in{{end}}" id="msg-{{.ID}}">
-  {{- if .Body}}<p class="sms-body">{{.Body}}</p>{{end}}
+  {{- if .Body}}
+    {{- if .BodyLong}}
+  <details class="sms-body-details">
+    <summary class="sms-body-summary">
+      <span class="sms-body sms-body-preview">{{.BodyPreview}}</span>
+      <span class="sms-body-toggle muted">Show full message ({{.BodyLen}} characters)</span>
+    </summary>
+    <p class="sms-body sms-body-full">{{.Body}}</p>
+  </details>
+    {{- else}}
+  <p class="sms-body">{{.Body}}</p>
+    {{- end}}
+  {{- end}}
   {{- if .Media}}<div class="sms-media">{{range .Media}}{{template "sms-media" .}}{{end}}</div>{{end}}
   <div class="sms-bubble-meta">
     {{template "badges" .Badges}}
-    <span class="muted mono" title="{{timeFull .At}}">{{timeShort .At}}</span>
-    <span class="muted">·</span>
-    <span class="muted mono">{{.Provider}}</span>
+    <span class="muted mono" title="{{timeFull .At}}">{{since .At}} ago</span>
     <a class="muted sms-raw-link" href="{{.EventURL}}" title="Inspect the raw request behind this message">raw</a>
   </div>
 </div>
@@ -125,15 +160,15 @@ with CSS rather than with markup.
 {{- end}}
 {{end}}
 
+{{/* sms-empty is the friendly "nothing here" message. The provider
+     descriptions, endpoints and runnable snippets live in the how-to-test
+     panel above it - open by default on an empty tab - so they are not
+     repeated here. */}}
 {{define "sms-empty"}}
 {{template "empty-state" (dict
     "Title" "No SMS captured yet"
     "Message" "Point your code's SMS provider at tommy and every message it sends lands here as a conversation, with the segment count and encoding it would really cost."
-    "Providers" .Providers)}}
-{{- if not .Providers}}
-<p class="muted">No SMS provider is enabled, so nothing can reach this tab yet. Enable one in your config, or run <code>tommy providers</code> to see what this build ships.</p>
-{{- end}}
-<p class="muted">Runnable, copy-paste snippets carrying the ports this instance actually bound live on the <a href="{{.UIBase}}/">overview tab</a>.</p>
+    "Providers" nil)}}
 {{end}}
 
 {{define "sms-style"}}
@@ -156,6 +191,13 @@ with CSS rather than with markup.
 .sms-tab .sms-out { align-self: flex-end; border-bottom-right-radius: .2rem; background: rgba(64,140,255,.16); }
 .sms-tab .sms-in { align-self: flex-start; border-bottom-left-radius: .2rem; background: rgba(128,128,128,.14); }
 .sms-tab .sms-body { margin: 0 0 .35rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sms-tab .sms-body-details { margin: 0 0 .35rem; }
+.sms-tab .sms-body-details > summary { list-style: none; cursor: pointer; }
+.sms-tab .sms-body-details > summary::-webkit-details-marker { display: none; }
+.sms-tab .sms-body-details[open] .sms-body-preview { display: none; }
+.sms-tab .sms-body-details .sms-body-full { margin-top: .2rem; }
+.sms-tab .sms-body-toggle { display: block; margin-top: .15rem; font-size: .85em; text-decoration: underline dotted; }
+.sms-tab .sms-thread-summary { font-size: .82em; }
 .sms-tab .sms-bubble-meta { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; font-size: .78em; }
 .sms-tab .sms-media { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0; }
 .sms-tab .sms-media-thumb { max-width: 12rem; max-height: 12rem; border-radius: .4rem; display: block; }

@@ -410,6 +410,91 @@ func TestClearFromTheTab(t *testing.T) {
 	}
 }
 
+// The how-to-test panel is a contract obligation (docs/implementation-plan.md
+// §5, §6.4): every tab must show it, listing each enabled provider's
+// description and a runnable, rendered snippet. It should stay out of the way
+// once the inbox actually has mail in it.
+func TestHowToTestPanelWithMessages(t *testing.T) {
+	in := start(t)
+	seedInbox(t, in)
+
+	d := page(t, in, in.UI("/mail/"))
+	panel := d.Find(".how-to-test")
+	if panel.Length() == 0 {
+		t.Fatal("the mail tab has no how-to-test panel")
+	}
+	if _, open := panel.Attr("open"); open {
+		t.Error("the panel should be collapsed once the inbox has mail")
+	}
+
+	code := panel.Find(".snippet pre code").Text()
+	if code == "" {
+		t.Fatal("no snippet rendered in the panel")
+	}
+	if strings.Contains(code, "{{") {
+		t.Errorf("snippet template was not rendered:\n%s", code)
+	}
+	if !strings.Contains(code, in.IngressURL) {
+		t.Errorf("snippet must carry the live ingress URL %q:\n%s", in.IngressURL, code)
+	}
+	if panel.Find(".copy-btn").Length() == 0 {
+		t.Error("the snippet needs a copy button")
+	}
+	if !strings.Contains(panel.Text(), "Mail") {
+		t.Errorf("the panel should name the mail plugin: %q", panel.Text())
+	}
+}
+
+// An empty inbox is exactly when someone needs the panel open, so it defaults
+// open there instead of making them go find the disclosure triangle.
+func TestHowToTestPanelOpenWhenInboxIsEmpty(t *testing.T) {
+	in := start(t)
+
+	d := page(t, in, in.UI("/mail/"))
+	panel := d.Find(".how-to-test")
+	if panel.Length() == 0 {
+		t.Fatal("the mail tab has no how-to-test panel")
+	}
+	if _, open := panel.Attr("open"); !open {
+		t.Error("the panel should default open when the inbox is empty")
+	}
+}
+
+// Filtering to zero results and having zero mail ever land are different
+// situations and should not read the same way.
+func TestEmptyListMessageDistinguishesFilterFromNoMail(t *testing.T) {
+	in := start(t)
+
+	d, _ := fragment(t, in, http.MethodGet, in.UI("/mail/list"))
+	if !strings.Contains(d.Find("table.data").Text(), "No mail captured yet.") {
+		t.Errorf("empty inbox message = %q", d.Find("table.data").Text())
+	}
+
+	seedInbox(t, in)
+	d, _ = fragment(t, in, http.MethodGet, in.UI("/mail/list?search=nothing-like-this"))
+	if !strings.Contains(d.Find("table.data").Text(), "No message matches this filter.") {
+		t.Errorf("filtered-to-nothing message = %q", d.Find("table.data").Text())
+	}
+}
+
+// Attachments get a short category badge next to the full MIME type, so a
+// crowded attachment list can be scanned at a glance.
+func TestAttachmentTypeBadges(t *testing.T) {
+	in := start(t)
+	_, middle, _ := seedInbox(t, in)
+
+	d, _ := fragment(t, in, http.MethodGet, in.UI("/mail/messages/"+string(middle.ID)))
+	table := d.Find("table.data").First()
+	badges := table.Find(".badge").Map(func(_ int, s *goquery.Selection) string { return strings.TrimSpace(s.Text()) })
+	joined := strings.Join(badges, ",")
+	if !strings.Contains(joined, "sheet") {
+		t.Errorf("csv attachment should carry a %q badge, got %v", "sheet", badges)
+	}
+	if !strings.Contains(joined, "image") {
+		t.Errorf("png attachment should carry an %q badge, got %v", "image", badges)
+	}
+}
+
 func TestUIStreamCarriesMailEvents(t *testing.T) {
 	in := start(t)
 
