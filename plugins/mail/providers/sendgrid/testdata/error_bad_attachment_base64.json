@@ -1,0 +1,12 @@
+{
+  "personalizations": [
+    {"to": [{"email": "bob@example.com"}]}
+  ],
+  "from": {"email": "alice@example.com"},
+  "content": [
+    {"type": "text/plain", "value": "bad attachment"}
+  ],
+  "attachments": [
+    {"content": "not-valid-base64!!", "filename": "bad.txt"}
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "personalizations": [
+    {"to": [{"email": "bob@example.com"}]}
+  ],
+  "from": {"email": "alice@example.com"},
+  "content": [
+    {"type": "text/plain", "value": "See attached."},
+    {"type": "text/html", "value": "<p>See <img src=\"cid:logo\"> attached.</p>"}
+  ],
+  "attachments": [
+    {
+      "content": "aGVsbG8gYXR0YWNobWVudCBib2R5",
+      "type": "text/plain",
+      "filename": "note.txt",
+      "disposition": "attachment"
+    },
+    {
+      "content": "PGh0bWw+PGJvZHk+aW5saW5lIGltZyBoZXJlPC9ib2R5PjwvaHRtbD4=",
+      "type": "text/html",
+      "filename": "logo.html",
+      "disposition": "inline",
+      "content_id": "<logo>"
+    }
+  ]
+}

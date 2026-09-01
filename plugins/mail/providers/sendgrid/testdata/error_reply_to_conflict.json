@@ -1,0 +1,11 @@
+{
+  "personalizations": [
+    {"to": [{"email": "bob@example.com"}]}
+  ],
+  "from": {"email": "alice@example.com"},
+  "reply_to": {"email": "one@example.com"},
+  "reply_to_list": [{"email": "two@example.com"}],
+  "content": [
+    {"type": "text/plain", "value": "conflict"}
+  ]
+}

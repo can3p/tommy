@@ -1,0 +1,24 @@
+{
+  "personalizations": [
+    {
+      "to": [{"email": "carol@example.com", "name": "Carol"}],
+      "cc": [{"email": "cc1@example.com"}],
+      "bcc": [{"email": "bcc1@example.com"}],
+      "subject": "Carol's subject",
+      "headers": {"X-Campaign": "carol-campaign"},
+      "custom_args": {"segment": "carol-segment"},
+      "send_at": 1700000100
+    },
+    {
+      "to": [{"email": "dave@example.com", "name": "Dave"}]
+    }
+  ],
+  "from": {"email": "alice@example.com", "name": "Alice"},
+  "subject": "Top level subject",
+  "headers": {"X-Campaign": "top-campaign", "X-Mailer": "tommy"},
+  "custom_args": {"segment": "top-segment", "shared": "yes"},
+  "send_at": 1700000000,
+  "content": [
+    {"type": "text/plain", "value": "Fan-out body."}
+  ]
+}
