@@ -27,16 +27,21 @@ something in it, so both are fed from the provider's own Snippets().
 </section>
 {{end}}
 
-{{/* how-to-test takes a []plugin.PluginInfo. */}}
+{{/* how-to-test takes a HowToTest: the plugins to describe, and whether the
+     panel starts open. A tab that has nothing in it yet should pass Open,
+     since that is exactly when someone needs to know how to fill it. */}}
 {{define "how-to-test"}}
-<details class="how-to-test" {{if .}}{{else}}open{{end}}>
+<details class="how-to-test"{{if .Open}} open{{end}}>
   <summary>How to test</summary>
   <div class="how-to-test-body">
-  {{- range .}}
+  {{- range .Info}}
     <section class="plugin-card">
       <h3>{{.Title}}</h3>
       <p>{{.Description}}</p>
-      {{- range .Providers}}{{template "provider-card" .}}{{end}}
+      {{- range .Providers}}{{template "provider-card" .}}
+      {{- else}}
+      <p class="muted">No {{.Title}} provider is enabled, so nothing can reach this tab yet. Enable one in your config, or run <code>tommy providers</code> to see what this build ships.</p>
+      {{- end}}
     </section>
   {{- else}}
     <p class="muted">No plugins are enabled. Add some to your config, or run <code>tommy providers</code>.</p>

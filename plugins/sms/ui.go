@@ -67,6 +67,15 @@ type tabView struct {
 	// Providers feeds the empty state, carrying snippets already rendered
 	// against the ports this instance actually bound.
 	Providers []plugin.ProviderInfo
+
+	// Info is the same data unflattened, for the shared how-to-test panel.
+	Info []plugin.PluginInfo
+}
+
+// HowToTest carries the panel that says how to get messages in here, open when
+// nothing has arrived yet - which is exactly when someone needs it.
+func (v tabView) HowToTest() components.HowToTest {
+	return components.HowToTest{Info: v.Info, Open: !v.HasMessages()}
 }
 
 // ListURL is where the conversation list fragment is refetched from.
@@ -193,6 +202,7 @@ func (h *uiHandler) view(r *http.Request, selectedKey string) (tabView, error) {
 		StreamEvent: EventType,
 		Search:      search,
 		Providers:   h.providerInfo(coreui.ShellFrom(r)),
+		Info:        coreui.ShellFrom(r).Info(),
 	}
 
 	convs := Conversations(events)

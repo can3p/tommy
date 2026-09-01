@@ -11,7 +11,7 @@ with CSS rather than with markup.
 {{define "sms-tab"}}
 {{template "sms-style"}}
 <div class="sms-tab">
-{{template "sms-how-to-test" .}}
+{{template "how-to-test" .HowToTest}}
 {{- if .HasMessages}}
 {{template "master-detail" (dict
     "Title" "SMS"
@@ -30,26 +30,6 @@ with CSS rather than with markup.
 </div>
 {{end}}
 
-{{/* sms-how-to-test lists every enabled SMS provider with its description,
-     endpoints and copy-paste snippets rendered against this instance's real
-     ports - the panel every tab must carry (docs/implementation-plan.md §5,
-     §6.4). It is available whether or not there are messages: collapsed once
-     a conversation exists, open by default on an empty tab, since a tab with
-     nothing in it is exactly when someone needs to be told how to fill it. */}}
-{{define "sms-how-to-test"}}
-<details class="how-to-test"{{if not .HasMessages}} open{{end}}>
-  <summary>How to test</summary>
-  <div class="how-to-test-body">
-    <section class="plugin-card">
-      <h3>SMS</h3>
-      {{- range .Providers}}{{template "provider-card" .}}
-      {{- else}}
-      <p class="muted">No SMS provider is enabled, so nothing can reach this tab yet. Enable one in your config, or run <code>tommy providers</code> to see what this build ships.</p>
-      {{- end}}
-    </section>
-  </div>
-</details>
-{{end}}
 
 {{define "sms-toolbar"}}
 <form class="filters" hx-get="{{.Base}}/list" hx-target="#list" hx-swap="innerHTML"

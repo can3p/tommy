@@ -22,7 +22,7 @@ restricted sandboxed iframe, which is the only place it is ever rendered.
   background: var(--accent); margin-right: 6px; vertical-align: middle;
 }
 </style>
-{{template "mail-how-to-test" .}}
+{{template "how-to-test" .HowToTest}}
 {{template "master-detail" (dict
     "Title" "Inbox"
     "Toolbar" (render "mail-filter" .)
@@ -112,27 +112,6 @@ restricted sandboxed iframe, which is the only place it is ever rendered.
 </script>
 {{end}}
 
-{{/* mail-how-to-test takes an inboxView. Same content as the shared
-     "how-to-test" component, but the open/closed default follows whether the
-     inbox actually has mail rather than whether any plugin is configured -
-     an empty inbox is exactly when someone needs this panel open, and a full
-     one is when it should stay out of the way. */}}
-{{define "mail-how-to-test"}}
-<details class="how-to-test"{{if not .Messages}} open{{end}}>
-  <summary>How to test</summary>
-  <div class="how-to-test-body">
-  {{- range .Info}}
-    <section class="plugin-card">
-      <h3>{{.Title}}</h3>
-      <p>{{.Description}}</p>
-      {{- range .Providers}}{{template "provider-card" .}}{{end}}
-    </section>
-  {{- else}}
-    <p class="muted">No plugins are enabled. Add some to your config, or run <code>tommy providers</code>.</p>
-  {{- end}}
-  </div>
-</details>
-{{end}}
 
 {{/* mail-filter takes an inboxView. */}}
 {{define "mail-filter"}}
