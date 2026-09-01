@@ -1,0 +1,124 @@
+# tommy.toml - a complete, commented example configuration.
+#
+# Every value below already matches tommy's built-in default, so an untouched
+# copy of this file boots identically to plain `tommy serve`. Copy it, change
+# the two lines you actually care about (usually a port and which providers
+# are enabled), delete the rest.
+#
+# TOML and the CLI build the exact same Config struct and run through the
+# exact same bootstrap (core/server) - nothing below is TOML-only, and every
+# setting here has a CLI equivalent on `tommy serve` or the single-plugin
+# shortcuts (`tommy mail`, `tommy sms`). See docs/contracts.md ("core/config")
+# for the full field reference and docs/implementation-plan.md §4 for why the
+# config is shaped this way.
+#
+# Run with:  tommy serve --config tommy.toml
+# Inspect a config without starting anything:  tommy providers --config tommy.toml
+
+# Default interface for every core listener (ui, api, ingress). Override a
+# single listener's own `bind` below if you need one facing a different
+# interface than the others - the ingress facing 0.0.0.0 while ui/api stay on
+# localhost, say.
+bind = "127.0.0.1"
+
+# Hostname used in the URLs tommy prints at startup and in every snippet
+# rendered by `tommy providers`, the UI's "How to test" panel and
+# GET /api/v1/plugins. Change this if tommy is reached under a name other than
+# localhost - inside docker-compose, for instance.
+host = "localhost"
+
+[ui]
+port = 8811
+# bind = "127.0.0.1"   # overrides the top-level `bind` for just this listener
+
+[api]
+# Omitting this section, or giving it the same port as [ui] (the default),
+# serves the API off the UI listener. Give it a port of its own to run the two
+# separately - useful if you want to expose the API but not the browser UI.
+port = 8811
+
+[ingress]
+# Where the fake vendor HTTP APIs listen: Mailjet's /v3.1/send, SendGrid's
+# /v3/mail/send, Twilio's /2010-04-01/Accounts/{sid}/Messages.json. SMTP has
+# its own listener (below) and ignores this port entirely.
+port = 8822
+
+[storage]
+# Events retained per plugin, ring-buffer style: once a plugin's own buffer is
+# full its oldest event is dropped, so a chatty plugin can never evict a quiet
+# one's history.
+capacity = 500
+
+# Total bytes the blob store (mail attachments, uploaded files) may hold
+# across every plugin. An integer is bytes; a string like "1.5GiB" also works.
+# Once the cap is reached, further uploads fail loudly instead of silently
+# evicting an older blob a UI page or download link might still point at.
+blob_limit = "256MB"
+
+# Per-plugin overrides of `capacity` above, uncomment to give one plugin more
+# room than the rest:
+# [storage.plugin_capacity]
+# mail = 2000
+# sms  = 1000
+
+# What a plugin or provider does when its own [plugins.<x>] or
+# [plugins.<x>.providers.<y>] section is missing, or present with no `enabled`
+# key of its own. true (the default, shown here) means "unmentioned means
+# on". The single-plugin CLI shortcuts (tommy mail, tommy sms) build a config
+# with this flipped to false in memory and then enable only the plugin and
+# providers that were actually asked for - see cmd/mail.go.
+default_enabled = true
+
+# -----------------------------------------------------------------------------
+# mail - captures the email your application sends, whether it went out
+# through a vendor's HTTP API or plain SMTP.
+# -----------------------------------------------------------------------------
+
+[plugins.mail]
+enabled = true
+
+[plugins.mail.providers.mailjet]
+# Mailjet's transactional Send API v3.1: POST /v3.1/send. Any Basic-auth
+# credentials are accepted and recorded by default.
+enabled = true
+# port = 9001            # optional dedicated listener instead of the shared ingress
+# api_key    = "any-key"    # pin credentials; a mismatch then gets Mailjet's real 401
+# secret_key = "any-secret" # only checked when api_key is also set
+
+[plugins.mail.providers.sendgrid]
+# Twilio SendGrid's v3 Mail Send API: POST /v3/mail/send. Any bearer token is
+# accepted and recorded by default.
+enabled = true
+# port = 9002
+# api_key = "SG.fake-key"   # pin a token; a mismatch gets SendGrid's real 401
+
+[plugins.mail.providers.smtp]
+# A real SMTP server on its own port. Point any mail library at it with no
+# further setup - nothing is ever relayed anywhere.
+enabled = true
+port    = 1025          # the provider's own listener, not the shared ingress
+# domain            = "tommy"      # hostname in the SMTP greeting banner
+# max_message_bytes = 26214400     # 25MiB, caps one DATA transaction
+# max_recipients    = 100          # caps RCPT TO per transaction
+# max_line_length   = 65536        # 64KiB, generous for long unwrapped HTML lines
+# read_timeout      = 60           # seconds
+# write_timeout     = 60           # seconds
+# username = "any"        # pin AUTH credentials; unset accepts anything, or none at all
+# password = "any"
+
+# -----------------------------------------------------------------------------
+# sms - captures the SMS/MMS your application sends through a provider API.
+# -----------------------------------------------------------------------------
+
+[plugins.sms]
+enabled = true
+
+[plugins.sms.providers.twilio]
+# Twilio's Programmable Messaging REST API:
+# POST /2010-04-01/Accounts/{AccountSid}/Messages.json, plus the matching list
+# and fetch endpoints, served straight out of tommy's event store. Any
+# Basic-auth credentials are accepted and recorded by default.
+enabled = true
+# port = 9003
+# account_sid = "AC00000000000000000000000000000000"  # pin the expected sid
+# auth_token  = "any-token"                            # and token; both must match to enable the check
