@@ -1,0 +1,117 @@
+{{/*
+The mail tab: a three-pane inbox composed from the shared component library -
+message list on the left, header table and body on the right, with html / text /
+raw toggles.
+
+The HTML body is untrusted content written by the application under test, so it
+is never injected into this page. It is loaded from the API into a fully
+restricted sandboxed iframe, which is the only place it is ever rendered.
+*/}}
+
+{{define "mail-inbox"}}
+<div class="mail-inbox">
+<style>
+.mail-html { width: 100%; height: 60vh; border: 1px solid #d8dee9; border-radius: 8px; background: #fff; }
+.mail-views { display: flex; gap: 6px; margin: 12px 0 8px; }
+.mail-views .view-btn.active { border-color: currentColor; font-weight: 600; }
+.mail-text { white-space: pre-wrap; }
+.mail-headers { margin-top: 10px; }
+</style>
+{{template "master-detail" (dict
+    "Title" "Inbox"
+    "Toolbar" (render "mail-filter" .)
+    "List" (render "mail-list" .)
+    "ListID" "list"
+    "Detail" (render "mail-pane" .)
+    "DetailID" "detail"
+    "Empty" "")}}
+</div>
+{{end}}
+
+{{/* mail-filter takes an inboxView. */}}
+{{define "mail-filter"}}
+<form class="filters" hx-get="{{.ListURL}}" hx-target="#list" hx-swap="innerHTML"
+      hx-trigger="input changed delay:250ms from:find input, change from:find select, submit" hx-push-url="false">
+  <input type="search" name="search" placeholder="Search subject, sender, body" value="{{.Filter.Search}}" aria-label="Search messages">
+  <select name="provider" aria-label="Filter by provider">
+    <option value="">any provider</option>
+    {{- range .Providers}}<option value="{{.}}" {{if eq . $.Filter.Provider}}selected{{end}}>{{.}}</option>{{end}}
+  </select>
+  <select name="attachments" aria-label="Filter by attachments">
+    <option value="">with or without attachments</option>
+    <option value="1" {{if eq .Filter.Attachments "1"}}selected{{end}}>with attachments</option>
+    <option value="0" {{if eq .Filter.Attachments "0"}}selected{{end}}>without attachments</option>
+  </select>
+  <button type="button" class="danger" hx-delete="{{.ClearURL}}" hx-target="#list" hx-swap="innerHTML"
+          hx-confirm="Delete every captured message?">Clear</button>
+</form>
+{{end}}
+
+{{/* mail-list takes an inboxView and is what the SSE stream refreshes. */}}
+{{define "mail-list"}}
+<div id="list-inner" hx-get="{{.RefreshURL}}" hx-trigger="sse:mail.message throttle:400ms"
+     hx-target="#list" hx-swap="innerHTML">
+  {{template "table" .MessageTable}}
+  <p class="muted count">{{len .Messages}} message{{if ne (len .Messages) 1}}s{{end}}</p>
+</div>
+{{end}}
+
+{{/* mail-pane takes an inboxView: the selected message, or the empty state. */}}
+{{define "mail-pane"}}
+{{- if .Selected}}{{template "mail-detail" .Selected}}{{else}}{{template "empty-state" .EmptyState}}{{end}}
+{{end}}
+
+{{/* mail-detail takes a messageDetail. */}}
+{{define "mail-detail"}}
+<article class="mail-detail">
+  <header>
+    <h2>{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}</h2>
+    <p class="muted mono">{{template "badge" (badge .Provider "info")}} {{template "badge" (badge .Type "muted")}} · {{timeFull .ReceivedAt}}</p>
+  </header>
+
+  {{template "kv-table" .HeaderTable}}
+
+  {{- if .Msg.Attachments}}
+  {{template "table" .AttachmentTable}}
+  {{- end}}
+
+  <nav class="mail-views" role="tablist" aria-label="Message body view">
+    {{- range .Views}}
+    <button type="button" class="view-btn{{if .Active}} active{{end}}" role="tab" aria-selected="{{if .Active}}true{{else}}false{{end}}"
+            hx-get="{{.URL}}" hx-target="#mail-body" hx-swap="innerHTML">{{.Label}}</button>
+    {{- end}}
+  </nav>
+  <div id="mail-body">{{render "mail-body" .}}</div>
+
+  {{- if .Meta}}
+  {{template "json-inspector" (jsonView "Provider metadata" .Meta)}}
+  {{- end}}
+
+  {{- if .Headers}}
+  <div class="mail-headers">{{template "kv-table" .HeaderExtras}}</div>
+  {{- end}}
+</article>
+{{end}}
+
+{{/* mail-body takes a messageDetail and renders whichever view is selected. */}}
+{{define "mail-body"}}
+{{- if eq .View "html"}}
+  {{- if .Msg.HTML}}
+  <iframe class="mail-html" sandbox="" referrerpolicy="no-referrer" loading="lazy" src="{{.HTMLURL}}" title="HTML body, sandboxed"></iframe>
+  <p class="muted">Rendered in a sandboxed frame: scripts, forms, plugins and navigation are all disabled.</p>
+  {{- else}}
+  <p class="muted">This message has no HTML part.</p>
+  {{- end}}
+{{- else if eq .View "text"}}
+  {{- if .Msg.Text}}
+  <div class="inspector">
+    <div class="inspector-head"><span class="inspector-title">Text body</span>{{template "copy-button" .Msg.Text}}</div>
+    <pre class="raw-body mail-text">{{.Msg.Text}}</pre>
+  </div>
+  {{- else}}
+  <p class="muted">This message has no plain-text part.</p>
+  {{- end}}
+{{- else}}
+  {{template "raw-viewer" .Raw}}
+{{- end}}
+{{end}}
