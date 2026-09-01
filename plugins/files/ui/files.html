@@ -1,0 +1,159 @@
+{{/*
+The files tab: a file browser over the shared VFS.
+
+Breadcrumb, a directory table with size, modification time and the protocol
+that wrote each file, download links, and - below it - the event log, because
+this plugin is the one place where "what is there now" and "how it got there"
+are genuinely different questions.
+
+Every file and directory name is untrusted input: a client picks it, and an FTP
+client is a stranger by design. Names are therefore interpolated as plain
+strings and never as template.HTML, so html/template escapes them, and the URLs
+built around them are percent-encoded in Go before they get here.
+*/}}
+
+{{define "files-tab"}}
+{{template "files-style"}}
+<div class="files-tab">
+{{template "how-to-test" .HowToTest}}
+<div id="files-body">{{template "files-body" .}}</div>
+</div>
+{{end}}
+
+
+{{/* files-body is the whole browser: it is what /list returns and what every
+     swap replaces, so the live refresh URL always carries the directory that
+     is actually open. */}}
+{{define "files-body"}}
+<div id="files-refresh"
+     hx-get="{{.ListURL}}"
+     hx-trigger="{{.RefreshTrigger}}"
+     hx-target="#files-body"
+     hx-swap="innerHTML">
+
+  <div class="files-head">
+    <nav class="files-crumbs" aria-label="Breadcrumb">
+      {{- range .Crumbs}}
+      {{- if .Last}}
+      <span class="files-crumb current mono" aria-current="page">{{.Name}}</span>
+      {{- else}}
+      <a class="files-crumb mono" href="{{.URL}}" hx-get="{{.FetchURL}}" hx-target="#files-body" hx-swap="innerHTML" hx-push-url="{{.URL}}">{{.Name}}</a>
+      <span class="files-sep muted">/</span>
+      {{- end}}
+      {{- end}}
+    </nav>
+    <div class="files-actions">
+      <span class="muted files-stats">{{.Stats.Files}} file{{if ne .Stats.Files 1}}s{{end}} · {{.Stats.Dirs}} director{{if ne .Stats.Dirs 1}}ies{{else}}y{{end}} · {{bytesHuman .Stats.Bytes}}</span>
+      <button type="button" class="danger"
+              hx-delete="{{.ClearURL}}" hx-target="#files-body" hx-swap="innerHTML"
+              hx-confirm="Delete every uploaded file and directory?">Clear</button>
+    </div>
+  </div>
+
+  {{- if .Missing}}
+  <p class="files-missing muted">That directory is gone - showing the root instead.</p>
+  {{- end}}
+
+  {{- if .Empty}}
+  {{template "empty-state" .EmptyState}}
+  {{- else}}
+  {{template "files-table" .}}
+  {{- end}}
+
+  {{template "files-activity" .}}
+</div>
+{{end}}
+
+
+{{/* files-table is the directory listing. */}}
+{{define "files-table"}}
+<table class="data files-table">
+  <thead>
+    <tr>
+      <th scope="col">Name</th>
+      <th scope="col">Size</th>
+      <th scope="col">Modified</th>
+      <th scope="col">Written by</th>
+      <th scope="col"></th>
+    </tr>
+  </thead>
+  <tbody>
+  {{- if not .AtRoot}}
+    <tr class="files-up">
+      <td colspan="5">
+        <a class="mono" href="{{.ParentURL}}" hx-get="{{.ParentFetchURL}}" hx-target="#files-body" hx-swap="innerHTML" hx-push-url="{{.ParentURL}}">../</a>
+      </td>
+    </tr>
+  {{- end}}
+  {{- range .Entries}}
+    <tr class="files-row">
+      <td>
+        {{- if .Dir}}
+        <a class="files-name mono" href="{{.URL}}" hx-get="{{.FetchURL}}" hx-target="#files-body" hx-swap="innerHTML" hx-push-url="{{.URL}}">📁 {{.Name}}/</a>
+        {{- else}}
+        <a class="files-name mono" href="{{.URL}}" download>{{.Name}}</a>
+        {{- with .ContentType}}<br><span class="muted files-type mono">{{.}}</span>{{end}}
+        {{- end}}
+      </td>
+      <td class="mono nowrap">{{if .Dir}}<span class="muted">—</span>{{else}}{{.SizeText}}{{end}}</td>
+      <td class="mono nowrap" title="{{timeFull .ModTime}}">{{timeShort .ModTime}}</td>
+      <td class="nowrap">{{if .Provider}}{{template "badge" (badge .Provider "info")}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td class="nowrap files-row-actions">
+        {{- if not .Dir}}<a class="muted files-dl" href="{{.URL}}" download>download</a>{{end}}
+        <button type="button" class="danger files-del"
+                hx-delete="{{.DeleteURL}}" hx-target="#files-body" hx-swap="innerHTML"
+                hx-confirm="Delete {{.Path}}?">delete</button>
+      </td>
+    </tr>
+  {{- else}}
+    <tr><td class="muted" colspan="5">This directory is empty.</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{end}}
+
+
+{{/* files-activity is the history half of the tab: the event log, which keeps
+     showing an upload after the file has been overwritten or deleted. */}}
+{{define "files-activity"}}
+<section class="files-activity">
+  <h3>Recent activity</h3>
+  <table class="data">
+    <thead><tr><th scope="col">Time</th><th scope="col">What</th><th scope="col">Via</th><th scope="col"></th></tr></thead>
+    <tbody>
+    {{- range .Activity}}
+      <tr>
+        <td class="mono nowrap" title="{{timeFull .At}}">{{timeShort .At}}</td>
+        <td>{{.Text}}</td>
+        <td class="nowrap">{{if .Provider}}{{template "badge" (badge .Provider "info")}}{{else}}<span class="muted">tommy</span>{{end}}</td>
+        <td class="nowrap"><a class="muted files-raw" href="{{.EventURL}}" title="Inspect the raw record behind this event">raw</a></td>
+      </tr>
+    {{- else}}
+      <tr><td class="muted" colspan="4">Nothing has happened yet.</td></tr>
+    {{- end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
+
+
+{{define "files-style"}}
+<style>
+.files-tab .files-head { display: flex; flex-wrap: wrap; gap: .6rem; align-items: baseline; justify-content: space-between; margin-bottom: .5rem; }
+.files-tab .files-crumbs { display: flex; flex-wrap: wrap; gap: .2rem; align-items: baseline; }
+.files-tab .files-crumb.current { font-weight: 600; }
+.files-tab .files-sep { opacity: .6; }
+.files-tab .files-actions { display: flex; gap: .6rem; align-items: center; }
+.files-tab .files-stats { font-size: .85em; }
+.files-tab .files-missing { margin: 0 0 .5rem; font-size: .9em; }
+.files-tab table.data { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.files-tab .files-name { text-decoration: none; }
+.files-tab .files-name:hover { text-decoration: underline; }
+.files-tab .files-type { font-size: .78em; }
+.files-tab .files-row-actions { display: flex; gap: .5rem; align-items: center; justify-content: flex-end; }
+.files-tab .files-del { font-size: .8em; padding: 2px 8px; }
+.files-tab .files-dl, .files-tab .files-raw { text-decoration: underline dotted; font-size: .85em; }
+.files-tab .files-up a { text-decoration: none; }
+.files-tab .files-activity { margin-top: 1.2rem; }
+</style>
+{{end}}
