@@ -5,6 +5,10 @@ package all
 
 import (
 	"github.com/can3p/tommy/core/plugin"
+	"github.com/can3p/tommy/plugins/chat"
+	"github.com/can3p/tommy/plugins/chat/providers/msteams"
+	"github.com/can3p/tommy/plugins/chat/providers/slack"
+	"github.com/can3p/tommy/plugins/chat/ui/blocks"
 	"github.com/can3p/tommy/plugins/files"
 	"github.com/can3p/tommy/plugins/files/providers/ftp"
 	"github.com/can3p/tommy/plugins/files/providers/sftp"
@@ -31,5 +35,9 @@ func Plugins() []plugin.Plugin {
 			ftp.New(),
 			sftp.New(),
 		),
+		chat.New(
+			slack.New(),
+			msteams.New(),
+		).WithRichRenderer(blocks.Render),
 	}
 }
