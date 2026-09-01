@@ -41,6 +41,12 @@ type EventView struct {
 	ProviderNames []string
 }
 
+// HowToTest describes the plugins in scope, opening the panel when there is
+// nothing else on screen to look at.
+func (v EventView) HowToTest() HowToTest {
+	return HowToTest{Info: v.Info, Open: len(v.Events) == 0}
+}
+
 // Providers flattens Info into the provider cards the empty state shows.
 func (v EventView) Providers() []plugin.ProviderInfo {
 	var out []plugin.ProviderInfo
@@ -173,6 +179,12 @@ func joinComma(v []string) string {
 		out += s
 	}
 	return out
+}
+
+// HowToTest is the panel that says how to put something into a view.
+type HowToTest struct {
+	Info []plugin.PluginInfo
+	Open bool
 }
 
 // EmptyState is the "nothing here yet, here is how to put something in it"

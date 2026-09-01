@@ -60,7 +60,7 @@ what makes a new protocol plugin useful on day one with zero UI code.
 {{/* generic-event-view takes an EventView. */}}
 {{define "generic-event-view"}}
 <div class="generic-event-view">
-  {{template "how-to-test" .Info}}
+  {{template "how-to-test" .HowToTest}}
   {{template "master-detail" (dict
       "Title" .Title
       "Toolbar" (render "event-filter" .)

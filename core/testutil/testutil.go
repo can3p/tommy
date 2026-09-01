@@ -47,8 +47,12 @@ type Instance struct {
 func Start(t testing.TB, cfg *config.Config, plugins ...plugin.Plugin) *Instance {
 	t.Helper()
 
+	ephemeral := cfg == nil
 	if cfg == nil {
 		cfg = config.Ephemeral()
+	}
+	if ephemeral {
+		ephemeralListeners(cfg, plugins)
 	}
 	cfg.ApplyDefaults()
 
@@ -215,4 +219,33 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// ephemeralListeners pins every listener provider to port 0.
+//
+// config.Ephemeral only zeroes the three core listeners. A listener provider
+// reads its own port from its own config section, and falls back to its
+// package default when that section says nothing - so a test that asked for an
+// ephemeral server still got, say, SMTP on the well-known 1025. That collides
+// with a real mail catcher on a developer's machine, or with another test
+// binary, and fails only sometimes and only on some machines. An explicit port
+// in the caller's config is left alone.
+func ephemeralListeners(cfg *config.Config, plugins []plugin.Plugin) {
+	for _, p := range plugins {
+		for _, prov := range p.Providers() {
+			if _, ok := prov.(plugin.ListenerProvider); !ok {
+				continue
+			}
+			pc := cfg.Provider(p.Name(), prov.Name())
+			if _, set := pc.Get("port"); set {
+				continue
+			}
+			values := pc.Values()
+			if values == nil {
+				values = map[string]any{}
+			}
+			values["port"] = 0
+			cfg.SetProvider(p.Name(), prov.Name(), config.NewProviderConfig(values))
+		}
+	}
 }

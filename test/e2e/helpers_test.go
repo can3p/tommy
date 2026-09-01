@@ -10,14 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/can3p/tommy/core/config"
 	memory "github.com/can3p/tommy/core/store/memory"
 	"github.com/can3p/tommy/core/testutil"
 	"github.com/can3p/tommy/plugins/all"
-	"github.com/can3p/tommy/plugins/mail"
 	"github.com/can3p/tommy/plugins/mail/providers/mailjet"
 	"github.com/can3p/tommy/plugins/mail/providers/sendgrid"
-	mailsmtp "github.com/can3p/tommy/plugins/mail/providers/smtp"
 )
 
 // twilioAccountSid is used as both the path segment and the presented
@@ -25,27 +22,13 @@ import (
 // any credentials by default, so any well-formed sid does.
 const twilioAccountSid = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-// startAllPlugins boots every shipped plugin and provider on ephemeral ports.
-//
-// config.Ephemeral only zeroes the three core listeners; a listener provider
-// still falls back to its own package default port when its own config
-// section says nothing, which for mail/smtp is the well-known 1025
-// (plugins/mail/providers/smtp.DefaultPort). Left alone that collides with a
-// real mailhog-style catcher, or with another test process, on any machine
-// that has one running - so this pins smtp's port to 0 explicitly, exactly
-// as plugins/mail/providers/smtp's own tests do, to keep every listener in
-// this suite truly ephemeral.
+// startAllPlugins boots every shipped plugin and provider on ephemeral ports,
+// listener providers included - testutil.Start pins those when it is given no
+// config of its own.
 func startAllPlugins(t *testing.T) *testutil.Instance {
 	t.Helper()
-	cfg := config.Ephemeral()
-	cfg.SetProvider(mail.PluginName, smtpProviderName, config.NewProviderConfig(map[string]any{"port": 0}))
-	return testutil.Start(t, cfg, all.Plugins()...)
+	return testutil.Start(t, nil, all.Plugins()...)
 }
-
-// smtpProviderName avoids an import collision between plugins/mail's smtp
-// provider package and the standard library's net/smtp, both used in this
-// file.
-const smtpProviderName = mailsmtp.ProviderName
 
 // sendMailjet posts a Mailjet v3.1 send request and fails the test unless it
 // is accepted with Mailjet's real 200 success envelope.

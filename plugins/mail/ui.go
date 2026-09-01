@@ -184,6 +184,12 @@ func relativeTime(t, now time.Time) string {
 	}
 }
 
+// HowToTest carries the panel that says how to get mail in here, open when the
+// inbox has nothing in it - which is exactly when someone needs it.
+func (v inboxView) HowToTest() components.HowToTest {
+	return components.HowToTest{Info: v.Info, Open: len(v.Messages) == 0}
+}
+
 // EmptyState is what the detail pane shows with nothing selected. With no mail
 // at all it carries the enabled providers, so the panel that tells you how to
 // send one is on the tab where you noticed it was empty.
