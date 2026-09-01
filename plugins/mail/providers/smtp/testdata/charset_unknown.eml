@@ -1,0 +1,7 @@
+From: someone@example.com
+To: bob@example.com
+Subject: Unknown charset
+MIME-Version: 1.0
+Content-Type: text/plain; charset=x-not-a-real-charset
+
+plain ascii survives anything

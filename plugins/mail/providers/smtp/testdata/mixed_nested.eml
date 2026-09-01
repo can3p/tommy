@@ -1,0 +1,36 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Invoice attached
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="MIX"
+
+--MIX
+Content-Type: multipart/alternative; boundary="ALT"
+
+--ALT
+Content-Type: text/plain; charset=us-ascii
+
+Invoice attached.
+
+--ALT
+Content-Type: text/html; charset=us-ascii
+
+<p>Invoice attached.</p>
+
+--ALT--
+
+--MIX
+Content-Type: text/csv; charset=utf-8; name="invoice.csv"
+Content-Disposition: attachment; filename="invoice.csv"
+Content-Transfer-Encoding: base64
+
+aWQsdG90YWwNCjEsNDINCg==
+
+--MIX
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="invoice.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQgZmFrZSBwZGYgYnl0ZXMNCiUlRU9GDQo=
+
+--MIX--

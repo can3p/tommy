@@ -1,0 +1,29 @@
+From: Newsletter <news@example.com>
+To: Bob <bob@example.com>
+Subject: Look at this logo
+MIME-Version: 1.0
+Content-Type: multipart/related; type="multipart/alternative"; boundary="REL"
+
+--REL
+Content-Type: multipart/alternative; boundary="ALT"
+
+--ALT
+Content-Type: text/plain; charset=utf-8
+
+Our logo is above.
+
+--ALT
+Content-Type: text/html; charset=utf-8
+
+<p>Our logo: <img src="cid:logo@example.com"></p>
+
+--ALT--
+
+--REL
+Content-Type: image/png
+Content-ID: <logo@example.com>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUg==
+
+--REL--

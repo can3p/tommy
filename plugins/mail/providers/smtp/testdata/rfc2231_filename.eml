@@ -1,0 +1,21 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Rates
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="MIX"
+
+--MIX
+Content-Type: text/plain; charset=utf-8
+
+See attached.
+
+--MIX
+Content-Type: application/octet-stream
+Content-Disposition: attachment;
+ filename*0*=UTF-8''%E2%82%AC%20rates%20;
+ filename*1*=2024.csv
+
+a,b
+1,2
+
+--MIX--

@@ -1,0 +1,18 @@
+From: <not a real address
+To: bob@example.com, "Broken, Name <carol@example.com>
+this line is not a header at all
+Subject: =?UTF-8?B?!!!not-base64!!!?=
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="OPEN"
+
+--OPEN
+Content-Type: text/plain; charset=utf-8
+
+the boundary below never closes
+
+--OPEN
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename="broken.bin"
+Content-Transfer-Encoding: base64
+
+!!!!not base64 at all!!!!
