@@ -1,0 +1,133 @@
+# CLAUDE.md
+
+Instructions for working in this repository.
+
+## What tommy is
+
+A single binary that stands in for services an application talks to but which are
+awkward to run locally — mail providers, SMS gateways, file transfer, chat
+webhooks — and shows you exactly what your code sent. Think mailcatcher, but for
+more than mail.
+
+It **captures and displays what was sent**, and answers with whatever the
+protocol requires so the client proceeds. It does **not** simulate scenarios,
+drive inbound traffic, or make policy decisions. That boundary decides what
+belongs here; see `docs/implementation-plan.md` §1.
+
+## Commands
+
+```bash
+make check          # everything CI runs: gofmt, vet, lint, build, test -race
+make test           # go test -race -coverprofile=coverage.out ./...
+make lint           # golangci-lint run ./...
+go run . serve      # boot with defaults: UI :8811, ingress :8822, smtp :1025, ftp :2121, sftp :2222
+go run . providers  # every provider's description, endpoints and runnable snippets
+```
+
+Set `TOMMY_NO_UPDATE_CHECK=1` when running the binary in tests, CI or scripts.
+
+`test/integration` is a **separate Go module** so the vendor SDKs it drives never
+enter tommy's `go.mod`. It is not covered by the root `./...`:
+
+```bash
+cd test/integration && go test -tags integration ./...
+```
+
+## Where things are
+
+| Path | What |
+|---|---|
+| `docs/plan.md` | The original product brief. Requirements, not design. |
+| `docs/contracts.md` | **The core interfaces as built. Authoritative.** Read this before writing a plugin or provider. |
+| `docs/implementation-plan.md` | Forward-looking plan: remaining waves, task breakdown, protocol roadmap. |
+| `docs/archive/waves-0-5.md` | What was built and why, wave by wave, with the decisions that changed under contact with real code. |
+| `docs/lessons.md` | What this codebase taught us. Read before orchestrating more work. |
+| `docs/clients.md` | Pointing official vendor SDKs at tommy. |
+| `core/` | Event, store, blob, plugin contracts, config, server (ui/api/ingress), testutil. |
+| `plugins/` | One directory per content type; providers nested under each. |
+| `plugins/all/all.go` | The single shared wiring file. Every plugin and provider is registered here explicitly. |
+| `clienthelp/` | A stdlib-only `http.RoundTripper` for pointing SDKs at tommy. |
+
+## Architecture in one paragraph
+
+Three listeners in one process. A path-routed **ingress** mux hosts the fake
+vendor HTTP APIs; protocol providers (SMTP, FTP, SFTP) get their own listeners.
+Everything lands in an in-memory **event store** (ring buffer with pub/sub) with
+payload bytes in a separate **blob store**, so retention of the two can differ.
+A **UI** and a **REST + SSE API** read from both. A *plugin* owns a content type
+(canonical model, API routes, UI tab); a *provider* translates one vendor's wire
+format into that model. Providers never import each other — that is what lets
+them be built in parallel.
+
+## Rules for plugin and provider code
+
+1. **Accept any credentials by default.** Parse and record them into `Event.Meta`;
+   never reject unless config pins an expected value. A fake that 401s is useless.
+2. **Respond with the vendor's real response shape** — status, headers, body — so
+   official SDKs work unmodified. Verify against **live vendor documentation**,
+   never from memory. This has caught real errors repeatedly.
+3. **One request may produce several events.** Mailjet `Messages[]`, SendGrid
+   `personalizations[]` both fan out. One event per delivered message.
+4. **Always populate `Raw`** with the untouched request.
+5. **Read-back endpoints serve from the store**, so an SDK that writes then fetches
+   sees its own write.
+6. **Ship a `Description()` and at least one working `Snippet()`.** Snippets are Go
+   templates over `SnippetCtx` — use `{{.IngressURL}}` / `{{.Addr "files" "ftp"}}`,
+   never a hardcoded port. Enforced by `plugintest.Conformance`.
+7. **Every mounted route must be declared in `Endpoints()` and vice versa.** A
+   mismatch fails conformance *and* server startup.
+8. **Never import another provider's package.**
+9. **Bytes go in the blob store**, never inline in an event.
+
+## Security invariants — do not weaken these
+
+- **Untrusted content never enters the page DOM.** A captured HTML mail body is
+  served from its own API route under a restrictive CSP and framed in a fully
+  sandboxed iframe. Tests assert the markup is absent from the page.
+- **All captured text is interpolated as plain strings** through `html/template`,
+  never `template.HTML`. Message bodies, author names, filenames, subjects.
+- **`plugins/chat/ui/blocks` is the one exception and the one danger.** Its output
+  is injected unescaped because emitting markup is the point. Everything it lifts
+  from a payload must be escaped, every URL checked against a scheme allowlist
+  before reaching an `href`/`src`, and recursion bounded. Its hostile-input suite
+  asserts against parsed markup, not substrings.
+- **Path traversal is rejected in exactly one place** (`files.VFS.Resolve`). No
+  provider may interpret a path itself.
+
+## Testing conventions
+
+- `core/testutil.Start(t, cfg, plugins...)` boots the real server on ephemeral
+  ports. Pass `nil` config and listener providers are pinned to ephemeral too.
+- **Never bind a well-known port in a test.** 1025, 2121, 2222 collide with a real
+  mail catcher, another test binary, or a stray server.
+- Provider tests are table-driven over golden fixtures in `testdata/`, asserting
+  **both** the canonical model produced **and** the exact HTTP response.
+- Protocol providers must be tested with a **real client over a socket**, not a
+  mocked driver. This is what caught ftpserverlib silently corrupting downloads.
+- Call `plugintest.Conformance` from every plugin and provider package.
+
+## Orchestrating more work with subagents
+
+This project was built by a coordinating session dispatching subagents per task.
+`docs/implementation-plan.md` carries the remaining waves already split into
+independently-ownable chunks. If you continue that way:
+
+- **Give each agent exclusive file ownership** and name what it must not touch.
+  Disjoint directories are what makes parallelism safe.
+- **Subagents must run no git commands.** The coordinator commits, in
+  self-contained chunks, so two agents never race the index.
+- **Only one agent at a time may modify `go.mod`,** and it must add its
+  dependencies *with* the code that imports them. Pre-staging dependencies does
+  not work: unused requires are dropped by any `go mod tidy`.
+- **Point agents at `docs/contracts.md`** and an existing worked example
+  (`plugins/mail/providers/smtp` for listener providers, `plugins/sms/providers/twilio`
+  for HTTP ones, `core/testutil/fakeplugin` for the plugin contract).
+- **Tell agents to report contract gaps rather than patch around them.** Most real
+  core gaps in this project were found this way, and several were found
+  independently by two or three agents at once — that convergence is the reliable
+  signal that something is genuinely wrong.
+- **Verify agent reports independently.** Re-run the gate, and exercise the claim
+  the agent makes. Reports have been accurate but occasionally mis-attribute a
+  failure (a stray process, a sibling's in-flight code).
+- **Clean up background servers you start.** Leftover processes holding 1025/2121
+  cost two different agents real debugging time in this session.
