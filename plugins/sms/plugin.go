@@ -29,9 +29,9 @@ func WithProviders(providers ...plugin.Provider) Option {
 	return func(p *Plugin) { p.providers = append(p.providers, providers...) }
 }
 
-// New returns the sms plugin. With no options it has no providers yet and can
-// only be filled through the API of another plugin's ingress or directly from a
-// test - the Twilio provider lands in a later wave.
+// New returns the sms plugin. With no options it has no providers and can only
+// be filled directly from a test; the wiring in plugins/all passes the real
+// ones.
 func New(opts ...Option) *Plugin {
 	p := &Plugin{}
 	for _, o := range opts {
