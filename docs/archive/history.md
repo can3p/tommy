@@ -1,11 +1,26 @@
-# Archive — Waves 0 to 5
+# History
 
-What was built, why, and what changed under contact with real code. The
-forward-looking plan is `docs/implementation-plan.md`; the interfaces as built
-are `docs/contracts.md`; the transferable lessons are `docs/lessons.md`.
+What has been built, why, and what changed under contact with real code.
+Oldest first. The forward-looking plan is `docs/implementation-plan.md`; the
+interfaces as built are `docs/contracts.md`; the transferable lessons are
+`docs/lessons.md`.
 
 All of this was built by a coordinating session dispatching subagents, one task
 per agent, with exclusive file ownership per task.
+
+> **Adding to this file.** When a wave is finished, move its section here from
+> `docs/implementation-plan.md` and rewrite it in the past tense: what was built,
+> and — the part worth the space — what turned out to be wrong, what a real client
+> or a live vendor doc contradicted, and any contract that had to change. An
+> inventory of files is not worth recording; git already has it. See
+> `CLAUDE.md` → *Finishing a wave* for the full ritual.
+>
+> The shape that has worked, per wave: a one-line summary of what shipped and how
+> many agents ran; **Found** for anything that turned out to be wrong — a vendor
+> behaviour, a library default, a bug in a dependency; **Contract gap** for
+> anything that had to change in `core`, and whether more than one task hit it
+> independently; **Deliberate non-implementation** for what was skipped and why.
+> The Wave 2 and Wave 5 entries below are the fullest examples.
 
 ## Branches
 

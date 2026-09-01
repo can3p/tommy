@@ -2,12 +2,30 @@
 
 Waves 0–5 are built. This document plans what comes next.
 
-- **What was built and why:** `docs/archive/waves-0-5.md`
+- **What was built and why:** `docs/archive/history.md`
 - **The interfaces as built (authoritative):** `docs/contracts.md`
 - **What the work taught us:** `docs/lessons.md`
 - **The original brief:** `docs/plan.md`
 
-## 0. Where things stand
+## 0. Keeping this document current
+
+**This plan is a working document, not a record.** It describes only what is
+still to do.
+
+- When a wave finishes, its section is **deleted from here** and appended to
+  `docs/archive/history.md` in the past tense. The full ritual is in `CLAUDE.md`
+  → *Finishing a wave*; it is required, not optional.
+- When something learned mid-wave changes a later wave, **edit that wave now**,
+  while the reason is still known. A dependency discovered, an ordering
+  constraint, a task that turned out to be unnecessary — all of it belongs here
+  rather than in someone's memory.
+- The status table below is the single source of truth for what exists. Keep it
+  accurate before anything else.
+
+If you are reading a wave section, it has not been built. If you cannot find a
+wave you expected, look in the history.
+
+## 1. Where things stand
 
 | Plugin | Providers | State |
 |---|---|---|
@@ -20,7 +38,7 @@ Waves 0–5 are built. This document plans what comes next.
 Branches: `feat/foundation` (0–3) → `feat/files-plugin` (4) → `feat/chat-plugin`
 (5). None merged to `main`.
 
-## 1. The scoping rule
+## 2. The scoping rule
 
 It does most of the sorting, so it comes first.
 
@@ -39,7 +57,7 @@ inbound traffic of any kind — webhooks and callbacks (Stripe events, Twilio
 `StatusCallback`, SendGrid event webhooks, Slack interactivity and Events API,
 async AS2 MDN) — which would need outbound HTTP and a scenario definition format.
 
-## 2. How to run a wave
+## 3. How to run a wave
 
 The pattern that worked for waves 0–5, in short. `docs/lessons.md` has the
 reasoning; `CLAUDE.md` has the rules.
@@ -56,6 +74,8 @@ reasoning; `CLAUDE.md` has the rules.
 6. **Require live-documentation verification** for anything imitating a third-party
    API, and a **real client over a socket** for anything speaking a wire protocol.
 7. **Verify reports independently**, re-run the gate, and clean up stray servers.
+8. **Finish by updating the documents** — §0. The wave is not done until the plan,
+   the history, the contracts and the lessons match the code.
 
 Model guidance: contract-defining and subtle-parsing work to the stronger model;
 well-specified translation against a fixed contract to the cheaper one.

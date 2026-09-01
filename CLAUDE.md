@@ -12,7 +12,7 @@ more than mail.
 It **captures and displays what was sent**, and answers with whatever the
 protocol requires so the client proceeds. It does **not** simulate scenarios,
 drive inbound traffic, or make policy decisions. That boundary decides what
-belongs here; see `docs/implementation-plan.md` §1.
+belongs here; see `docs/implementation-plan.md` §2.
 
 ## Commands
 
@@ -40,7 +40,7 @@ cd test/integration && go test -tags integration ./...
 | `docs/plan.md` | The original product brief. Requirements, not design. |
 | `docs/contracts.md` | **The core interfaces as built. Authoritative.** Read this before writing a plugin or provider. |
 | `docs/implementation-plan.md` | Forward-looking plan: remaining waves, task breakdown, protocol roadmap. |
-| `docs/archive/waves-0-5.md` | What was built and why, wave by wave, with the decisions that changed under contact with real code. |
+| `docs/archive/history.md` | What was built and why, wave by wave, with the decisions that changed under contact with real code. |
 | `docs/lessons.md` | What this codebase taught us. Read before orchestrating more work. |
 | `docs/clients.md` | Pointing official vendor SDKs at tommy. |
 | `core/` | Event, store, blob, plugin contracts, config, server (ui/api/ingress), testutil. |
@@ -105,6 +105,37 @@ them be built in parallel.
 - Protocol providers must be tested with a **real client over a socket**, not a
   mocked driver. This is what caught ftpserverlib silently corrupting downloads.
 - Call `plugintest.Conformance` from every plugin and provider package.
+
+## Finishing a wave — required, not optional
+
+**A wave is not finished when its code lands. It is finished when the documents
+tell the truth again.** Do this before reporting the wave complete, in the same
+session that built it — a later session cannot reconstruct what an agent
+reported, and stale docs cost the next session more than they cost you.
+
+1. **`docs/implementation-plan.md`** — delete the wave's section. Update the
+   status table at the top and the branch line. If what you learned changes a
+   later wave (a dependency discovered, an ordering constraint, a task that
+   turned out to be unnecessary), edit that wave now while you still know why.
+2. **`docs/archive/history.md`** — append the wave, past tense, oldest-first
+   order. Record what was **built**, and then the part that is actually worth the
+   space: what turned out to be wrong, what a real client or a live vendor
+   document contradicted, which contracts had to change and why, and any
+   deliberate non-implementation with its reasoning. Do not inventory files; git
+   has that.
+3. **`docs/contracts.md`** — if any core interface changed, update it. This is
+   the document every future agent is pointed at as authoritative, so drift here
+   is the most expensive kind. It went stale once already, missing four additions
+   made after it was written.
+4. **`docs/lessons.md`** — add anything that generalises beyond this wave. A
+   finding that would change how someone works, not a fact about one provider.
+5. **`CLAUDE.md`** — update if a rule, invariant, command or convention changed.
+6. **Commit the documentation** as its own commit, so the history shows the plan
+   moving in step with the code.
+
+A useful test for step 2: if a new session read only your archive entry, would it
+avoid repeating the mistakes this wave made? If not, it is an inventory, not a
+history.
 
 ## Orchestrating more work with subagents
 
