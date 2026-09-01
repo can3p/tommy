@@ -1,13 +1,17 @@
 # Tommy core contracts
 
-The interfaces F1 built, as they actually exist in the code. This restates
-`docs/implementation-plan.md` §3 with the deviations that were needed, and is
-the document later waves code against. If a contract needs to change, raise it
-rather than patching it in place.
+The core interfaces as they actually exist in the code, kept current as waves
+land. **This is the authoritative reference** - where it disagrees with
+`docs/implementation-plan.md`, this document is right. If a contract needs to
+change, raise it rather than patching it in place; nearly every real gap found so
+far was reported by an implementer rather than worked around, and several were
+found independently by two or three tasks at once.
 
-Module: `github.com/can3p/tommy`, Go 1.26. Dependencies: `spf13/cobra`,
-`pelletier/go-toml/v2`, `can3p/kleiner` (pre-existing), and
-`PuerkitoBio/goquery` for tests only.
+Module: `github.com/can3p/tommy`, Go 1.26. Core depends on `spf13/cobra` and
+`pelletier/go-toml/v2` (plus `can3p/kleiner`, pre-existing) with
+`PuerkitoBio/goquery` for tests; individual providers add their own protocol
+libraries. The vendor SDKs are deliberately kept out of this module - they live
+in `test/integration`, a nested module of its own.
 
 ---
 
@@ -191,6 +195,18 @@ type Provider interface {
 type ListenerProvider interface {
     Provider
     Listen(ctx context.Context, d Deps) error // reads its ports from d.Config; blocks until ctx done
+}
+
+// AddressableProvider is optional, and every listener provider should implement
+// it. A provider that took an ephemeral port, or that fell back to its own
+// package default because the config named none, is the only thing that knows
+// where it ended up listening; without this the discovery surface advertises no
+// address at all in exactly those two cases. Addr blocks until the listener has
+// bound or the timeout elapses. The server re-resolves these addresses once the
+// providers are up, since none have bound when it is built.
+type AddressableProvider interface {
+    ListenerProvider
+    Addr(timeout time.Duration) (string, error)
 }
 
 type Endpoint struct{ Method, Path, Description string }
@@ -422,11 +438,19 @@ func PluginTemplates(pluginFS fs.FS, patterns ...string) (*template.Template, er
 func Render(w http.ResponseWriter, r *http.Request, title string, body template.HTML) error
 func IsPartial(r *http.Request) bool // htmx asked for a fragment
 func ShellFrom(r *http.Request) *Shell
+func (s *Shell) Info() []plugin.PluginInfo // the plugins in scope of the active tab
 ```
 
 `Render` writes the full shell for a normal request and a bare fragment for an
 htmx swap. The shell arrives through the request context, so `Deps` did not have
 to grow a field.
+
+`Shell.Info()` describes the active tab's plugin — every provider, with snippets
+already rendered against the ports this instance actually bound. A bespoke tab
+needs it to build the how-to-test panel and a snippet-carrying empty state;
+without it, writing your own tab silently costs you the one thing that tells a
+newcomer how to fill it. Evaluated on demand, since rendering snippets is not
+free and most requests never ask.
 
 ### `core/server/ui/components`
 
@@ -454,8 +478,14 @@ Helpers: `jsonView`, `hexView`, `isText`, `pretty`, `bytesHuman`, `truncate`,
 `kv`, `add`, `hasPrefix`, `int64`, `rawMeta`, `summaryOf`, `render`.
 
 Go types behind them: `Badge`, `KV`, `KVTable`, `Cell`, `Row`, `Table`,
-`MasterDetail`, `Stream`, `JSONView`, `HexView`, `EmptyState`, `EventView`,
-`EventFilter`.
+`MasterDetail`, `Stream`, `JSONView`, `HexView`, `EmptyState`, `HowToTest`,
+`EventView`, `EventFilter`.
+
+`how-to-test` takes a `components.HowToTest{Info []plugin.PluginInfo, Open bool}`.
+**Pass `Open` true when your tab has nothing to show** - an empty tab is exactly
+when someone needs to know how to fill it - and false once it has content. Build
+it from `ui.ShellFrom(r).Info()`; `plugins/mail/ui.go` and `plugins/sms/ui.go`
+both do, and every tab should use this shared component rather than cloning it.
 
 ## `core/server` — lifecycle
 
@@ -489,9 +519,17 @@ prefixes win over the ingress catch-all.
 func Start(t testing.TB, cfg *config.Config, plugins ...plugin.Plugin) *Instance
 ```
 
-`cfg == nil` means ephemeral ports. Returns resolved `UIURL`, `APIURL`,
-`IngressURL`, plus `Store`, `Blobs`, `Registry`, `Config` and an `http.Client`.
-Every instance is fresh and is shut down through `t.Cleanup`.
+`cfg == nil` means ephemeral ports **including listener providers**: their config
+sections are pinned to port 0 so nothing binds a well-known port. That matters -
+`config.Ephemeral()` alone only zeroes the three core listeners, so a provider
+falls back to its package default and a test asking for an ephemeral server binds
+1025 or 2121, colliding with a real mail catcher, another test binary, or a stray
+server, and failing only sometimes and only on some machines. Pass a config of
+your own and an explicit port in it is left alone.
+
+Returns resolved `UIURL`, `APIURL`, `IngressURL`, plus `Store`, `Blobs`,
+`Registry`, `Config` and an `http.Client`. Every instance is fresh and is shut
+down through `t.Cleanup`.
 
 Helpers: `Get`, `GetBody`, `GetJSON`, `PostJSON`, `Do`, `Events(q)`,
 `WaitForEvents(n, q, timeout)`, and the URL builders `API`, `UI`, `Ingress`.
@@ -520,3 +558,13 @@ exercises the generic view). Read it before writing a plugin.
 7. Read-back endpoints serve from the `Store`, so an SDK that writes then fetches
    sees its own write.
 8. Never import another provider's package.
+9. A listener provider implements `AddressableProvider` and treats `port: 0` as
+   ephemeral, so tests never bind a well-known port.
+10. A bespoke tab renders the shared `how-to-test` component from
+    `ui.ShellFrom(r).Info()`, open when the tab is empty.
+11. Anything captured is untrusted: interpolate as a plain string through
+    `html/template`, never `template.HTML`; check URLs against a scheme allowlist
+    before they reach an `href`/`src`; keep captured HTML out of the page DOM.
+12. Verify wire formats against **live vendor documentation**, and test a wire
+    protocol with a **real client over a socket** - both have repeatedly caught
+    errors that hand-built tests did not.
