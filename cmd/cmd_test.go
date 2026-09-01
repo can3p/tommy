@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/can3p/tommy/plugins/all"
 )
 
 func resetFlags(t *testing.T) {
@@ -119,7 +122,10 @@ func TestNewLogger(t *testing.T) {
 	}
 }
 
-func TestProvidersCommandWithNoPlugins(t *testing.T) {
+// The command describes whatever this binary was compiled with, so the test
+// asserts the shape of the output rather than a fixed roster that changes every
+// time a plugin is added.
+func TestProvidersCommandListsCompiledPlugins(t *testing.T) {
 	resetFlags(t)
 	var out bytes.Buffer
 	providersCmd.SetOut(&out)
@@ -128,8 +134,21 @@ func TestProvidersCommandWithNoPlugins(t *testing.T) {
 	if err := providersCmd.RunE(providersCmd, nil); err != nil {
 		t.Fatalf("providers: %v", err)
 	}
-	if !strings.Contains(out.String(), "No plugins are enabled") {
-		t.Errorf("output = %q", out.String())
+
+	got := out.String()
+	if len(all.Plugins()) == 0 {
+		if !strings.Contains(got, "No plugins are enabled") {
+			t.Errorf("with nothing compiled in, output = %q", got)
+		}
+		return
+	}
+	for _, p := range all.Plugins() {
+		if !strings.Contains(got, p.Name()) {
+			t.Errorf("output does not mention plugin %q: %q", p.Name(), got)
+		}
+		if !strings.Contains(got, p.Description()) {
+			t.Errorf("output does not carry %q's description, which is the point of the command", p.Name())
+		}
 	}
 }
 
@@ -146,8 +165,20 @@ func TestProvidersCommandJSON(t *testing.T) {
 	if err := providersCmd.RunE(providersCmd, nil); err != nil {
 		t.Fatalf("providers: %v", err)
 	}
-	if strings.TrimSpace(out.String()) != "[]" {
-		t.Errorf("json output = %q", out.String())
+	var got []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out.String())
+	}
+	if len(got) != len(all.Plugins()) {
+		t.Fatalf("described %d plugins, want the %d compiled in", len(got), len(all.Plugins()))
+	}
+	for _, p := range got {
+		if p.Name == "" || p.Description == "" {
+			t.Errorf("plugin %+v is missing a name or description", p)
+		}
 	}
 }
 
