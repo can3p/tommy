@@ -87,10 +87,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # test/integration is its own Go module so the vendor SDKs it drives never
+      # enter tommy's go.mod. That also keeps it out of the root ./... , so it
+      # has to be invoked on its own.
       - name: Run integration tests
         run: |
-          if [ -d test/integration ]; then
-            go test -tags integration ./test/integration/...
+          if [ -f test/integration/go.mod ]; then
+            cd test/integration && go test -tags integration -count=1 ./...
           else
             echo "test/integration does not exist yet; skipping."
           fi

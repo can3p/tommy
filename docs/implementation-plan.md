@@ -5,17 +5,63 @@ implementation: it defines the shared interfaces first, then splits the work int
 waves of independent tasks with **strict file ownership** so multiple agents can
 work concurrently without touching the same files.
 
-## 0. Current state
+## 0. Status
 
-The repository is bare scaffolding produced by [kleiner](https://github.com/can3p/kleiner):
+**Waves 0-3 are built and committed.** What follows is the plan as written before
+implementation, kept because the contracts in §3 and the analysis in §6, §7, §12
+and §13 are still the reference. `docs/contracts.md` restates the interfaces **as
+built** and is authoritative where the two disagree.
 
-- `main.go` → `cmd.Execute()`
-- `cmd/root.go` — cobra root, kleiner build-info + update-notifier wiring
-- `generated/buildinfo/` — version metadata (leave alone)
-- `.goreleaser.yaml` — `CGO_ENABLED=0`, linux/darwin, plain `go build`
-- **No `go.mod`, no `.github/`** — module path is `github.com/can3p/tommy` (per existing imports)
+| Wave | State |
+|---|---|
+| 0 — core foundation, CI | done |
+| 1 — mail and sms plugin cores | done |
+| 2 — mailjet, sendgrid, twilio, smtp providers | done |
+| 3 — CLI, UI polish, `clienthelp`, e2e, SDK integration tests | done |
+| 4 — `files` plugin: FTP, SFTP | not started |
+| 5 — `chat` plugin: Slack, Teams | not started |
+| 6+ — §13 tier 1 protocols | not started |
 
-Everything below is new code.
+### What changed under contact with real code
+
+Each of these was found by an implementer and fixed in core rather than worked
+around, and most were found independently by two or three tasks at once:
+
+- **`RegisterAPI`/`RegisterUI`/`RegisterIngress` take a `plugin.Mux`,** not
+  `*http.ServeMux`. Reporting a route collision "naming both claimants" is
+  impossible when routes disappear into a concrete mux: it panics anonymously on
+  exact duplicates and silently shadows overlapping patterns.
+- **Blobs are never evicted.** `Put` reports exhausted capacity instead, because
+  evicting one would break a download link for a message still listed.
+- **`Shell.Info()`** — a bespoke tab could not render the how-to-test panel or a
+  snippet-carrying empty state, so writing your own tab silently cost you the one
+  thing that tells a newcomer how to fill it.
+- **`AddressableProvider`** — a listener's address was derived from configuration
+  alone, which is wrong for a provider that took an ephemeral port or fell back to
+  its own default. Both were advertised with no address at all.
+- **`testutil` pins listener providers to ephemeral ports.** `config.Ephemeral`
+  only zeroed the three core listeners, so tests still bound the well-known 1025.
+- **The how-to-test panel takes an explicit `Open`.** It had keyed that on "are
+  any plugins configured", which is never what a tab wants to know.
+
+Two plan assumptions were wrong about the outside world, both caught by checking
+live vendor documentation rather than trusting the summaries written here:
+Mailjet issues **a separate message id per recipient** across To/Cc/Bcc and
+returns per-message failures inside a 200; and `mailjet-apiv3-go` builds its URL
+as `base + ".1/send"`, so the base URL must already end in `/v3`.
+
+The `twiliohelp` package proposed in §6.2 was **not** built. Shipping it would put
+`twilio-go` in tommy's own `go.mod` and hand it to everyone importing tommy, to
+save six lines; `clienthelp` ships the generic transport instead and
+`docs/clients.md` carries the wiring. For the same reason the vendor-SDK tests
+live in `test/integration`, a nested module of its own.
+
+## 0a. Starting point
+
+The repository was bare scaffolding produced by [kleiner](https://github.com/can3p/kleiner):
+`main.go`, a cobra root with build-info and update-notifier wiring,
+`generated/buildinfo/`, and a goreleaser config — with no `go.mod` and no
+`.github/`. Everything below was new code.
 
 ## 1. Decisions
 
