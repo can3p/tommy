@@ -1,7 +1,7 @@
 # Lessons
 
 What building tommy taught us. Written for whoever continues the work — the
-specifics are in `docs/archive/waves-0-5.md`; this is what generalises.
+specifics are in `docs/archive/history.md`; this is what generalises.
 
 ## On the design
 
