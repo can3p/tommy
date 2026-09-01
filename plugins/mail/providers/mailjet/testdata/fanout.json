@@ -1,0 +1,17 @@
+{
+  "Messages": [
+    {
+      "From": {"Email": "alice@example.com"},
+      "To": [{"Email": "bob@example.com"}],
+      "Subject": "Fanned one",
+      "TextPart": "first"
+    },
+    {
+      "From": {"Email": "alice@example.com"},
+      "To": [{"Email": "carol@example.com"}],
+      "Cc": [{"Email": "dan@example.com"}],
+      "Subject": "Fanned two",
+      "HTMLPart": "<p>second</p>"
+    }
+  ]
+}

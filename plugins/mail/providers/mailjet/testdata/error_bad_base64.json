@@ -1,0 +1,13 @@
+{
+  "Messages": [
+    {
+      "From": {"Email": "alice@example.com"},
+      "To": [{"Email": "bob@example.com"}],
+      "Subject": "Bad attachment",
+      "TextPart": "oops",
+      "Attachments": [
+        {"ContentType": "text/plain", "Filename": "note.txt", "Base64Content": "not-base64!!"}
+      ]
+    }
+  ]
+}

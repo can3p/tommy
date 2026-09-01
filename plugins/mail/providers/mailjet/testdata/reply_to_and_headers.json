@@ -1,0 +1,17 @@
+{
+  "Messages": [
+    {
+      "From": {"Email": "alice@example.com", "Name": "Alice"},
+      "To": [{"Email": "bob@example.com"}],
+      "Cc": [{"Email": "carol@example.com"}],
+      "Bcc": [{"Email": "dan@example.com"}],
+      "ReplyTo": {"Email": "no-reply@example.com", "Name": "No Reply"},
+      "Subject": "Invoice 42",
+      "TextPart": "Please pay the attached invoice.",
+      "Headers": {"X-Campaign": "billing", "X-Trace": "abc123"},
+      "CustomID": "invoice-42",
+      "CustomCampaign": "billing-2026",
+      "EventPayload": {"order_id": 42}
+    }
+  ]
+}

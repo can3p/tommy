@@ -1,0 +1,17 @@
+{
+  "Messages": [
+    {
+      "From": {"Email": "alice@example.com"},
+      "To": [{"Email": "bob@example.com"}],
+      "Subject": "Receipt",
+      "TextPart": "See attached.",
+      "HTMLPart": "<p>See attached.</p><img src=\"cid:logo\">",
+      "Attachments": [
+        {"ContentType": "text/csv", "Filename": "invoice.csv", "Base64Content": "aW52b2ljZSw0Mgo="}
+      ],
+      "InlinedAttachments": [
+        {"ContentType": "image/png", "Filename": "logo.png", "ContentID": "logo", "Base64Content": "iVBORw0KGgo="}
+      ]
+    }
+  ]
+}
