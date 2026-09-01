@@ -74,6 +74,10 @@ type inboxView struct {
 	Messages  []messageRow
 	Providers []string
 	Selected  *messageDetail
+
+	// info describes this plugin's providers, so the empty state can offer a
+	// command that actually puts a message in.
+	info []plugin.ProviderInfo
 }
 
 // ListURL is where the list fragment is fetched from.
@@ -138,9 +142,9 @@ func (v inboxView) MessageTable() components.Table {
 	return t
 }
 
-// EmptyState is what the detail pane shows with nothing selected. The tab
-// cannot render the "How to test" panel - a plugin UI handler is not given the
-// registry - so it points at the overview, which can.
+// EmptyState is what the detail pane shows with nothing selected. With no mail
+// at all it carries the enabled providers, so the panel that tells you how to
+// send one is on the tab where you noticed it was empty.
 func (v inboxView) EmptyState() components.EmptyState {
 	if len(v.Messages) > 0 {
 		return components.EmptyState{
@@ -149,8 +153,9 @@ func (v inboxView) EmptyState() components.EmptyState {
 		}
 	}
 	return components.EmptyState{
-		Title:   "No mail yet",
-		Message: "Point your application's mail client at tommy and whatever it sends lands here, live. The Overview tab lists every enabled provider with a copy-paste command that puts a message in.",
+		Title:     "No mail yet",
+		Message:   "Point your application's mail client at tommy and whatever it sends lands here, live.",
+		Providers: v.info,
 	}
 }
 
@@ -286,6 +291,7 @@ func (h *uiHandler) view(r *http.Request) (inboxView, error) {
 	v := inboxView{
 		Base:    UIPrefix,
 		APIBase: strings.TrimSuffix(shell.APIBase, "/"),
+		info:    providerInfo(shell),
 		Filter: inboxFilter{
 			Search:      q.Get("search"),
 			Provider:    q.Get("provider"),
@@ -508,4 +514,15 @@ func (h *uiHandler) fragment(w http.ResponseWriter, name string, data any) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(body))
+}
+
+// providerInfo pulls this plugin's providers out of the shell, so the empty
+// state can show snippets rendered against the ports actually in use.
+func providerInfo(shell *ui.Shell) []plugin.ProviderInfo {
+	for _, p := range shell.Info() {
+		if p.Name == PluginName {
+			return p.Providers
+		}
+	}
+	return nil
 }

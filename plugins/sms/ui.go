@@ -58,9 +58,8 @@ type tabView struct {
 	Selected      *threadView
 	Total         int
 
-	// Providers feeds the empty state. Snippets are rendered against the live
-	// ports by the core, which a plugin tab has no access to, so the tab points
-	// at the overview for those.
+	// Providers feeds the empty state, carrying snippets already rendered
+	// against the ports this instance actually bound.
 	Providers []plugin.ProviderInfo
 }
 
@@ -179,7 +178,7 @@ func (h *uiHandler) view(r *http.Request, selectedKey string) (tabView, error) {
 		APIBase:     APIBase,
 		StreamEvent: EventType,
 		Search:      search,
-		Providers:   h.providerInfo(),
+		Providers:   h.providerInfo(coreui.ShellFrom(r)),
 	}
 
 	convs := Conversations(events)
@@ -295,11 +294,17 @@ func encodingTitle(e Encoding) string {
 	return "The GSM-7 default alphabet: 160 characters per segment, 153 when concatenated"
 }
 
-// providerInfo describes the plugin's own providers for the empty state. It
-// carries no snippets: those are rendered against the ports this instance
-// actually bound, which only the core registry knows, so the tab links to the
-// overview for them instead of printing a snippet with the wrong port.
-func (h *uiHandler) providerInfo() []plugin.ProviderInfo {
+// providerInfo describes this plugin's providers for the empty state, taken
+// from the shell so the snippets carry the ports actually in use. It falls back
+// to the plugin's own list, without snippets, if the shell has no registry -
+// which happens only in a handler tested in isolation.
+func (h *uiHandler) providerInfo(shell *coreui.Shell) []plugin.ProviderInfo {
+	for _, p := range shell.Info() {
+		if p.Name == Name {
+			return p.Providers
+		}
+	}
+
 	var out []plugin.ProviderInfo
 	for _, prov := range h.plugin.Providers() {
 		_, listener := prov.(plugin.ListenerProvider)
