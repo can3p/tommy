@@ -1,0 +1,32 @@
+{
+  "@type": "MessageCard",
+  "@context": "http://schema.org/extensions",
+  "themeColor": "0076D7",
+  "summary": "Deployment finished",
+  "title": "Deployment to *production* finished",
+  "text": "Release `v1.4.2` was deployed successfully.",
+  "sections": [
+    {
+      "activityTitle": "Jenkins",
+      "activitySubtitle": "Deploy pipeline",
+      "activityImage": "https://example.com/jenkins.png",
+      "facts": [
+        { "name": "Environment", "value": "production" },
+        { "name": "Duration", "value": "2m31s" }
+      ],
+      "text": "All health checks passed."
+    }
+  ],
+  "potentialAction": [
+    {
+      "@type": "OpenUri",
+      "name": "View build",
+      "targets": [{ "os": "default", "uri": "https://ci.example.com/build/99" }]
+    },
+    {
+      "@type": "OpenUri",
+      "name": "View logs",
+      "targets": [{ "os": "default", "uri": "https://ci.example.com/build/99/log" }]
+    }
+  ]
+}

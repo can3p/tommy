@@ -1,0 +1,22 @@
+[
+  {
+    "fallback": "Required plain-text summary of the attachment.",
+    "color": "#36a64f",
+    "pretext": "Optional _pretext_ that appears above the attachment block",
+    "author_name": "Bobby Tables",
+    "author_link": "https://example.com/users/bobby",
+    "author_icon": "https://example.com/icons/bobby.png",
+    "title": "Slack API Documentation",
+    "title_link": "https://api.slack.com/",
+    "text": "Optional *text* that appears within the attachment",
+    "fields": [
+      { "title": "Priority", "value": "High", "short": false },
+      { "title": "Environment", "value": "production", "short": true }
+    ],
+    "image_url": "https://example.com/images/preview.png",
+    "thumb_url": "https://example.com/images/thumb.png",
+    "footer": "Slack API",
+    "footer_icon": "https://platform.slack-edge.com/img/default_application_icon.png",
+    "ts": 1701350400
+  }
+]
