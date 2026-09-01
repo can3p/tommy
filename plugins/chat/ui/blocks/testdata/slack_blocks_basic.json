@@ -1,0 +1,46 @@
+[
+  {
+    "type": "header",
+    "text": { "type": "plain_text", "text": "Build failed", "emoji": true }
+  },
+  {
+    "type": "section",
+    "text": {
+      "type": "mrkdwn",
+      "text": "Pipeline *nightly-build* failed on branch `main`. See <https://ci.example.com/build/42|build #42> for the log. <@U0123ABCD> please take a look."
+    },
+    "accessory": {
+      "type": "image",
+      "image_url": "https://example.com/status/red.png",
+      "alt_text": "failed"
+    }
+  },
+  {
+    "type": "section",
+    "fields": [
+      { "type": "mrkdwn", "text": "*Branch:*\nmain" },
+      { "type": "mrkdwn", "text": "*Duration:*\n4m12s" }
+    ]
+  },
+  { "type": "divider" },
+  {
+    "type": "context",
+    "elements": [
+      { "type": "image", "image_url": "https://example.com/avatar.png", "alt_text": "bot" },
+      { "type": "mrkdwn", "text": "Posted by *CI bot* in <#C0123CHAN|builds>" }
+    ]
+  },
+  {
+    "type": "actions",
+    "elements": [
+      { "type": "button", "text": { "type": "plain_text", "text": "Re-run" }, "style": "primary", "value": "rerun_42" },
+      { "type": "button", "text": { "type": "plain_text", "text": "Cancel" }, "style": "danger", "value": "cancel_42" }
+    ]
+  },
+  {
+    "type": "image",
+    "image_url": "https://example.com/graph.png",
+    "alt_text": "duration graph",
+    "title": { "type": "plain_text", "text": "Duration over time" }
+  }
+]

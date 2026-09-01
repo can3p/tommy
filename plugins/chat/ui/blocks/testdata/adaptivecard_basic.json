@@ -1,0 +1,62 @@
+{
+  "type": "AdaptiveCard",
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "version": "1.4",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "Order **#1234** shipped",
+      "weight": "Bolder",
+      "size": "Medium",
+      "wrap": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "Placed by *Alice Example* on 2024-01-05",
+      "isSubtle": true,
+      "wrap": true
+    },
+    {
+      "type": "FactSet",
+      "facts": [
+        { "title": "Order", "value": "#1234" },
+        { "title": "Carrier", "value": "Example Post" }
+      ]
+    },
+    {
+      "type": "ColumnSet",
+      "columns": [
+        {
+          "type": "Column",
+          "width": "stretch",
+          "items": [
+            { "type": "TextBlock", "text": "Left column", "wrap": true },
+            {
+              "type": "Container",
+              "items": [
+                { "type": "TextBlock", "text": "Nested container text", "wrap": true }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Column",
+          "width": "auto",
+          "items": [
+            { "type": "Image", "url": "https://example.com/thumb.png", "altText": "thumbnail", "size": "Small" }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "ActionSet",
+      "actions": [
+        { "type": "Action.OpenUrl", "title": "Track shipment", "url": "https://example.com/track/1234" }
+      ]
+    }
+  ],
+  "actions": [
+    { "type": "Action.OpenUrl", "title": "View order", "url": "https://example.com/orders/1234" },
+    { "type": "Action.Submit", "title": "Mark received", "style": "positive" }
+  ]
+}
