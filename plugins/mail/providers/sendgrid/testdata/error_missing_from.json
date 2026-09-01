@@ -1,0 +1,8 @@
+{
+  "personalizations": [
+    {"to": [{"email": "bob@example.com"}]}
+  ],
+  "content": [
+    {"type": "text/plain", "value": "no from here"}
+  ]
+}

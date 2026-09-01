@@ -1,0 +1,15 @@
+{
+  "personalizations": [
+    {"to": [{"email": "bob@example.com", "name": "Bob"}], "subject": "Hi Bob"}
+  ],
+  "from": {"email": "alice@example.com", "name": "Alice"},
+  "subject": "Default subject",
+  "content": [
+    {"type": "text/plain", "value": "Hello in text."},
+    {"type": "text/html", "value": "<p>Hello in <b>html</b>.</p>"}
+  ],
+  "categories": ["welcome", "onboarding"],
+  "custom_args": {"user_id": "42"},
+  "batch_id": "batch-abc",
+  "ip_pool_name": "transactional"
+}

@@ -1,0 +1,6 @@
+{
+  "from": {"email": "alice@example.com"},
+  "content": [
+    {"type": "text/plain", "value": "no personalizations here"}
+  ]
+}
