@@ -10,6 +10,7 @@ import (
 	"context"
 	"io/fs"
 	"net/http"
+	"time"
 
 	"github.com/can3p/tommy/core/config"
 )
@@ -60,6 +61,23 @@ type ListenerProvider interface {
 // Endpoint documents one route a provider mounts on the ingress. It is the
 // discovery surface: /api/v1/plugins, the UI and `tommy providers` all read it,
 // and plugintest.Conformance checks that every declared endpoint is reachable.
+// AddressableProvider is an optional interface a ListenerProvider may
+// implement to report the address it actually bound.
+//
+// A provider that takes an ephemeral port, or that falls back to its own
+// default when the configuration names none, is the only thing that knows
+// where it ended up listening. Without this the discovery surface has to guess
+// from configuration alone and gets it wrong in exactly those two cases, which
+// leaves a snippet telling someone to connect to the wrong port - or to no
+// port at all.
+//
+// Addr blocks until the listener has bound or the timeout elapses, and returns
+// an error if it never does.
+type AddressableProvider interface {
+	ListenerProvider
+	Addr(timeout time.Duration) (string, error)
+}
+
 type Endpoint struct {
 	Method      string `json:"method"`
 	Path        string `json:"path"`

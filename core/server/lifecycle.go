@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -188,17 +189,39 @@ func (s *Server) bind() error {
 	return nil
 }
 
-// buildSnippetCtx resolves the addresses snippets render against. Listener
-// providers cannot be probed, so their address comes from their config.
+// listenerAddrTimeout bounds how long resolving a listener's address may wait
+// for it to bind. Once bound the answer is immediate, so this only bites before
+// startup finishes or for a listener that never came up.
+const listenerAddrTimeout = 250 * time.Millisecond
+
+// buildSnippetCtx resolves the addresses snippets render against.
 func (s *Server) buildSnippetCtx() plugin.SnippetCtx {
 	ctx := plugin.NewSnippetCtx(s.cfg.Host, s.addrs.UI, s.addrs.API, s.addrs.Ingress)
 	for _, ref := range s.reg.ListenerRefs() {
-		pc := s.reg.ProviderConfig(ref.Plugin.Name(), ref.Provider.Name())
-		if pc.Port > 0 {
-			ctx.SetAddr(ref.Plugin.Name(), ref.Provider.Name(), fmt.Sprintf("%s:%d", s.cfg.Host, pc.Port))
+		if addr := s.listenerAddr(ref); addr != "" {
+			ctx.SetAddr(ref.Plugin.Name(), ref.Provider.Name(), addr)
 		}
 	}
 	return ctx
+}
+
+// listenerAddr reports where a listener provider can actually be reached.
+//
+// Ask the provider first: one that took an ephemeral port, or that fell back to
+// its own default because the configuration named none, is the only thing that
+// knows where it ended up. Configuration is the fallback, and on its own it is
+// wrong in both of those cases - which is how a snippet ends up telling someone
+// to connect to a port nothing is listening on.
+func (s *Server) listenerAddr(ref plugin.Ref) string {
+	if a, ok := ref.Provider.(plugin.AddressableProvider); ok {
+		if addr, err := a.Addr(listenerAddrTimeout); err == nil && addr != "" {
+			return addr
+		}
+	}
+	if pc := s.reg.ProviderConfig(ref.Plugin.Name(), ref.Provider.Name()); pc.Port > 0 {
+		return net.JoinHostPort(s.cfg.Host, strconv.Itoa(pc.Port))
+	}
+	return ""
 }
 
 func (s *Server) build() error {
@@ -333,6 +356,16 @@ func (s *Server) Start(ctx context.Context) error {
 		}()
 	}
 
+	// Listener providers bind asynchronously, so pick their addresses up once
+	// they are up rather than reporting the empty ones captured at build time.
+	if len(s.listeners) > 0 {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.resolveListenerAddrs()
+		}()
+	}
+
 	return nil
 }
 
@@ -412,7 +445,23 @@ func (s *Server) URLs() (uiURL, apiURL, ingressURL string) {
 }
 
 // SnippetCtx returns the live addresses snippets render against.
-func (s *Server) SnippetCtx() plugin.SnippetCtx { return s.snippet }
+func (s *Server) SnippetCtx() plugin.SnippetCtx {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.snippet
+}
+
+// resolveListenerAddrs refreshes the listener addresses once the providers have
+// bound. They cannot be known when the server is built, because a listener
+// provider does not start until Start runs - so without this pass a provider
+// that took an ephemeral port, or fell back to its own default, is advertised
+// with no address at all.
+func (s *Server) resolveListenerAddrs() {
+	ctx := s.buildSnippetCtx()
+	s.mu.Lock()
+	s.snippet = ctx
+	s.mu.Unlock()
+}
 
 // Store, Blobs and Registry expose the wiring, mostly for tests.
 func (s *Server) Store() store.Store         { return s.store }
