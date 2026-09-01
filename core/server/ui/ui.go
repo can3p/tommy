@@ -228,7 +228,21 @@ type Shell struct {
 	Stream  string
 	Version string
 
-	tpl *template.Template
+	tpl  *template.Template
+	info func() []plugin.PluginInfo
+}
+
+// Info describes the plugins in scope of the active tab: just that plugin, or
+// every one of them on the overview. A bespoke tab needs this to render the
+// how-to-test panel and an empty state carrying runnable snippets, which the
+// generic view gets for free - without it, writing your own tab means losing
+// them. Evaluated on demand, since rendering snippets is not free and most
+// requests never ask.
+func (s *Shell) Info() []plugin.PluginInfo {
+	if s == nil || s.info == nil {
+		return nil
+	}
+	return s.info()
 }
 
 func (u *UI) shell(active string) *Shell {
@@ -240,6 +254,7 @@ func (u *UI) shell(active string) *Shell {
 		Stream:  Prefix + "/stream",
 		Version: u.opts.Version,
 		tpl:     u.tpl,
+		info:    func() []plugin.PluginInfo { return u.info(active) },
 	}
 }
 

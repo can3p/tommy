@@ -422,3 +422,52 @@ func TestRootRedirectsToTheUI(t *testing.T) {
 		t.Errorf("Location = %q", loc)
 	}
 }
+
+// infoCapturePlugin renders its own tab and records what Shell.Info gave it.
+type infoCapturePlugin struct {
+	customUIPlugin
+	got *[]plugin.PluginInfo
+}
+
+func (p infoCapturePlugin) RegisterUI(mux plugin.Mux, d plugin.Deps) {
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		*p.got = ui.ShellFrom(r).Info()
+		_ = ui.Render(w, r, "Custom", `<div>bespoke</div>`)
+	})
+}
+
+// A bespoke plugin tab must be able to reach the same plugin descriptions the
+// generic view uses. Without this, writing your own tab silently costs you the
+// how-to-test panel and the runnable snippets in the empty state.
+func TestShellInfoIsAvailableToAPluginTab(t *testing.T) {
+	var got []plugin.PluginInfo
+	p := infoCapturePlugin{got: &got}
+
+	inst := testutil.Start(t, nil, p)
+
+	res, err := http.Get(inst.UIURL + "/" + p.Name() + "/")
+	if err != nil {
+		t.Fatalf("get tab: %v", err)
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if len(got) != 1 {
+		t.Fatalf("Info() described %d plugins, want only the active one", len(got))
+	}
+	if got[0].Name != p.Name() {
+		t.Errorf("Info() described %q, want the active plugin %q", got[0].Name, p.Name())
+	}
+	if len(got[0].Providers) == 0 {
+		t.Fatal("Info() described no providers, so a tab could not render snippets")
+	}
+	for _, pr := range got[0].Providers {
+		if len(pr.Snippets) == 0 {
+			t.Errorf("provider %q reached the tab with no snippets", pr.Name)
+		}
+		for _, sn := range pr.Snippets {
+			if strings.Contains(sn.Code, "{{") {
+				t.Errorf("snippet %q reached the tab unrendered: %s", sn.Title, sn.Code)
+			}
+		}
+	}
+}
