@@ -1,0 +1,11 @@
+{
+  "Messages": [
+    {
+      "From": {"Email": "alice@example.com", "Name": "Alice"},
+      "To": [{"Email": "bob@example.com", "Name": "Bob"}],
+      "Subject": "Hello from tommy",
+      "TextPart": "It works.",
+      "HTMLPart": "<p>It <b>works</b>.</p>"
+    }
+  ]
+}

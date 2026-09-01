@@ -1,0 +1,9 @@
+{
+  "Messages": [
+    {
+      "From": {"Email": "alice@example.com"},
+      "To": [{"Email": "bob@example.com"}],
+      "Subject": "Empty"
+    }
+  ]
+}
