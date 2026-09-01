@@ -1,0 +1,251 @@
+{{/*
+The chat tab: a channel sidebar on the left and the selected channel's message
+stream on the right, with replies nested under the message they answer.
+
+Author names and message text are untrusted input - they are whatever the
+application under test posted. They are interpolated as plain strings so
+html/template escapes them, never as template.HTML; whitespace is preserved
+with CSS rather than with markup.
+
+Structured content (Block Kit, MessageCard, Adaptive Card) is shown as the
+message's plain-text fallback plus a collapsible JSON inspector over the
+verbatim payload. "chat-content" below is the seam a real card renderer slots
+into.
+*/}}
+
+{{define "chat-tab"}}
+{{template "chat-style"}}
+<div class="chat-tab">
+{{template "how-to-test" .HowToTest}}
+{{- if .HasMessages}}
+{{template "master-detail" (dict
+    "Title" "Chat"
+    "Toolbar" (render "chat-toolbar" .)
+    "List" (render "chat-channels" .)
+    "ListID" "list"
+    "Detail" (render "chat-stream" .)
+    "DetailID" "detail"
+    "Empty" "")}}
+{{- else}}
+<div class="toolbar">{{template "chat-toolbar" .}}</div>
+<div id="list" hx-get="{{.Base}}/" hx-trigger="sse:{{.StreamEvent}} throttle:400ms" hx-target="#main" hx-swap="innerHTML">
+  {{template "chat-empty" .}}
+</div>
+{{- end}}
+</div>
+{{end}}
+
+
+{{define "chat-toolbar"}}
+<form class="filters" hx-get="{{.Base}}/list" hx-target="#list" hx-swap="innerHTML"
+      hx-trigger="input changed delay:250ms from:find input, submit" hx-push-url="false">
+  <input type="search" name="search" placeholder="Search channels, authors and text" value="{{.Search}}" aria-label="Search chat messages">
+  <button type="button" class="danger"
+          hx-delete="{{.Base}}/events"
+          hx-target="#main"
+          hx-swap="innerHTML"
+          hx-confirm="Delete every captured chat message?">Clear</button>
+</form>
+{{end}}
+
+
+{{/* chat-channels is the sidebar, refreshed whenever a message arrives. */}}
+{{define "chat-channels"}}
+<div id="chat-channel-list"
+     hx-get="{{.ListURL}}"
+     hx-trigger="sse:{{.StreamEvent}} throttle:400ms"
+     hx-target="#list"
+     hx-swap="innerHTML">
+  <ul class="chat-channels">
+  {{- range .Channels}}
+    <li class="chat-channel{{if .Selected}} selected{{end}}">
+      <a href="{{.URL}}" hx-get="{{.URL}}" hx-target="#detail" hx-swap="innerHTML" hx-push-url="true">
+        <span class="chat-channel-head">
+          <span class="chat-channel-name">{{.Title}}</span>
+          <span class="muted chat-channel-time" title="{{timeFull .At}}">{{since .At}} ago</span>
+        </span>
+        <span class="chat-channel-preview">{{if .Author}}<span class="chat-channel-author">{{.Author}}:</span> {{end}}{{.Preview}}</span>
+        <span class="chat-channel-foot">
+          <span class="muted">{{.Count}} message{{if ne .Count 1}}s{{end}} · {{.Threads}} thread{{if ne .Threads 1}}s{{end}}</span>
+          {{template "badges" .Badges}}
+        </span>
+      </a>
+    </li>
+  {{- else}}
+    <li class="muted chat-channel-none">No channel matches that search.</li>
+  {{- end}}
+  </ul>
+  <p class="muted count">{{len .Channels}} channel{{if ne (len .Channels) 1}}s{{end}} · {{.Total}} message{{if ne .Total 1}}s{{end}}</p>
+</div>
+{{end}}
+
+
+{{/* chat-stream is the right-hand pane: the open channel, or a nudge. */}}
+{{define "chat-stream"}}
+{{- if .Selected}}
+<div id="chat-stream"
+     hx-get="{{.Selected.URL}}"
+     hx-trigger="sse:{{.StreamEvent}} throttle:400ms"
+     hx-target="#detail"
+     hx-swap="innerHTML">
+  <header class="chat-stream-head">
+    <h2>{{.Selected.Title}}</h2>
+    {{- if ne .Selected.ID .Selected.Title}}<p class="muted mono chat-stream-id">{{.Selected.ID}}</p>{{end}}
+    <p class="muted chat-stream-summary">{{.Selected.Count}} message{{if ne .Selected.Count 1}}s{{end}} · {{len .Selected.Threads}} thread{{if ne (len .Selected.Threads) 1}}s{{end}} · last activity <span title="{{timeFull .Selected.At}}">{{since .Selected.At}} ago</span></p>
+  </header>
+  <div class="chat-threads">
+    {{- range .Selected.Threads}}{{template "chat-thread" .}}{{end}}
+  </div>
+</div>
+{{- else}}
+<div class="empty-state">
+  <h3>Pick a channel</h3>
+  <p>Select a channel on the left to read it as a chat client would show it, with every reply nested under the message it answers.</p>
+</div>
+{{- end}}
+{{end}}
+
+
+{{/* chat-thread is one root message plus the replies hanging under it. A
+     thread whose parent was never captured - posted before tommy started, or
+     evicted from the ring buffer - still renders its replies and says so. */}}
+{{define "chat-thread"}}
+<section class="chat-thread{{if .Orphan}} chat-thread-orphan{{end}}" id="thread-{{.Key}}">
+  {{- if .Root}}
+  {{template "chat-message" .Root}}
+  {{- else}}
+  <div class="chat-missing-parent">
+    <p class="muted">The parent message <span class="mono">{{.RootID}}</span> was never captured - it was posted before tommy started, or it has been evicted from the ring buffer. Its {{.ReplyCount}} repl{{if eq .ReplyCount 1}}y is{{else}}ies are{{end}} shown anyway.</p>
+  </div>
+  {{- end}}
+  {{- if .Replies}}
+  <div class="chat-replies">
+    <p class="chat-reply-count muted">{{.ReplyCount}} repl{{if eq .ReplyCount 1}}y{{else}}ies{{end}}</p>
+    {{- range .Replies}}{{template "chat-message" .}}{{end}}
+  </div>
+  {{- end}}
+</section>
+{{end}}
+
+
+{{/* chat-message takes a messageView. Author and Text are untrusted text and
+     are always interpolated as plain strings. IconURL is somebody else's URL:
+     it is used as an <img> source only, and tommy never fetches it itself. */}}
+{{define "chat-message"}}
+<article class="chat-message{{if .Reply}} chat-message-reply{{end}}" id="msg-{{.ID}}">
+  <div class="chat-avatar">
+    {{- if .IconURL}}
+    <img class="chat-avatar-img" src="{{.IconURL}}" alt="" loading="lazy" referrerpolicy="no-referrer">
+    {{- else}}
+    <span class="chat-avatar-initials" aria-hidden="true">{{.Initials}}</span>
+    {{- end}}
+  </div>
+  <div class="chat-message-body">
+    <div class="chat-message-head">
+      <span class="chat-author">{{.Author}}</span>
+      {{- if .Bot}}<span class="chat-bot-tag muted" title="Posted by a bot or an incoming webhook">APP</span>{{end}}
+      <span class="muted chat-time" title="{{timeFull .At}}">{{timeShort .At}}</span>
+    </div>
+    {{- if .Text}}
+      {{- if .TextLong}}
+    <details class="chat-text-details">
+      <summary class="chat-text-summary">
+        <span class="chat-text chat-text-preview">{{.TextPreview}}</span>
+        <span class="chat-text-toggle muted">Show full message ({{.TextLen}} characters)</span>
+      </summary>
+      <p class="chat-text chat-text-full">{{.Text}}</p>
+    </details>
+      {{- else}}
+    <p class="chat-text">{{.Text}}</p>
+      {{- end}}
+    {{- else}}
+    <p class="chat-text chat-text-empty muted">(no text)</p>
+    {{- end}}
+    {{- range .Contents}}{{template "chat-content" .}}{{end}}
+    <div class="chat-message-meta">
+      {{template "badges" .Badges}}
+      <a class="muted chat-raw-link" href="{{.EventURL}}" title="Inspect the raw request behind this message">raw</a>
+    </div>
+  </div>
+</article>
+{{end}}
+
+
+{{/*
+chat-content is the CARD RENDERING SEAM.
+
+Today every schema falls back to the collapsible JSON inspector below, which
+sits under the message's plain text - that is deliberately shipped first so
+rendering fidelity never blocks message capture.
+
+To add a real Block Kit or Adaptive Card renderer, do NOT edit this template:
+implement chat.RichRenderer (format string, data json.RawMessage) and install it
+with chat.New(...).WithRichRenderer(...). Its HTML lands in .Rich and is
+rendered here instead, with the inspector kept alongside as the escape hatch.
+*/}}
+{{define "chat-content"}}
+<div class="chat-card" data-format="{{.Format}}">
+  {{- if .HasRich}}
+  <div class="chat-card-rich">{{.Rich}}</div>
+  {{- end}}
+  <details class="chat-card-json">
+    <summary class="chat-card-summary">{{.Label}} <span class="mono muted">{{.Format}}</span>{{if not .Known}} <span class="muted">(unrecognized schema)</span>{{end}}</summary>
+    {{template "json-inspector" .Inspector}}
+  </details>
+</div>
+{{end}}
+
+
+{{/* chat-empty is the friendly "nothing here" state. The provider
+     descriptions, endpoints and runnable snippets live in the how-to-test
+     panel above it - open by default on an empty tab. */}}
+{{define "chat-empty"}}
+{{template "empty-state" .EmptyState}}
+{{end}}
+
+
+{{define "chat-style"}}
+<style>
+.chat-tab .chat-channels { list-style: none; margin: 0; padding: 0; }
+.chat-tab .chat-channel { border-bottom: 1px solid rgba(128,128,128,.25); }
+.chat-tab .chat-channel > a { display: block; padding: .55rem .7rem; text-decoration: none; color: inherit; }
+.chat-tab .chat-channel:hover { background: rgba(128,128,128,.08); }
+.chat-tab .chat-channel.selected { background: rgba(128,128,128,.16); }
+.chat-tab .chat-channel-head { display: flex; justify-content: space-between; gap: .5rem; align-items: baseline; }
+.chat-tab .chat-channel-name { font-weight: 600; overflow-wrap: anywhere; }
+.chat-tab .chat-channel-time { font-size: .8em; white-space: nowrap; }
+.chat-tab .chat-channel-preview { display: block; margin: .15rem 0; opacity: .85; overflow-wrap: anywhere; }
+.chat-tab .chat-channel-author { font-weight: 600; opacity: .9; }
+.chat-tab .chat-channel-foot { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .8em; }
+.chat-tab .chat-channel-none { padding: .7rem; }
+.chat-tab .chat-stream-head h2 { margin: 0 0 .1rem; }
+.chat-tab .chat-stream-head p { margin: 0 0 .2rem; }
+.chat-tab .chat-stream-summary { font-size: .82em; margin-bottom: .8rem !important; }
+.chat-tab .chat-threads { display: flex; flex-direction: column; gap: .9rem; }
+.chat-tab .chat-thread { display: flex; flex-direction: column; gap: .35rem; }
+.chat-tab .chat-thread-orphan { border-left: 2px dashed rgba(200,140,40,.7); padding-left: .5rem; }
+.chat-tab .chat-missing-parent p { margin: 0; font-size: .85em; }
+.chat-tab .chat-replies { margin-left: 1.6rem; padding-left: .7rem; border-left: 2px solid rgba(128,128,128,.3); display: flex; flex-direction: column; gap: .35rem; }
+.chat-tab .chat-reply-count { margin: 0; font-size: .78em; }
+.chat-tab .chat-message { display: flex; gap: .55rem; align-items: flex-start; }
+.chat-tab .chat-avatar { flex: 0 0 auto; width: 2rem; height: 2rem; border-radius: .35rem; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(128,128,128,.2); }
+.chat-tab .chat-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.chat-tab .chat-avatar-initials { font-size: .8em; font-weight: 700; opacity: .8; }
+.chat-tab .chat-message-body { min-width: 0; flex: 1 1 auto; }
+.chat-tab .chat-message-head { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+.chat-tab .chat-author { font-weight: 700; overflow-wrap: anywhere; }
+.chat-tab .chat-bot-tag { font-size: .65em; letter-spacing: .05em; border: 1px solid rgba(128,128,128,.5); border-radius: .2rem; padding: 0 .2rem; }
+.chat-tab .chat-time { font-size: .78em; }
+.chat-tab .chat-text { margin: .1rem 0 .25rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-tab .chat-text-details { margin: .1rem 0 .25rem; }
+.chat-tab .chat-text-details > summary { list-style: none; cursor: pointer; }
+.chat-tab .chat-text-details > summary::-webkit-details-marker { display: none; }
+.chat-tab .chat-text-details[open] .chat-text-preview { display: none; }
+.chat-tab .chat-text-toggle { display: block; margin-top: .15rem; font-size: .85em; text-decoration: underline dotted; }
+.chat-tab .chat-card { margin: .25rem 0; border: 1px solid rgba(128,128,128,.35); border-left: 3px solid rgba(128,128,128,.55); border-radius: .35rem; padding: .35rem .5rem; }
+.chat-tab .chat-card-summary { cursor: pointer; font-size: .82em; }
+.chat-tab .chat-card-rich { margin-bottom: .35rem; }
+.chat-tab .chat-message-meta { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; font-size: .78em; }
+.chat-tab .chat-raw-link { text-decoration: underline dotted; }
+</style>
+{{end}}
