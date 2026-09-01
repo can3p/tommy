@@ -8,6 +8,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/can3p/tommy/core/testutil"
 	"github.com/can3p/tommy/plugins/sms"
+	"github.com/can3p/tommy/plugins/sms/providers/twilio"
 )
 
 func uiDoc(t *testing.T, in *testutil.Instance, url string) *goquery.Document {
@@ -377,5 +378,205 @@ func TestUIGenericEventFallback(t *testing.T) {
 	}
 	if !strings.Contains(doc.Text(), string(ev.ID)) {
 		t.Error("the generic detail view should show the event id")
+	}
+}
+
+// The how-to-test panel is a contract obligation (implementation-plan.md §5,
+// §6.4): every tab must carry one, and it must be usable whether or not the
+// tab has anything captured yet.
+
+func TestUIHowToTestPanelOpenWhenEmpty(t *testing.T) {
+	in := start(t)
+	doc := uiDoc(t, in, in.UI("/sms/"))
+
+	panel := doc.Find(".how-to-test")
+	if panel.Length() == 0 {
+		t.Fatal("the sms tab must render a how-to-test panel even with nothing captured")
+	}
+	if _, open := panel.Attr("open"); !open {
+		t.Error("the how-to-test panel should default to open on an empty tab")
+	}
+	if !strings.Contains(panel.Text(), "/fake-sms/v1/messages") {
+		t.Errorf("the panel should list the fake provider's endpoint; got %q", panel.Text())
+	}
+	if panel.Find(".copy-btn").Length() == 0 {
+		t.Error("the panel's snippets need copy buttons")
+	}
+	code := panel.Find(".snippet pre code").Text()
+	if strings.Contains(code, "{{") {
+		t.Errorf("snippet was not rendered: %q", code)
+	}
+	if !strings.Contains(code, in.IngressURL) {
+		t.Errorf("snippet = %q, want the live ingress URL %q", code, in.IngressURL)
+	}
+}
+
+func TestUIHowToTestPanelCollapsedWithMessages(t *testing.T) {
+	in := start(t)
+	inject(t, in, &sms.Message{From: "+15005550006", To: "+15551234567", Body: "hi"})
+	doc := uiDoc(t, in, in.UI("/sms/"))
+
+	panel := doc.Find(".how-to-test")
+	if panel.Length() == 0 {
+		t.Fatal("the how-to-test panel must still render once messages exist")
+	}
+	if _, open := panel.Attr("open"); open {
+		t.Error("the how-to-test panel should collapse once messages start arriving")
+	}
+	// Collapsed does not mean absent: the content, including a working copy
+	// button, is still in the page for when someone expands it.
+	if panel.Find(".copy-btn").Length() == 0 {
+		t.Error("a collapsed panel should still carry its snippets and copy buttons")
+	}
+}
+
+func TestUIHowToTestPanelDescribesTwilio(t *testing.T) {
+	// The real provider, not the test-only fake, so the panel is proven
+	// against what actually ships.
+	in := testutil.Start(t, nil, sms.New(sms.WithProviders(twilio.New())))
+	doc := uiDoc(t, in, in.UI("/sms/"))
+
+	panel := doc.Find(".how-to-test")
+	if panel.Length() == 0 {
+		t.Fatal("no how-to-test panel")
+	}
+	if !strings.Contains(panel.Text(), "Twilio's Programmable Messaging REST API") {
+		t.Errorf("panel should carry Twilio's description; got %q", panel.Text())
+	}
+	if !strings.Contains(panel.Text(), "/2010-04-01/Accounts/") {
+		t.Error("panel should list Twilio's endpoint")
+	}
+	code := panel.Find(".snippet pre code").Text()
+	if strings.Contains(code, "{{") {
+		t.Errorf("Twilio's snippet was not rendered: %q", code)
+	}
+	if !strings.Contains(code, in.IngressURL) {
+		t.Errorf("snippet = %q, want it to carry the live ingress URL %q", code, in.IngressURL)
+	}
+	if panel.Find(".copy-btn").Length() == 0 {
+		t.Error("Twilio's snippets need copy buttons")
+	}
+}
+
+func TestUIProviderBadgeOnBubbleAndConversation(t *testing.T) {
+	in := start(t)
+	local, peer := "+15005550006", "+15551234567"
+	inject(t, in, &sms.Message{From: local, To: peer, Body: "hi"})
+
+	key := sms.ConversationKey(local, peer)
+	doc := uiDoc(t, in, in.UI("/sms/conversations/"+key))
+
+	badge := doc.Find(".sms-bubble .badge").FilterFunction(func(_ int, s *goquery.Selection) bool {
+		return s.Text() == "fake"
+	})
+	if badge.Length() == 0 {
+		t.Fatal("a bubble should carry a badge naming the provider that captured it")
+	}
+	if title, _ := badge.Attr("title"); !strings.Contains(title, "fake") {
+		t.Errorf("provider badge title = %q, want it to explain what captured the message", title)
+	}
+
+	listDoc := uiDoc(t, in, in.UI("/sms/"))
+	if !strings.Contains(listDoc.Find(".sms-conv-foot .badge").Text(), "fake") {
+		t.Error("the conversation list row should also show the provider of its last message")
+	}
+}
+
+func TestUIEncodingBadgeNamesTheOffendingCharacter(t *testing.T) {
+	in := start(t)
+	local, peer := "+15005550006", "+15551234567"
+	// A curly apostrophe is not in the GSM-7 alphabet, so this forces UCS-2.
+	inject(t, in, &sms.Message{From: local, To: peer, Body: "it’s got a curly quote"})
+
+	key := sms.ConversationKey(local, peer)
+	doc := uiDoc(t, in, in.UI("/sms/conversations/"+key))
+
+	badge := doc.Find(".sms-bubble .badge").FilterFunction(func(_ int, s *goquery.Selection) bool {
+		return s.Text() == "UCS-2"
+	})
+	title, _ := badge.Attr("title")
+	if !strings.Contains(title, "’") {
+		t.Errorf("UCS-2 badge title = %q, want it to name the character that forced it", title)
+	}
+}
+
+func TestUISegmentBadgeExplainsMultipleSegments(t *testing.T) {
+	in := start(t)
+	local, peer := "+15005550006", "+15551234567"
+	inject(t, in, &sms.Message{From: local, To: peer, Body: strings.Repeat("a", 200)})
+
+	key := sms.ConversationKey(local, peer)
+	doc := uiDoc(t, in, in.UI("/sms/conversations/"+key))
+
+	badge := doc.Find(".sms-bubble .badge").FilterFunction(func(_ int, s *goquery.Selection) bool {
+		return s.Text() == "2 segs"
+	})
+	title, _ := badge.Attr("title")
+	if !strings.Contains(title, "2 segments") {
+		t.Errorf("segment badge title = %q, want an explanation of why it needed 2 segments", title)
+	}
+}
+
+func TestUILongBodyCollapsesWithAToggle(t *testing.T) {
+	in := start(t)
+	local, peer := "+15005550006", "+15551234567"
+	body := strings.Repeat("a", 400)
+	inject(t, in, &sms.Message{From: local, To: peer, Body: body})
+
+	key := sms.ConversationKey(local, peer)
+	doc := uiDoc(t, in, in.UI("/sms/conversations/"+key))
+
+	details := doc.Find(".sms-bubble .sms-body-details")
+	if details.Length() != 1 {
+		t.Fatalf("a 400-character body should collapse behind a toggle, got %d .sms-body-details", details.Length())
+	}
+	if !strings.Contains(details.Find(".sms-body-toggle").Text(), "400 characters") {
+		t.Errorf("toggle text = %q, want the full character count", details.Find(".sms-body-toggle").Text())
+	}
+	if got := strings.TrimSpace(details.Find(".sms-body-full").Text()); got != body {
+		t.Error("the full body must still be present in the page, just collapsed")
+	}
+	// A short body must not gain the toggle machinery: the plain paragraph is
+	// a direct child of the bubble, distinct from the preview/full spans that
+	// live inside the <details>.
+	if doc.Find(".sms-bubble > p.sms-body").Length() != 0 {
+		t.Error("a long body should not also render the plain, uncollapsed paragraph")
+	}
+}
+
+// A long body is still untrusted input: both the preview and the full copy
+// behind the toggle must be escaped, never rendered as markup.
+func TestUILongBodyStillEscapesHTML(t *testing.T) {
+	in := start(t)
+	local, peer := "+15005550006", "+15551234567"
+	nasty := strings.Repeat("a", 400) + `<script>alert(1)</script>`
+	inject(t, in, &sms.Message{From: local, To: peer, Body: nasty})
+
+	key := sms.ConversationKey(local, peer)
+	doc := uiDoc(t, in, in.UI("/sms/conversations/"+key))
+
+	if doc.Find(".sms-bubble script").Length() != 0 {
+		t.Error("a long, malicious body must not render as HTML")
+	}
+	if got := strings.TrimSpace(doc.Find(".sms-body-full").Text()); got != nasty {
+		t.Errorf("full body text = %q, want the message verbatim", got)
+	}
+}
+
+func TestUIThreadSummaryLine(t *testing.T) {
+	in := start(t)
+	local, peer := "+15005550006", "+15551234567"
+	inject(t, in, &sms.Message{From: local, To: peer, Body: "one"})
+	inject(t, in, &sms.Message{From: peer, To: local, Body: "two", Direction: sms.Inbound})
+
+	key := sms.ConversationKey(local, peer)
+	doc := uiDoc(t, in, in.UI("/sms/conversations/"+key))
+
+	summary := doc.Find(".sms-thread-summary").Text()
+	if !strings.Contains(summary, "2 messages") {
+		t.Errorf("thread summary = %q, want a message count", summary)
+	}
+	if !strings.Contains(summary, "ago") {
+		t.Errorf("thread summary = %q, want a relative last-activity time", summary)
 	}
 }
