@@ -568,3 +568,7 @@ exercises the generic view). Read it before writing a plugin.
 12. Verify wire formats against **live vendor documentation**, and test a wire
     protocol with a **real client over a socket** - both have repeatedly caught
     errors that hand-built tests did not.
+13. Keep the CLI level with the config: a new plugin gets a `tommy <plugin>`
+    subcommand, a new provider is selectable through `--enabled-providers`, and a
+    provider option worth setting gets a flag. Nothing should be reachable only
+    through a config file.

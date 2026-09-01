@@ -78,6 +78,13 @@ them be built in parallel.
    mismatch fails conformance *and* server startup.
 8. **Never import another provider's package.**
 9. **Bytes go in the blob store**, never inline in an event.
+10. **Keep the CLI level with the config.** Anything expressible in `tommy.toml`
+    must be reachable from the command line. A new plugin needs its own
+    `tommy <plugin>` subcommand; a new provider must be selectable through that
+    command's `--enabled-providers`, and any provider option worth setting needs a
+    flag. A plugin that can only be configured through a file is half-delivered -
+    the single-plugin shortcut is how most people will actually run tommy.
+    `cmd/mail.go` is the pattern and the shared helpers already exist.
 
 ## Security invariants — do not weaken these
 
@@ -132,6 +139,8 @@ reported, and stale docs cost the next session more than they cost you.
 5. **`CLAUDE.md`** — update if a rule, invariant, command or convention changed.
 6. **Commit the documentation** as its own commit, so the history shows the plan
    moving in step with the code.
+7. **Hand the branch over.** Report what landed and stop; merging is the user's
+   call. The next wave starts from a fresh branch off whatever they merged.
 
 A useful test for step 2: if a new session read only your archive entry, would it
 avoid repeating the mistakes this wave made? If not, it is an inventory, not a
@@ -162,3 +171,7 @@ independently-ownable chunks. If you continue that way:
   failure (a stray process, a sibling's in-flight code).
 - **Clean up background servers you start.** Leftover processes holding 1025/2121
   cost two different agents real debugging time in this session.
+- **Start each wave on its own branch**, named for what it builds
+  (`feat/hl7-plugin`, `feat/push-plugin`). A wave is a reviewable unit: one
+  branch keeps its diff readable and lets it be inspected, or abandoned, without
+  disturbing anything else. Do not run two waves on one branch.

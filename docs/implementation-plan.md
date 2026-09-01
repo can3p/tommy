@@ -35,8 +35,8 @@ wave you expected, look in the history.
 | `chat` | slack, msteams | done |
 | `push` | — | **not started; named in the original brief** |
 
-Branches: `feat/foundation` (0–3) → `feat/files-plugin` (4) → `feat/chat-plugin`
-(5). None merged to `main`.
+Waves 0–5 are merged to `main`. **Start each new wave on its own branch**, named
+for what it builds, so a wave stays a reviewable unit.
 
 ## 2. The scoping rule
 
@@ -62,19 +62,22 @@ async AS2 MDN) — which would need outbound HTTP and a scenario definition form
 The pattern that worked for waves 0–5, in short. `docs/lessons.md` has the
 reasoning; `CLAUDE.md` has the rules.
 
-1. **Split by directory.** One agent per task, exclusive ownership, and name what
+1. **Branch first.** One branch per wave, named for what it builds
+   (`feat/hl7-plugin`). A wave is a reviewable unit; two waves on one branch stop
+   being one.
+2. **Split by directory.** One agent per task, exclusive ownership, and name what
    it must not touch. Disjoint paths are what makes parallelism safe.
-2. **A core task blocks its providers.** Plugin cores define the canonical model
+3. **A core task blocks its providers.** Plugin cores define the canonical model
    several providers code against, so they run alone and land first.
-3. **Stagger anything that touches `go.mod`.** At most one dependency-adding agent
+4. **Stagger anything that touches `go.mod`.** At most one dependency-adding agent
    at a time, and its dependencies land *with* the code that imports them.
-4. **Subagents run no git commands.** The coordinator commits in coherent chunks.
-5. **Point each agent at `docs/contracts.md` plus a worked example** — the closest
+5. **Subagents run no git commands.** The coordinator commits in coherent chunks.
+6. **Point each agent at `docs/contracts.md` plus a worked example** — the closest
    existing provider of the same shape.
-6. **Require live-documentation verification** for anything imitating a third-party
+7. **Require live-documentation verification** for anything imitating a third-party
    API, and a **real client over a socket** for anything speaking a wire protocol.
-7. **Verify reports independently**, re-run the gate, and clean up stray servers.
-8. **Finish by updating the documents** — §0. The wave is not done until the plan,
+8. **Verify reports independently**, re-run the gate, and clean up stray servers.
+9. **Finish by updating the documents** — §0. The wave is not done until the plan,
    the history, the contracts and the lessons match the code.
 
 Model guidance: contract-defining and subtle-parsing work to the stronger model;
@@ -82,13 +85,47 @@ well-specified translation against a fixed contract to the cheaper one.
 
 ---
 
-## Wave 6 — tier 1 protocols
+## Wave 6 — CLI catch-up, then tier 1 protocols
+
+**Do this before any new protocol work.** The CLI is already two plugins behind:
+`tommy mail` and `tommy sms` exist, but `files` and `chat` shipped without a
+subcommand, so they can only be run from a config file. Every wave that adds a
+plugin or a provider widens that gap, so it gets closed first and then kept
+closed — see `CLAUDE.md` rule 10.
+
+### 6·0 — CLI catch-up · one agent · cheaper model
+
+| Task | Owns |
+|---|---|
+| **CLI-1** | `cmd/files.go`, `cmd/chat.go`, `cmd/*_test.go`, `tommy.toml`, `README.md` |
+
+- `tommy files` and `tommy chat`, following `cmd/mail.go` exactly: build a
+  `Config` in memory and hand it to **the same bootstrap** `tommy serve` uses,
+  never a second code path. The shared helpers (`singlePluginConfig`,
+  `runSinglePlugin`, flag registration) already exist in `cmd/mail.go`.
+- `--enabled-providers` must accept every provider the plugin ships, and reject
+  an unknown name before anything binds, naming the valid ones.
+- Listener providers need their ports on the command line too — `files` has two
+  (`--ftp-port`, `--sftp-port`, plus FTP's passive range and SFTP's host key
+  path), and `mail` has SMTP. Check what `tommy.toml` exposes and make sure
+  nothing is reachable only through a file.
+- Extend the e2e CLI test that already proves the flag path and the config path
+  behave identically (`test/e2e/cli_test.go`) to cover the new commands.
+- Update `tommy.toml`'s comments and the README's command list to match.
+
+**Definition of done:** for every plugin, `tommy <plugin> --help` lists its
+providers, and anything settable in `tommy.toml` has a flag or a documented
+reason it does not.
+
+### Then: tier 1 protocols
 
 Four additions, chosen because each removes real pain and each has a mechanical
 reply. Two are `files` providers over the VFS that already exists, so they need no
 new plugin and no new UI.
 
-Sequenced only by `go.mod` ownership — see rule 3 above.
+Sequenced only by `go.mod` ownership — see rule 4 above. **Each new provider
+carries its own CLI flags as part of its task**, so 6·0 does not have to be
+repeated later.
 
 ### 6a · two agents in parallel
 
@@ -298,5 +335,5 @@ Independent of each other and of the protocol work; each is one agent.
   the cold-start snippet work with real OpenSSH, but revisit if capture matters
   more than convenience.
 - The `files` and `chat` tabs have not had the polish pass mail and sms got.
-- No `tommy files` / `tommy chat` single-plugin subcommands yet; `cmd/mail.go` is
-  the pattern and the shared helpers already exist.
+- (The missing `tommy files` / `tommy chat` subcommands were promoted out of this
+  backlog into Wave 6·0, since every later wave widens the gap.)

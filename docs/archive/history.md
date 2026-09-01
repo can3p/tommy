@@ -22,16 +22,6 @@ per agent, with exclusive file ownership per task.
 > independently; **Deliberate non-implementation** for what was skipped and why.
 > The Wave 2 and Wave 5 entries below are the fullest examples.
 
-## Branches
-
-| Branch | Contains |
-|---|---|
-| `feat/foundation` | Waves 0–3 |
-| `feat/files-plugin` | Wave 4, on top of the above |
-| `feat/chat-plugin` | Wave 5, on top of that |
-
-None were pushed or merged to `main`.
-
 ## Wave 0 — foundation and CI · 2 agents
 
 `core/**`, `go.mod`, `cmd/serve.go`, `cmd/providers.go`, plus the CI pipeline,
