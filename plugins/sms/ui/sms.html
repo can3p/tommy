@@ -1,0 +1,165 @@
+{{/*
+The SMS tab: a conversation list on the left and the selected thread as phone
+bubbles on the right. Every bubble carries the segment count and the encoding,
+because that is the thing people get wrong and cannot see anywhere else.
+
+Message bodies are untrusted input. They are interpolated as plain strings and
+never as template.HTML, so html/template escapes them; whitespace is preserved
+with CSS rather than with markup.
+*/}}
+
+{{define "sms-tab"}}
+{{template "sms-style"}}
+<div class="sms-tab">
+{{- if .HasMessages}}
+{{template "master-detail" (dict
+    "Title" "SMS"
+    "Toolbar" (render "sms-toolbar" .)
+    "List" (render "sms-list" .)
+    "ListID" "list"
+    "Detail" (render "sms-thread" .)
+    "DetailID" "detail"
+    "Empty" "")}}
+{{- else}}
+<div class="toolbar">{{template "sms-toolbar" .}}</div>
+<div id="list" hx-get="{{.ListURL}}" hx-trigger="sse:{{.StreamEvent}} throttle:400ms" hx-target="#main" hx-swap="innerHTML">
+  {{template "sms-empty" .}}
+</div>
+{{- end}}
+</div>
+{{end}}
+
+{{define "sms-toolbar"}}
+<form class="filters" hx-get="{{.Base}}/list" hx-target="#list" hx-swap="innerHTML"
+      hx-trigger="input changed delay:250ms from:find input, submit" hx-push-url="false">
+  <input type="search" name="search" placeholder="Search numbers and bodies" value="{{.Search}}" aria-label="Search messages">
+  <button type="button" class="danger"
+          hx-delete="{{.Base}}/events"
+          hx-target="#main"
+          hx-swap="innerHTML"
+          hx-confirm="Delete every captured SMS?">Clear</button>
+</form>
+{{end}}
+
+{{/* sms-list is the conversation list, refreshed whenever a message arrives. */}}
+{{define "sms-list"}}
+<div id="sms-conversations"
+     hx-get="{{.ListURL}}"
+     hx-trigger="sse:{{.StreamEvent}} throttle:400ms"
+     hx-target="#list"
+     hx-swap="innerHTML">
+  <ul class="sms-conv-list">
+  {{- range .Conversations}}
+    <li class="sms-conv{{if .Selected}} selected{{end}}">
+      <a href="{{.URL}}" hx-get="{{.URL}}" hx-target="#detail" hx-swap="innerHTML" hx-push-url="true">
+        <span class="sms-conv-head">
+          <span class="sms-conv-peer mono">{{.Title}}</span>
+          <span class="muted mono sms-conv-time" title="{{timeFull .At}}">{{timeShort .At}}</span>
+        </span>
+        <span class="sms-conv-preview">{{.Preview}}</span>
+        <span class="sms-conv-foot">
+          <span class="muted mono">via {{if .Local}}{{.Local}}{{else}}(unknown){{end}}</span>
+          <span class="muted">{{.Count}} message{{if ne .Count 1}}s{{end}}</span>
+          {{template "badges" .Badges}}
+        </span>
+      </a>
+    </li>
+  {{- else}}
+    <li class="muted sms-conv-none">No conversation matches that search.</li>
+  {{- end}}
+  </ul>
+  <p class="muted count">{{len .Conversations}} conversation{{if ne (len .Conversations) 1}}s{{end}} · {{.Total}} message{{if ne .Total 1}}s{{end}}</p>
+</div>
+{{end}}
+
+{{/* sms-thread is the right-hand pane: the open conversation, or a nudge. */}}
+{{define "sms-thread"}}
+{{- if .Selected}}
+<div id="sms-thread"
+     hx-get="{{.Selected.URL}}"
+     hx-trigger="sse:{{.StreamEvent}} throttle:400ms"
+     hx-target="#detail"
+     hx-swap="innerHTML">
+  <header class="sms-thread-head">
+    <h2 class="mono">{{.Selected.Peer}}</h2>
+    <p class="muted mono">via {{if .Selected.Local}}{{.Selected.Local}}{{else}}(unknown sender){{end}}</p>
+  </header>
+  <div class="sms-bubbles">
+    {{- range .Selected.Messages}}{{template "sms-bubble" .}}{{end}}
+  </div>
+</div>
+{{- else}}
+<div class="empty-state">
+  <h3>Pick a conversation</h3>
+  <p>Select a thread on the left to read it as a phone would show it, with the segment count and encoding of every message.</p>
+</div>
+{{- end}}
+{{end}}
+
+{{/* sms-bubble takes one message. */}}
+{{define "sms-bubble"}}
+<div class="sms-bubble {{if .Outbound}}sms-out{{else}}sms-in{{end}}" id="msg-{{.ID}}">
+  {{- if .Body}}<p class="sms-body">{{.Body}}</p>{{end}}
+  {{- if .Media}}<div class="sms-media">{{range .Media}}{{template "sms-media" .}}{{end}}</div>{{end}}
+  <div class="sms-bubble-meta">
+    {{template "badges" .Badges}}
+    <span class="muted mono" title="{{timeFull .At}}">{{timeShort .At}}</span>
+    <span class="muted">·</span>
+    <span class="muted mono">{{.Provider}}</span>
+    <a class="muted sms-raw-link" href="{{.EventURL}}" title="Inspect the raw request behind this message">raw</a>
+  </div>
+</div>
+{{end}}
+
+{{/* sms-media takes a MediaRef. */}}
+{{define "sms-media"}}
+{{- if hasPrefix .ContentType "image/"}}
+<a href="{{.URL}}" target="_blank" rel="noreferrer noopener">
+  <img class="sms-media-thumb" src="{{.URL}}" alt="{{.Filename}}" loading="lazy">
+</a>
+{{- else}}
+<a class="sms-media-link" href="{{.URL}}" target="_blank" rel="noreferrer noopener">
+  <span class="mono">{{.Filename}}</span>
+  <span class="muted">{{.ContentType}}{{if .Size}} · {{bytesHuman .Size}}{{end}}{{if not .Stored}} · remote URL{{end}}</span>
+</a>
+{{- end}}
+{{end}}
+
+{{define "sms-empty"}}
+{{template "empty-state" (dict
+    "Title" "No SMS captured yet"
+    "Message" "Point your code's SMS provider at tommy and every message it sends lands here as a conversation, with the segment count and encoding it would really cost."
+    "Providers" .Providers)}}
+{{- if not .Providers}}
+<p class="muted">No SMS provider is enabled, so nothing can reach this tab yet. Enable one in your config, or run <code>tommy providers</code> to see what this build ships.</p>
+{{- end}}
+<p class="muted">Runnable, copy-paste snippets carrying the ports this instance actually bound live on the <a href="{{.UIBase}}/">overview tab</a>.</p>
+{{end}}
+
+{{define "sms-style"}}
+<style>
+.sms-tab .sms-conv-list { list-style: none; margin: 0; padding: 0; }
+.sms-tab .sms-conv { border-bottom: 1px solid rgba(128,128,128,.25); }
+.sms-tab .sms-conv > a { display: block; padding: .55rem .7rem; text-decoration: none; color: inherit; }
+.sms-tab .sms-conv:hover { background: rgba(128,128,128,.08); }
+.sms-tab .sms-conv.selected { background: rgba(128,128,128,.16); }
+.sms-tab .sms-conv-head { display: flex; justify-content: space-between; gap: .5rem; align-items: baseline; }
+.sms-tab .sms-conv-peer { font-weight: 600; }
+.sms-tab .sms-conv-time { font-size: .8em; }
+.sms-tab .sms-conv-preview { display: block; margin: .15rem 0; opacity: .85; overflow-wrap: anywhere; }
+.sms-tab .sms-conv-foot { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .8em; }
+.sms-tab .sms-conv-none { padding: .7rem; }
+.sms-tab .sms-thread-head h2 { margin: 0 0 .1rem; }
+.sms-tab .sms-thread-head p { margin: 0 0 .8rem; }
+.sms-tab .sms-bubbles { display: flex; flex-direction: column; gap: .55rem; }
+.sms-tab .sms-bubble { max-width: min(34rem, 85%); padding: .5rem .7rem; border-radius: .9rem; border: 1px solid rgba(128,128,128,.35); }
+.sms-tab .sms-out { align-self: flex-end; border-bottom-right-radius: .2rem; background: rgba(64,140,255,.16); }
+.sms-tab .sms-in { align-self: flex-start; border-bottom-left-radius: .2rem; background: rgba(128,128,128,.14); }
+.sms-tab .sms-body { margin: 0 0 .35rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sms-tab .sms-bubble-meta { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; font-size: .78em; }
+.sms-tab .sms-media { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0; }
+.sms-tab .sms-media-thumb { max-width: 12rem; max-height: 12rem; border-radius: .4rem; display: block; }
+.sms-tab .sms-media-link { display: inline-flex; flex-direction: column; padding: .3rem .5rem; border: 1px dashed rgba(128,128,128,.5); border-radius: .4rem; text-decoration: none; color: inherit; font-size: .85em; }
+.sms-tab .sms-raw-link { text-decoration: underline dotted; }
+</style>
+{{end}}
