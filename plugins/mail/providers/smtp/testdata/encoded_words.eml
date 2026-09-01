@@ -1,0 +1,9 @@
+From: =?UTF-8?B?QWxpY2Ugw4VuZ3N0csO2bQ==?= <alice@example.com>
+To: =?UTF-8?B?Qm9iIELDvGNobmVy?= <bob@example.com>, "Plain Name" <carol@example.com>
+Subject: =?UTF-8?B?SGVsbG8=?= =?UTF-8?Q?_world?= plain =?ISO-8859-1?Q?caf=E9?=
+ =?UTF-8?Q?=20and=20a=20folded=20tail?=
+X-Custom-Header: kept as-is
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Encoded-word headers above.

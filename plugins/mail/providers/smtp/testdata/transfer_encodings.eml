@@ -1,0 +1,26 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Encodings
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="ENC"
+
+--ENC
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Soft=20spaces and a soft line break here =
+and it continues.
+
+--ENC
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: base64
+
+PHA+YmFzZTY0IGh0bWw8L3A+
+
+--ENC
+Content-Type: application/json; name="payload.json"
+Content-Transfer-Encoding: 8bit
+
+{"ok": true}
+
+--ENC--

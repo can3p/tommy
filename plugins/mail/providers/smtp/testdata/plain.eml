@@ -1,0 +1,11 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Just a plain note
+Date: Tue, 12 Mar 2024 09:15:00 +0000
+Message-ID: <plain-1@example.com>
+
+Hello Bob,
+
+Nothing fancy here: no MIME headers, no parts, just text.
+
+-- Alice

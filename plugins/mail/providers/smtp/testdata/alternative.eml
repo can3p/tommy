@@ -1,0 +1,24 @@
+From: "Alice Sender" <alice@example.com>
+To: bob@example.com, carol@example.com
+Cc: Dave <dave@example.com>
+Reply-To: replies@example.com, Alice <alice@example.com>
+Subject: Your receipt
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="ALT-BOUNDARY"
+
+This is a multi-part message in MIME format.
+
+--ALT-BOUNDARY
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Total: 42 EUR
+
+--ALT-BOUNDARY
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+<html><body><p>Total: <b>42=C2=A0EUR</b> =E2=80=94 thank you!</p>=
+</body></html>
+
+--ALT-BOUNDARY--
