@@ -1,0 +1,6 @@
+{
+  "message": {
+    "condition": "'stock-GOOG' in topics || 'industry-tech' in topics",
+    "notification": { "title": "GOOG up 5%", "body": "Since the open" }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "aps": {
+    "alert": "Pressure vessel over limit",
+    "sound": { "critical": 1, "name": "klaxon.caf", "volume": 1.0 }
+  }
+}

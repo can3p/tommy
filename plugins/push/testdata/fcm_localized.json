@@ -1,0 +1,12 @@
+{
+  "message": {
+    "topic": "news",
+    "android": {
+      "notification": {
+        "title_loc_key": "news_title",
+        "body_loc_key": "news_body",
+        "body_loc_args": ["3"]
+      }
+    }
+  }
+}

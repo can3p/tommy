@@ -1,0 +1,25 @@
+{
+  "message": {
+    "token": "cVQ8j9r5S_2example-registration-token-that-is-long-enough-to-need-shortening-0123456789",
+    "notification": {
+      "title": "Breakfast is ready",
+      "body": "Come and get it",
+      "image": "https://example.test/breakfast.png"
+    },
+    "android": {
+      "priority": "HIGH",
+      "ttl": "3600s",
+      "collapse_key": "breakfast",
+      "notification": {
+        "sound": "default",
+        "notification_count": 2,
+        "click_action": "OPEN_KITCHEN",
+        "channel_id": "meals"
+      }
+    },
+    "apns": {
+      "headers": { "apns-priority": "10" },
+      "payload": { "aps": { "alert": { "title": "Breakfast is ready" } } }
+    }
+  }
+}
