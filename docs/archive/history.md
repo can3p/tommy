@@ -271,6 +271,63 @@ one is how an application's error path gets exercised — `--mailjet-api-key` wi
 a mismatched pair returns Mailjet's real `mj-0015` 401, verified against the
 running binary.
 
+## Wave 6a — the HL7 v2 plugin core and the TFTP provider · 2 agents in parallel
+
+Two tasks with nothing in common but a branch: a new plugin core defining a model
+the next wave codes against, and a fourth transport for a plugin that already
+existed. They ran in parallel because their directories are disjoint and only one
+of them touched `go.mod`.
+
+**Built — `plugins/hl7`:** a segment → field → repetition → component →
+subcomponent tree, parsed with the separators each message declares in `MSH-1`
+and `MSH-2` rather than the `|^~\&` everyone assumes. Escape sequences resolve to
+*that message's* separators. A collapsible segment-tree tab showing each field at
+its own position with a small dictionary name, repetitions kept visibly apart, and
+a badge naming the declared separators whenever they are unconventional — which is
+exactly the message somebody else's parser is getting wrong.
+
+**Built — `plugins/files/providers/tftp`:** RFC 1350 over the existing VFS. No new
+plugin, no new UI, no new canonical model — the payoff of having named the plugin
+`files` rather than `ftp` back in Wave 4, now collected for the third time.
+
+**Parsing recovers; it does not fail.** The one error case is an empty message.
+Everything else returns a message carrying coded `Issue`s (`no-header`,
+`duplicate-separator`, `segment-id`, …), because the consumer of this decision is
+MLLP choosing between `AA`, `AE` and `AR`, and that needs a parsed message and a
+reason rather than an error. The sharpest case: a separator declared *twice* in
+`MSH-2` is dropped rather than split on, since splitting anyway would shred every
+value in the message instead of just the header.
+
+**`ListenerProvider` turned out to be genuinely transport-agnostic.** TFTP is the
+first UDP provider, and the contract needed no change: `net.ListenPacket` plus
+`AddressableProvider.Addr` fit as they stand, because the core only ever starts
+`Listen` in a goroutine and waits for it to return. A contract written against
+three TCP providers survived contact with a datagram one, which is worth knowing
+before NFS and SNMP arrive.
+
+**A plugin core cannot carry a snippet, and that is correct.** `Snippets()` is a
+`Provider` member, so with no provider the tab's how-to-test panel has nothing
+runnable. The alternative — moving snippets onto the plugin — would let a core
+advertise a listener that does not exist. The consequence is that `hl7` is
+deliberately **not** wired into `plugins/all/all.go` this wave: `plugintest`
+rejects a plugin with no providers, and is right to, since it could never receive
+anything. Wiring and `cmd/hl7.go` land with MLLP.
+
+**What a real client proved that a test double would not have.** The TFTP round
+trip was driven with `curl` over UDP on a payload carrying `\r\n`, a lone `\n`, a
+NUL and a high byte, asserting byte-identical bytes back. TFTP has a `netascii`
+mode, so the exact class of bug that made ftpserverlib silently rewrite line
+endings in Wave 4 was live here too. It also surfaced a library limitation worth
+recording: `pin/tftp` parses a client's requested `timeout` option but never
+echoes it in an OACK, so it is documented as not granted rather than claimed —
+`blksize` and `tsize` are genuinely negotiated.
+
+**Coordinator work the agents were rightly barred from.** Wiring `tftp.New()` into
+`plugins/all/all.go` — without which the provider existed but nothing shipped it,
+and `tommy providers files/tftp` reported no such provider — and updating the
+`files` plugin description, which still said "over FTP or SFTP". A wave that adds
+a provider is not finished at the provider's directory boundary.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project

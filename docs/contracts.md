@@ -196,6 +196,12 @@ type ListenerProvider interface {
     Provider
     Listen(ctx context.Context, d Deps) error // reads its ports from d.Config; blocks until ctx done
 }
+// Transport-agnostic: the core only starts Listen in a goroutine and waits for
+// it to return once ctx is cancelled, so nothing here assumes a connection.
+// TFTP (UDP, net.ListenPacket) implements it unchanged alongside SMTP, FTP and
+// SFTP. Snippets() is a Provider member, not a Plugin one, which is why a
+// plugin core with no provider yet cannot advertise a listener - and why
+// plugintest rejects a plugin whose Providers() is empty.
 
 // AddressableProvider is optional, and every listener provider should implement
 // it. A provider that took an ephemeral port, or that fell back to its own

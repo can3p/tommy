@@ -57,6 +57,28 @@ excluded, and cobra accepting a stray positional argument because no command set
 you configured something you did not, and the second as though you asked for help
 and got a daemon.
 
+**A contract written against one transport is only proven when a different one
+arrives.** `ListenerProvider` was designed against three TCP providers (SMTP, FTP,
+SFTP). TFTP, the first UDP provider, needed no change to it: the core only starts
+`Listen` in a goroutine and waits for it to return, and `net.ListenPacket` plus
+`AddressableProvider.Addr` fit as they stand. The interface was accidentally right
+because it never described a connection — worth remembering as the cheap test of
+any transport abstraction before NFS, SNMP or MLLP arrive.
+
+**A plugin that can never receive anything should not ship, and the conformance
+test should say so.** The HL7 core landed a wave before its only provider, so it
+was deliberately left out of the shared wiring: `plugintest` rejects a plugin with
+no providers. The related discovery is that `Snippets()` belongs to `Provider`,
+not `Plugin`, so a core genuinely *cannot* advertise a listener that does not
+exist yet. Both are the contract refusing to let a half-built thing look finished.
+
+**Recover and record, don't fail, when a later stage needs the reason.** The HL7
+parser fails on exactly one input — an empty message — and otherwise returns a
+message carrying coded issues. The consumer is an `ACK` deciding between `AA`,
+`AE` and `AR`, which needs a parsed message *and* a reason; an `error` would have
+thrown away the half that makes the decision possible. Where a parser sits
+upstream of a protocol reply, the error type is part of the protocol design.
+
 ## On the protocols
 
 **Verify wire formats against live vendor documentation, never from memory.**
@@ -183,3 +205,7 @@ is worth it for the same reason.
   the age and command line of what holds it (`lsof -nP -iTCP -sTCP:LISTEN`,
   then `ps -o lstart,command -p <pid>`). It is often a previous session's own
   stray server, not a real mail catcher.
+- Wiring a new provider into `plugins/all/all.go` is the coordinator's job and is
+  easy to forget: the provider's own tests all pass while `tommy providers
+  <plugin>/<provider>` still reports no such provider, because nothing ships it.
+  A plugin's own `Description()` usually needs updating in the same breath.
