@@ -11,6 +11,7 @@ import (
 	"github.com/can3p/tommy/plugins/chat/ui/blocks"
 	"github.com/can3p/tommy/plugins/files"
 	"github.com/can3p/tommy/plugins/files/providers/ftp"
+	"github.com/can3p/tommy/plugins/files/providers/nfs"
 	"github.com/can3p/tommy/plugins/files/providers/sftp"
 	"github.com/can3p/tommy/plugins/files/providers/tftp"
 	"github.com/can3p/tommy/plugins/hl7"
@@ -38,6 +39,7 @@ func Plugins() []plugin.Plugin {
 			ftp.New(),
 			sftp.New(),
 			tftp.New(),
+			nfs.New(),
 		),
 		chat.New(
 			slack.New(),

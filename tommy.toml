@@ -194,6 +194,25 @@ port = 6969               # the provider's own UDP listener. 6969 rather than TF
 # timeout_seconds = 5            # how long to wait for an ACK or DATA packet before retransmitting
 # retries         = 5            # retransmission attempts before a transfer is abandoned
 
+[plugins.files.providers.nfs]
+# A real NFSv3 server on its own TCP port, backed by the same shared virtual
+# filesystem as ftp, sftp and tftp above. It serves both RPC programs - MOUNT
+# and NFS - on that one port and runs no portmapper, so a client has to be
+# told both ports explicitly (rpcbind lives on privileged 111, and registering
+# a fake there would advertise it to the whole machine):
+#
+#   sudo mount -t nfs -o nfsvers=3,tcp,port=2049,mountport=2049,nolock 127.0.0.1:/ /mnt/tommy
+#
+# `tommy providers files/nfs` prints the mount line for the port actually in
+# use, including the macOS spelling.
+enabled = true
+port = 2049               # the provider's own listener. 2049 is NFS's usual port and,
+                          # unlike 21/22/69, is already unprivileged. CLI: --nfs-port
+#
+# The rest are tuning knobs nobody needs to flip per test run, so they stay
+# file-only (no CLI flag):
+# bind = "127.0.0.1"      # interface this listener binds, independent of the top-level `bind`
+
 # -----------------------------------------------------------------------------
 # chat - captures chat messages your application posts to Slack or Microsoft
 # Teams via an incoming webhook, rendered as the real Block Kit / Adaptive
