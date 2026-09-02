@@ -22,6 +22,8 @@ import (
 	"github.com/can3p/tommy/plugins/mail/providers/smtp"
 	"github.com/can3p/tommy/plugins/sms"
 	"github.com/can3p/tommy/plugins/sms/providers/twilio"
+	"github.com/can3p/tommy/plugins/snmp"
+	"github.com/can3p/tommy/plugins/snmp/providers/trap"
 )
 
 // Plugins returns every plugin compiled into this binary.
@@ -47,6 +49,9 @@ func Plugins() []plugin.Plugin {
 		).WithRichRenderer(blocks.Render),
 		hl7.New(
 			mllp.New(),
+		),
+		snmp.New(
+			trap.New(),
 		),
 	}
 }

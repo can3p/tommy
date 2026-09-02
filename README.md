@@ -58,6 +58,7 @@ configuration actually bound — useful before you've sent anything at all.
 | `files` | `ftp`, `sftp`, `tftp`, `nfs` | Real FTP, SFTP, TFTP and NFSv3 servers, backed by one shared virtual filesystem |
 | `hl7`   | `mllp` | A real MLLP listener that parses HL7 v2 and answers with a mechanical ACK |
 | `chat`  | `slack`, `msteams` | Slack incoming webhooks + `chat.postMessage`, and both generations of Teams incoming webhook |
+| `snmp`  | `trap` | A real UDP trap receiver: v1/v2c traps and informs, every varbind decoded by its wire type |
 
 Every plugin and provider describes itself: `Description()`, the endpoints it
 mounts, and at least one runnable snippet, surfaced identically in the UI's
@@ -131,6 +132,22 @@ Pointing an official SDK at tommy is its own topic: see `clienthelp/` and
 `docs/clients.md` for the per-SDK story, including Twilio's, whose client
 libraries need a custom `*http.Client` rather than a base-URL override.
 
+### trap — a real SNMP trap receiver on `:1162`
+
+```bash
+snmptrap -v 2c -c public 127.0.0.1:1162 '' 1.3.6.1.6.3.1.1.5.3 \
+  1.3.6.1.2.1.1.5.0 s "host01"
+```
+
+Accepts v1 traps, v2c traps and v2c informs, decoding every varbind by its
+real wire type (integers, OIDs, counters, gauges, timeticks, IP addresses,
+octet strings — hex-dumped when not printable text) rather than flattening
+everything to one string. An inform gets a `GetResponse` back, echoing its
+request id and varbinds; a trap, v1 or v2c, gets none — SNMP defines it as
+unconfirmed. Any community string is accepted and recorded, never checked.
+There is no bespoke tab: the generic event view's JSON payload panel already
+shows every varbind, deliberately — see `plugins/snmp/README.md`.
+
 ## Configuration: CLI flags or TOML, never two code paths
 
 `tommy serve` runs every plugin and provider compiled into the binary,
@@ -156,21 +173,23 @@ tommy sms   --ui-port 8811 --in-port 8822 --enabled-providers twilio
 tommy files --ui-port 8811 --in-port 8822 --ftp-port 2121 --sftp-port 2222
 tommy chat  --ui-port 8811 --in-port 8822 --enabled-providers slack
 tommy hl7   --ui-port 8811 --in-port 8822 --mllp-port 2575
+tommy snmp  --ui-port 8811 --in-port 8822 --trap-port 1162
 ```
 
-`tommy mail`, `tommy sms`, `tommy files` and `tommy chat` are shortcuts that
-build a `Config` with every other plugin switched off in memory, then run
-through that identical bootstrap — there is no second, lighter-weight server.
-`--enabled-providers` narrows which of that plugin's providers run; leave it
-off and every provider the plugin ships is enabled. An unknown provider name
-is rejected up front, naming the valid ones:
+`tommy mail`, `tommy sms`, `tommy files`, `tommy chat`, `tommy hl7` and
+`tommy snmp` are shortcuts that build a `Config` with every other plugin
+switched off in memory, then run through that identical bootstrap — there is
+no second, lighter-weight server. `--enabled-providers` narrows which of that
+plugin's providers run; leave it off and every provider the plugin ships is
+enabled. An unknown provider name is rejected up front, naming the valid
+ones:
 
 ```
 $ tommy mail --enabled-providers bogus
 Error: unknown mail provider "bogus": valid providers are mailjet, sendgrid, smtp
 ```
 
-All four subcommands mirror `serve`'s flags where they apply: `--ui-port`,
+Every subcommand mirrors `serve`'s flags where they apply: `--ui-port`,
 `--api-port`, `--in-port` (the shared ingress port), `--bind`, `--host` and
 `--log-level`.
 
@@ -190,6 +209,7 @@ response:
 | `tftp` (`tommy files`)    | `--tftp-port` |
 | `nfs` (`tommy files`)     | `--nfs-port` |
 | `mllp` (`tommy hl7`)      | `--mllp-port` |
+| `trap` (`tommy snmp`)     | `--trap-port` |
 | `ftp` (`tommy files`)     | `--ftp-port`, `--ftp-passive-host`, `--ftp-passive-ports`, `--ftp-username`, `--ftp-password` |
 | `sftp` (`tommy files`)    | `--sftp-port`, `--sftp-host-key`, `--sftp-authorized-keys`, `--sftp-username`, `--sftp-password` |
 
