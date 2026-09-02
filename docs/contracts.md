@@ -198,8 +198,11 @@ type ListenerProvider interface {
 }
 // Transport-agnostic: the core only starts Listen in a goroutine and waits for
 // it to return once ctx is cancelled, so nothing here assumes a connection.
-// TFTP (UDP, net.ListenPacket) implements it unchanged alongside SMTP, FTP and
-// SFTP. Snippets() is a Provider member, not a Plugin one, which is why a
+// TFTP (UDP, net.ListenPacket), MLLP (framed TCP) and NFSv3 (ONC RPC, two
+// programs on one port) all implement it unchanged alongside SMTP, FTP and
+// SFTP. A provider whose backend library hands it neither a context nor a
+// connection - go-billy, for NFS - can only learn the peer at mount time; the
+// contract does not help there. Snippets() is a Provider member, not a Plugin one, which is why a
 // plugin core with no provider yet cannot advertise a listener - and why
 // plugintest rejects a plugin whose Providers() is empty.
 

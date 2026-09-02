@@ -111,6 +111,21 @@ send. Document each divergence rather than letting it be silent.
 skipped because events are immutable and threads are derived — they could only
 have answered `ok` while nothing changed. Two correct routes beat four shaky ones.
 
+**A test that goes through a well-behaved client can prove nothing about
+hostile input.** The NFS path-escape tests had to be driven with raw RPC, because
+the client library `path.Clean`s every path before it reaches the wire — so a
+climbing lookup driven through the client never actually tests the server. The
+same is true of any protocol whose reference client normalises: to test what the
+server does with a hostile request, you have to be able to *send* one, which
+usually means dropping below the client library.
+
+**Handle-based protocols move the path check, they do not remove it.** NFS
+addresses files by opaque handle rather than path, which looks like it sidesteps
+a traversal invariant and does not. Minting random handles that encode no path,
+treating an unknown one as stale, and re-resolving the components behind a minted
+handle through the same one gate on every operation is what keeps the invariant —
+the gate stays in one place, the lookup just arrives differently.
+
 ## On the runtime
 
 **A graceful shutdown must close connections that never asked for anything.**
@@ -177,6 +192,15 @@ to the stronger model; well-specified translation against a fixed contract (thre
 of the four vendor providers, CI config, UI polish) went to the cheaper one and
 came back with equal rigour — the Sonnet agents verified action versions against
 GitHub's API and downloaded a real GoReleaser to validate a migration.
+
+**Interruptions are cheap if the work is on disk — but check whether it is.**
+Machine sleep killed five agent runs in one wave; a session rate limit killed two
+more in another, that time inside their first few tool calls, before either had
+written anything. The handling is the same either way and takes one round trip:
+look at what actually landed, tell the resumed agent explicitly what is and is
+not there, and let it continue rather than re-briefing it from scratch. Telling an
+agent to "resume" when nothing was written sends it hunting for partial work that
+does not exist.
 
 **Interruptions are cheap if the work is on disk.** Machine sleep killed five
 agent runs. Resuming the same agent with its transcript intact — plus an explicit
