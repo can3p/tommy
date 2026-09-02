@@ -25,6 +25,37 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// providerOptionBuilder accumulates the provider-config overrides a
+// single-plugin shortcut's provider-specific flags produce (--smtp-port,
+// --ftp-passive-ports, ...), contributing a key only when its flag was
+// actually changed on the command line - so a flag nobody set never
+// overrides a provider's own default. Built fresh in each subcommand's RunE
+// and handed to singlePluginConfig as its providerOptions.
+type providerOptionBuilder struct {
+	cmd     *cobra.Command
+	options map[string]map[string]any
+}
+
+func newProviderOptionBuilder(cmd *cobra.Command) *providerOptionBuilder {
+	return &providerOptionBuilder{cmd: cmd, options: map[string]map[string]any{}}
+}
+
+// set records value under provider/key, but only when flagName was changed on
+// the command line. value should be the Go type config.ProviderConfig expects
+// (int for an integer key, never a string), since these values are merged
+// straight into the map config.NewProviderConfig builds a section from.
+func (b *providerOptionBuilder) set(provider, flagName, key string, value any) {
+	if !b.cmd.Flags().Changed(flagName) {
+		return
+	}
+	m := b.options[provider]
+	if m == nil {
+		m = map[string]any{}
+		b.options[provider] = m
+	}
+	m[key] = value
+}
+
 // singlePluginFlags are the flags every single-plugin shortcut offers. They
 // mirror `tommy serve`'s where those make sense (--ui-port, --api-port,
 // --bind, --host, --log-level); the ingress port is spelled --in-port to
@@ -82,7 +113,15 @@ func containsString(list []string, s string) bool {
 //
 // An unknown provider name is rejected here, naming the valid ones, rather
 // than left to fail confusingly once the server is already starting.
-func singlePluginConfig(pluginName string, allProviders []string, f singlePluginFlags) (*config.Config, error) {
+//
+// providerOptions carries provider-specific flag overrides, keyed by provider
+// name and then by the same TOML key config.NewProviderConfig would read from
+// a file (map[string]map[string]any, e.g. {"smtp": {"port": 1025}}). It is
+// merged into that provider's "enabled": true map before the section is
+// built. A provider named in providerOptions that --enabled-providers
+// excluded is an error - a flag that would silently do nothing is worse than
+// one that fails loudly - reported here, before anything binds.
+func singlePluginConfig(pluginName string, allProviders []string, f singlePluginFlags, providerOptions map[string]map[string]any) (*config.Config, error) {
 	cfg := &config.Config{DefaultEnabled: config.Bool(false)}
 	cfg.SetPluginEnabled(pluginName, true)
 
@@ -104,8 +143,20 @@ func singlePluginConfig(pluginName string, allProviders []string, f singlePlugin
 			return nil, fmt.Errorf("--enabled-providers must name at least one of: %s", strings.Join(allProviders, ", "))
 		}
 	}
+
+	for provider := range providerOptions {
+		if !containsString(want, provider) {
+			return nil, fmt.Errorf("%s: flags were given for provider %q, but --enabled-providers only enables %s",
+				pluginName, provider, strings.Join(want, ", "))
+		}
+	}
+
 	for _, name := range want {
-		cfg.SetProvider(pluginName, name, config.NewProviderConfig(map[string]any{"enabled": true}))
+		values := map[string]any{"enabled": true}
+		for k, v := range providerOptions[name] {
+			values[k] = v
+		}
+		cfg.SetProvider(pluginName, name, config.NewProviderConfig(values))
 	}
 
 	if f.uiPort >= 0 {
@@ -135,8 +186,8 @@ func singlePluginConfig(pluginName string, allProviders []string, f singlePlugin
 // `tommy serve` uses (server.New / Start / Shutdown - see cmd/serve.go), and
 // blocks until interrupted. newPlugin is called once the config is known
 // good, so a bad --enabled-providers value never touches the network.
-func runSinglePlugin(cmd *cobra.Command, pluginName string, newPlugin func() plugin.Plugin, allProviders []string, f singlePluginFlags) error {
-	cfg, err := singlePluginConfig(pluginName, allProviders, f)
+func runSinglePlugin(cmd *cobra.Command, pluginName string, newPlugin func() plugin.Plugin, allProviders []string, f singlePluginFlags, providerOptions map[string]map[string]any) error {
+	cfg, err := singlePluginConfig(pluginName, allProviders, f, providerOptions)
 	if err != nil {
 		return err
 	}
@@ -187,6 +238,71 @@ func runSinglePlugin(cmd *cobra.Command, pluginName string, newPlugin func() plu
 
 var mailFlags singlePluginFlags
 
+// smtpOptionFlags are the smtp provider's own CLI flags - the counterpart of
+// [plugins.mail.providers.smtp] in tommy.toml. Port and credentials get
+// flags, matching CLAUDE.md rule 10 and the plan's call for smtp's port to be
+// reachable from the command line: port decides whether an application
+// pointed at the default 1025 finds anything there at all, and credentials
+// decide whether AUTH is checked or merely recorded. domain,
+// max_message_bytes, max_recipients, max_line_length, read_timeout,
+// write_timeout and bind are tuning knobs an application never needs to flip
+// per test run, so they stay config-file-only - see tommy.toml's
+// [plugins.mail.providers.smtp] comments for that reasoning spelled out.
+type smtpOptionFlags struct {
+	port     int
+	username string
+	password string
+}
+
+var mailSMTPFlags smtpOptionFlags
+
+func registerSMTPOptionFlags(cmd *cobra.Command, f *smtpOptionFlags) {
+	fl := cmd.Flags()
+	fl.IntVar(&f.port, "smtp-port", smtp.DefaultPort, "port for the smtp provider's own listener (0 picks a free one)")
+	fl.StringVar(&f.username, "smtp-username", "", "pin the AUTH username the smtp provider accepts (unset accepts any, or none)")
+	fl.StringVar(&f.password, "smtp-password", "", "pin the AUTH password the smtp provider accepts")
+}
+
+// mailjetOptionFlags are the mailjet provider's own CLI flags - the
+// counterpart of [plugins.mail.providers.mailjet] in tommy.toml. Pinning
+// api_key/secret_key is the same error-path test as pinning smtp's AUTH
+// credentials (a mismatch then gets Mailjet's real 401), so it gets a flag
+// on the same reasoning. mailjet has no port of its own to expose: every
+// HTTP provider shares the one ingress listener and is told apart by path,
+// and core has no per-provider-listener mechanism for an HTTP provider (see
+// core/config/provider.go's Port field, and core/server/ingress/mount.go,
+// which path-routes every HTTP provider onto the shared ingress with no
+// notion of a per-provider port at all) - a --mailjet-port flag would set a
+// config key nothing reads.
+type mailjetOptionFlags struct {
+	apiKey    string
+	secretKey string
+}
+
+var mailMailjetFlags mailjetOptionFlags
+
+func registerMailjetOptionFlags(cmd *cobra.Command, f *mailjetOptionFlags) {
+	fl := cmd.Flags()
+	fl.StringVar(&f.apiKey, "mailjet-api-key", "", "pin the api_key the mailjet provider accepts; a mismatch then gets Mailjet's real 401")
+	fl.StringVar(&f.secretKey, "mailjet-secret-key", "", "pin the secret_key the mailjet provider accepts (only checked when --mailjet-api-key is also set)")
+}
+
+// sendgridOptionFlags are the sendgrid provider's own CLI flags - the
+// counterpart of [plugins.mail.providers.sendgrid] in tommy.toml. Same
+// reasoning as mailjet: pinning api_key is the error-path test that gets
+// SendGrid's real 401 on a mismatch, and there is no port flag for the same
+// reason mailjet has none.
+type sendgridOptionFlags struct {
+	apiKey string
+}
+
+var mailSendgridFlags sendgridOptionFlags
+
+func registerSendgridOptionFlags(cmd *cobra.Command, f *sendgridOptionFlags) {
+	fl := cmd.Flags()
+	fl.StringVar(&f.apiKey, "sendgrid-api-key", "", "pin the bearer token the sendgrid provider accepts; a mismatch then gets SendGrid's real 401")
+}
+
 // mailProviders returns fresh instances of every mail provider this binary
 // ships. Kept in sync with plugins/all/all.go by hand - there being only one
 // wiring list to update per new provider is the tradeoff of I1 owning the
@@ -208,16 +324,27 @@ builds the same Config struct tommy serve --config would build from a TOML
 file whose [plugins] section mentions only mail, and runs it through the
 exact same bootstrap. With no --enabled-providers every mail provider this
 binary ships is enabled.`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		providers := mailProviders()
+		opts := newProviderOptionBuilder(cmd)
+		opts.set(smtp.ProviderName, "smtp-port", "port", mailSMTPFlags.port)
+		opts.set(smtp.ProviderName, "smtp-username", "username", mailSMTPFlags.username)
+		opts.set(smtp.ProviderName, "smtp-password", "password", mailSMTPFlags.password)
+		opts.set(mailjet.ProviderName, "mailjet-api-key", "api_key", mailMailjetFlags.apiKey)
+		opts.set(mailjet.ProviderName, "mailjet-secret-key", "secret_key", mailMailjetFlags.secretKey)
+		opts.set(sendgrid.ProviderName, "sendgrid-api-key", "api_key", mailSendgridFlags.apiKey)
 		return runSinglePlugin(cmd, mail.PluginName, func() plugin.Plugin {
 			return mail.New(mailProviders()...)
-		}, providerNames(providers), mailFlags)
+		}, providerNames(providers), mailFlags, opts.options)
 	},
 }
 
 func init() {
 	registerSinglePluginFlags(mailCmd, &mailFlags)
+	registerSMTPOptionFlags(mailCmd, &mailSMTPFlags)
+	registerMailjetOptionFlags(mailCmd, &mailMailjetFlags)
+	registerSendgridOptionFlags(mailCmd, &mailSendgridFlags)
 	rootCmd.AddCommand(mailCmd)
 }

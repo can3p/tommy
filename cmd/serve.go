@@ -32,6 +32,7 @@ var serveCmd = &cobra.Command{
 
 With no --config, every compiled-in plugin runs with its defaults: the UI and
 API on :8811 and the shared ingress on :8822.`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()

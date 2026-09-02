@@ -194,7 +194,10 @@ func TestProvidersCommandUnknownName(t *testing.T) {
 }
 
 func TestCommandsAreRegistered(t *testing.T) {
-	want := map[string]bool{"serve": false, "providers": false}
+	want := map[string]bool{
+		"serve": false, "providers": false,
+		"mail": false, "sms": false, "files": false, "chat": false,
+	}
 	for _, c := range rootCmd.Commands() {
 		if _, ok := want[c.Name()]; ok {
 			want[c.Name()] = true
