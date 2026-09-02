@@ -219,6 +219,58 @@ slot, then parsing the resulting page for live tags, event-handler attributes an
 dangerous schemes in real attribute positions. Zero. Hostile input survives only
 as inert escaped text.
 
+## Wave 6·0 — CLI catch-up
+
+The CLI had fallen two plugins behind the config. `tommy mail` and `tommy sms`
+existed; `files` and `chat` had shipped without a subcommand and could only be
+run from a TOML file. `tommy.toml` had never grown their sections either. This
+wave closed both gaps and turned "keep the CLI level with the config" into
+`CLAUDE.md` rule 10, so it never has to be a wave of its own again.
+
+**Built:** `tommy files` and `tommy chat`, following `cmd/mail.go` exactly — the
+same `Config` built in memory, the same `server.New`/`Start`/`Shutdown`
+bootstrap, no second code path. Provider options reach the CLI through a
+`providerOptionBuilder` that records a key only when `Flags().Changed` is true,
+so an unset flag never overrides a provider's own default, and flags are named
+`--<provider>-<option>` so two providers of one plugin cannot collide. Flags
+given for a provider that `--enabled-providers` excluded are a hard error rather
+than a silent no-op. `tommy.toml` gained documented `files` and `chat` sections.
+
+**`ProviderConfig.Port` turned out to be inert for HTTP providers.** `tommy.toml`
+had advertised `# port = 9001` under mailjet, sendgrid and twilio since the
+config landed, and the field's own doc comment promised "its own listener instead
+of the shared ingress (HTTP providers)". Nothing implemented it. The ingress
+path-routes every HTTP provider onto one listener and has no per-provider port;
+the field's only reader, `listenerAddr`, uses it to report where a *listener*
+provider bound. `Validate` range- and collision-checks the value, which is
+exactly what kept the gap hidden for three waves — the config looked like it was
+being taken seriously. It surfaced only when the agent, reasonably trusting the
+documentation, built `--mailjet-port`/`--sendgrid-port`/`--twilio-port`/
+`--slack-port`/`--msteams-port`, and a coordinator check of
+`--sendgrid-port 45999` against the real binary found nothing listening there.
+The five flags were removed and the claim deleted from the documentation rather
+than implemented: giving a provider a listener of its own is core work, not a CLI
+catch-up. It is in the plan's backlog as implement-or-delete.
+
+**A stray positional argument silently started a server.** No command set `Args`,
+so cobra passed unrecognised positionals to `RunE` and they were ignored:
+`tommy mail help` booted a server instead of printing help. This was not
+theoretical — a `main mail help` process was found still holding 1025, 8811 and
+8822 nine hours after an earlier session, and it is the most likely identity of
+the "pre-existing mail catcher on 1025" an agent reported working around.
+`Args: cobra.NoArgs` now covers `mail`, `sms`, `files`, `chat` and `serve`.
+
+**Deliberately left file-only, and documented as such** in each `tommy.toml`
+section rather than silently: every listener's `bind`, and the tuning knobs
+(SMTP's `domain` and size/timeout caps, FTP's idle and connection timeouts,
+SFTP's `server_version`, timeouts and connection/auth caps). The reasoning is
+that nobody flips these per test run, and moving a listener off loopback is a
+security-relevant change better made explicitly in a versioned file. Credentials
+went the other way and got flags on every provider that has them, because pinning
+one is how an application's error path gets exercised — `--mailjet-api-key` with
+a mismatched pair returns Mailjet's real `mj-0015` 401, verified against the
+running binary.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project

@@ -331,7 +331,7 @@ func (c *Config) IngressSharesUIListener() bool
 ```go
 type ProviderConfig struct {
     Enabled *bool // nil means "inherit"
-    Port    int
+    Port    int   // listener providers only - see below
 }
 func NewProviderConfig(values map[string]any) ProviderConfig
 func (p ProviderConfig) Decode(v any) error // into your own toml-tagged struct
@@ -346,6 +346,15 @@ setting `DefaultEnabled = false` and switching on just what was asked for.
 
 Ports: `0` means "bind an ephemeral port". Build the config first, then call
 `ApplyDefaults` — "unset" and "0" are only distinguishable before defaulting.
+
+**`ProviderConfig.Port` is honoured for listener providers only.** SMTP, FTP and
+SFTP each read it in their own `LoadConfig`, and the core reads it in
+`listenerAddr` purely to report where such a provider bound. Every HTTP provider
+is path-routed onto the one shared ingress, which has no per-provider port, so a
+port set on one is range- and collision-checked by `Validate` and then ignored.
+Giving an HTTP provider a listener of its own is unbuilt work, not a supported
+setting — `tommy.toml` advertised it for three waves before anyone tried to drive
+it from the command line and found nothing listening.
 
 ## `core/server/ingress`
 
@@ -544,6 +553,21 @@ exercises the generic view). Read it before writing a plugin.
 - `tommy providers [plugin|plugin/provider] [--json] [-c tommy.toml]` — prints
   descriptions, endpoints and snippets rendered against the ports the current
   configuration would bind.
+- `tommy <plugin>` — one single-plugin shortcut per plugin (`mail`, `sms`,
+  `files`, `chat`), each mirroring `serve`'s flags where they apply plus
+  `--in-port` and `--enabled-providers`. It builds the same `Config` in memory
+  and runs the same bootstrap; there is no lighter-weight second server.
+- Provider options are `--<provider>-<option>` (`--smtp-port`,
+  `--ftp-passive-ports`, `--mailjet-api-key`, …), contributed only when the flag
+  was actually changed so an unset flag never overrides a provider default.
+  Naming a provider that `--enabled-providers` excluded is an error.
+- Every command is `cobra.NoArgs`: a stray positional argument is rejected
+  rather than ignored.
+
+**A new plugin or provider must extend this surface in the same task**
+(`CLAUDE.md` rule 10). A plugin needs its own `tommy <plugin>`; a provider must
+be selectable through `--enabled-providers` and expose any option worth setting,
+or document why not.
 
 ## Checklist for a plugin or provider task
 

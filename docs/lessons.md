@@ -38,6 +38,25 @@ conventions rot by the third provider. Rendering snippets as templates over the
 live addresses matters as much: a snippet with a hardcoded port is wrong the
 moment someone passes `--in-port`.
 
+**Driving a config from the command line is how you find out it was never
+implemented.** `ProviderConfig.Port` promised every HTTP provider a listener of
+its own in `tommy.toml`, in the field's doc comment, and in a `Validate` that
+range- and collision-checked the value. Nothing bound it. Three waves of TOML
+readers believed the documentation because validation made the setting look
+alive; the gap surfaced the first time someone tried to reach the setting through
+a flag and then checked whether anything answered on the port. A config key that
+is parsed and validated but never read by the thing it configures is
+indistinguishable from a working one until something tries to use it end to end.
+
+**Make an ignored input an error, not a no-op.** Two variants of the same bug
+showed up in one wave: a flag naming a provider that `--enabled-providers` had
+excluded, and cobra accepting a stray positional argument because no command set
+`Args`. Both silently did nothing, and the second is what left a server holding
+1025, 8811 and 8822 for nine hours after `tommy mail help` was typed instead of
+`tommy mail --help`. Silence is the expensive answer: the first behaves as though
+you configured something you did not, and the second as though you asked for help
+and got a daemon.
+
 ## On the protocols
 
 **Verify wire formats against live vendor documentation, never from memory.**
@@ -131,3 +150,10 @@ is worth it for the same reason.
   including ones that fall back to their own package default.
 - Substring-grepping a rendered page for `<script` proves nothing: the page has
   its own scripts and escaped content will not match. Parse the markup.
+- A cobra command with no subcommands and no `Args` validator accepts any
+  positional argument and ignores it, so `tommy mail help` runs the command
+  rather than printing help. `cobra.NoArgs` on every leaf command.
+- Before blaming a port collision on "something else on this machine", check
+  the age and command line of what holds it (`lsof -nP -iTCP -sTCP:LISTEN`,
+  then `ps -o lstart,command -p <pid>`). It is often a previous session's own
+  stray server, not a real mail catcher.
