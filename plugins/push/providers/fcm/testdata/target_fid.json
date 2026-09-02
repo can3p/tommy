@@ -1,0 +1,9 @@
+{
+  "message": {
+    "fid": "fis-installation-id-example-000111222",
+    "notification": {
+      "title": "Hello",
+      "body": "Addressed by Firebase Installation ID"
+    }
+  }
+}

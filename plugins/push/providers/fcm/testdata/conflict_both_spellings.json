@@ -1,0 +1,13 @@
+{
+  "message": {
+    "topic": "weather",
+    "notification": {
+      "title": "x",
+      "body": "y"
+    },
+    "android": {
+      "collapseKey": "camel-wins",
+      "collapse_key": "snake-loses"
+    }
+  }
+}

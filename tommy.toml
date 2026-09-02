@@ -296,3 +296,21 @@ port = 1162               # the provider's own UDP listener. 1162 rather than SN
 # The rest are tuning knobs nobody needs to flip per test run, so they stay
 # file-only (no CLI flag):
 # bind = "127.0.0.1"      # interface this listener binds, independent of the top-level `bind`
+
+# -----------------------------------------------------------------------------
+# push - captures the push notifications your app's backend sends to Apple or
+# Google, shown the way a phone would display them. Shortcut: `tommy push`.
+# -----------------------------------------------------------------------------
+
+[plugins.push]
+enabled = true
+
+[plugins.push.providers.fcm]
+# Firebase Cloud Messaging's HTTP v1 send API:
+# POST /v1/projects/{project}/messages:send. Any OAuth2 bearer token is
+# accepted and recorded by default. Both field spellings are accepted -
+# collapseKey and collapse_key are the same field, because FCM v1 is
+# proto3-backed and its parser takes either.
+enabled = true
+# bearer_token = "any-token"   # pin the token; a mismatch then gets FCM's real
+                               # 401 UNAUTHENTICATED envelope. CLI: --fcm-bearer-token

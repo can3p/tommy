@@ -90,7 +90,8 @@ Use `push.ExpiresAt` and `push.ExpiresAfter` rather than filling the struct in
 by hand; the zero sentinel is why `Expiry` cannot simply be a `*time.Time`.
 
 `Delivery.CollapseKey` **is** normalized — `apns-collapse-id` and
-`android.collapse_key` are the same mechanism. Note that this is unrelated to
+`android.collapse_key` (equivalently `collapseKey` - FCM v1 accepts both
+spellings, see below) are the same mechanism. Note that this is unrelated to
 `Alert.Category` (APNs `aps.category`, which decides the action buttons), and
 unrelated to `android.notification.notification_priority`, which is display
 prominence rather than delivery urgency.
@@ -174,3 +175,20 @@ remote notification* and *Sending notification requests to APNs*:
   `apns-collapse-id` / `collapse_key` supersede an undelivered message.
 - APNs has no image key at all; the image in the model is FCM's.
 - FCM has no subtitle anywhere; the subtitle in the model is Apple's.
+
+## FCM field spellings
+
+FCM v1 is proto3-backed, so its JSON parser accepts **both** the canonical
+lowerCamelCase name and the original snake_case proto field name —
+`collapseKey` and `collapse_key` are the same field, likewise `clickAction` /
+`click_action` and `validateOnly` / `validate_only`. Google's discovery document
+lists only the camelCase form because that is the canonical *output* name; it
+does not mean snake_case is rejected, and snake_case here is **not** the
+deprecated Legacy API. This document uses whichever spelling reads more clearly.
+
+A provider must accept both, and accepting only one is a silent-data-loss bug
+rather than a cosmetic one: the request still returns 200 and the field simply
+disappears from the capture. The `fcm` provider normalises the spelling of known
+keys before decoding, while leaving caller-owned `data`, `headers` and `payload`
+keys untouched — renaming someone's own `user_id` key would corrupt the very
+thing they came to inspect.

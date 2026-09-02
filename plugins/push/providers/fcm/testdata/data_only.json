@@ -1,0 +1,9 @@
+{
+  "message": {
+    "token": "cQAdeviceRegistrationTokenExample000111222333444555",
+    "data": {
+      "kind": "refresh",
+      "seq": "42"
+    }
+  }
+}

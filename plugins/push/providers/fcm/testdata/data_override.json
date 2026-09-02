@@ -1,0 +1,14 @@
+{
+  "message": {
+    "topic": "weather",
+    "data": {
+      "a": "message-level"
+    },
+    "android": {
+      "data": {
+        "a": "android-level",
+        "b": "extra"
+      }
+    }
+  }
+}
