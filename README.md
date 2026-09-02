@@ -55,7 +55,7 @@ configuration actually bound — useful before you've sent anything at all.
 |---|---|---|
 | `mail`  | `mailjet`, `sendgrid`, `smtp` | The vendor HTTP send APIs, plus a real SMTP listener |
 | `sms`   | `twilio` | The Programmable Messaging REST API (create, list, fetch) |
-| `files` | `ftp`, `sftp`, `tftp` | A real FTP, SFTP and TFTP server, backed by one shared virtual filesystem |
+| `files` | `ftp`, `sftp`, `tftp`, `nfs` | Real FTP, SFTP, TFTP and NFSv3 servers, backed by one shared virtual filesystem |
 | `hl7`   | `mllp` | A real MLLP listener that parses HL7 v2 and answers with a mechanical ACK |
 | `chat`  | `slack`, `msteams` | Slack incoming webhooks + `chat.postMessage`, and both generations of Teams incoming webhook |
 
@@ -188,6 +188,7 @@ response:
 | `smtp` (`tommy mail`)     | `--smtp-port`, `--smtp-username`, `--smtp-password` |
 | `twilio` (`tommy sms`)    | `--twilio-account-sid`, `--twilio-auth-token` |
 | `tftp` (`tommy files`)    | `--tftp-port` |
+| `nfs` (`tommy files`)     | `--nfs-port` |
 | `mllp` (`tommy hl7`)      | `--mllp-port` |
 | `ftp` (`tommy files`)     | `--ftp-port`, `--ftp-passive-host`, `--ftp-passive-ports`, `--ftp-username`, `--ftp-password` |
 | `sftp` (`tommy files`)    | `--sftp-port`, `--sftp-host-key`, `--sftp-authorized-keys`, `--sftp-username`, `--sftp-password` |
