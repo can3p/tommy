@@ -1,6 +1,6 @@
 # Tommy — Implementation Plan (forward-looking)
 
-Waves 0–6b are built. This document plans what comes next.
+Waves 0–6 are built. This document plans what comes next.
 
 - **What was built and why:** `docs/archive/history.md`
 - **The interfaces as built (authoritative):** `docs/contracts.md`
@@ -34,14 +34,16 @@ wave you expected, look in the history.
 | `files` | ftp, sftp, tftp, nfs | done |
 | `chat` | slack, msteams | done |
 | `hl7` | mllp | done |
+| `snmp` | trap | done |
 | `push` | — | **not started; named in the original brief** |
 
 Every plugin has a `tommy <plugin>` subcommand, and every provider option worth
 setting has a flag.
 
-Waves 0–6·0 are merged to `main`; 6a is on `feat/hl7-and-tftp` and 6b on
-`feat/mllp-and-nfs`, both awaiting review. **Start each new wave on its own
-branch**, named for what it builds, so a wave stays a reviewable unit.
+Waves 0–6·0 are merged to `main`. Waves 6a, 6b and 6c are on
+`feat/hl7-and-tftp`, `feat/mllp-and-nfs` and `feat/snmp-traps`, each branched off
+the last and all awaiting review. **Start each new wave on its own branch**,
+named for what it builds, so a wave stays a reviewable unit.
 
 ## 2. The scoping rule
 
@@ -64,7 +66,7 @@ async AS2 MDN) — which would need outbound HTTP and a scenario definition form
 
 ## 3. How to run a wave
 
-The pattern that worked for waves 0–6b, in short. `docs/lessons.md` has the
+The pattern that worked for waves 0–6, in short. `docs/lessons.md` has the
 reasoning; `CLAUDE.md` has the rules.
 
 1. **Branch first.** One branch per wave, named for what it builds
@@ -87,39 +89,6 @@ reasoning; `CLAUDE.md` has the rules.
 
 Model guidance: contract-defining and subtle-parsing work to the stronger model;
 well-specified translation against a fixed contract to the cheaper one.
-
----
-
-## Wave 6 — tier 1 protocols
-
-The CLI catch-up that opened this wave is done and is in the history. Keep it
-closed: **each new provider carries its own CLI flags as part of its task**
-(`CLAUDE.md` rule 10), so this never has to be repeated as a wave of its own.
-
-Four additions were planned, chosen because each removes real pain and each has
-a mechanical reply. **6a and 6b are done** — the HL7 plugin core, TFTP, MLLP and
-NFS are in the history. What remains is 6c below.
-
-Sequenced only by `go.mod` ownership — see rule 4 above.
-
-### 6c · one agent
-
-| Task | Owns | `go.mod` | Model |
-|---|---|---|---|
-| **SNMP trap receiver** | `plugins/snmp/**` | **yes** — `gosnmp` | cheaper |
-
-Pure capture, no state, no reply at all for v2c traps — the simplest fit in the
-roadmap. `gosnmp` already decodes traps.
-
-- Own plugin, UDP listener, default port 1162 (not the privileged 162).
-- Support v1 traps, v2c traps and informs; an inform **does** require a response,
-  which is mechanical.
-- Canonical model: the varbind list with OIDs, types and values, plus the trap
-  OID, uptime and community. Decode value types properly (integer, octet string,
-  OID, counter, timeticks, IP address) rather than stringifying everything.
-- UI: a varbind table per trap. The generic event view is an acceptable start —
-  this plugin is a good test of whether a new plugin really is useful on day one
-  with no UI code, as designed.
 
 ---
 
@@ -235,6 +204,11 @@ Independent of each other and of the protocol work; each is one agent.
   `Handler.Mount`'s `net.Conn`. For a kernel client that is the same host on a
   possibly different source port. Fixing it needs a core change nobody else
   wants.
+- **A varbind table for the `snmp` tab.** The plugin deliberately shipped with no
+  UI of its own, and the generic event view carries it: the list line names the
+  version, trap OID and varbind count, and the detail pane renders each varbind's
+  OID, type and value. A table would read better if anyone spends real time in
+  that tab; nothing is blocked on it.
 - `event.DecodePayload[T]` in core. `sms`, `chat` and `hl7` each carry a
   near-identical pointer/value/JSON-round-trip payload decoder, ~25 lines apiece.
   A convenience rather than a gap, reported by the third plugin to write one.

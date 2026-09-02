@@ -401,6 +401,48 @@ ephemeral port, and `VFSBinder` the shared tree. The `hl7` core needed nothing a
 for its first real consumer, which is the useful signal about a contract written one
 wave ahead of its use.
 
+## Wave 6c — the SNMP trap receiver · 1 agent
+
+The last of Wave 6, and the plugin the roadmap had picked as its cheapest: pure
+capture, no state, and no reply at all for the main case.
+
+**Built:** an own plugin with a UDP trap provider. v1 traps, v2c traps and v2c
+informs, every varbind decoded by its real wire type, default port 1162 rather
+than the privileged 162.
+
+**gosnmp's own `TrapListener` could not be used, and finding that out was the
+task's one real decision.** It owns its UDP socket internally and never reports
+the address it bound, which makes `AddressableProvider` impossible — and that
+matters here more than it sounds, because the whole discovery surface (snippets,
+`tommy providers`, the how-to-test panel) renders against the address a provider
+actually bound. With `--trap-port 0` the snippets would have pointed at nothing.
+The provider therefore opens its own `net.PacketConn`, the way TFTP does, and
+calls gosnmp's *exported* wire functions — `UnmarshalTrap` to decode,
+`MarshalMsg` to build the inform's `GetResponse`. A convenience wrapper being
+unusable does not mean the library is: the layer underneath was the right one.
+
+**v1 and v2c are modelled separately on purpose.** A v1 trap carries enterprise
+OID, agent address, generic and specific trap numbers and a timestamp in its PDU
+header; a v2c trap has none of those and instead carries `sysUpTime.0` and
+`snmpTrapOID.0` as its first two varbinds. Two mutually exclusive structs, and
+neither version is ever handed a field it does not have — flattening them would
+have destroyed exactly what someone reads a trap to find out.
+
+**The "no UI on day one" claim was tested honestly and held.** The plan allowed
+the generic event view as a starting point and asked whether a new plugin is
+genuinely useful without bespoke UI code. This plugin shipped with `RegisterUI`
+and `RegisterAPI` empty, and the answer is yes: the list line names the version,
+trap OID and varbind count, and the detail pane renders every varbind's OID, type
+and value beside a hex dump of the datagram. A varbind *table* is nicer and is in
+the backlog — recorded as unbuilt rather than quietly claimed.
+
+**Verified against a second implementation.** net-snmp's `snmptrap` and
+`snmpinform` were used alongside gosnmp's client, which is worth more than either
+alone: `snmpinform` blocks until it receives a `GetResponse`, so its clean exit is
+end-to-end proof that the one reply this plugin makes actually arrives. A
+non-SNMP datagram is captured with a decode error recorded rather than dropped —
+a fake that silently discards what it cannot parse teaches its user nothing.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project
