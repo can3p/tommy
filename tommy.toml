@@ -7,10 +7,12 @@
 #
 # TOML and the CLI build the exact same Config struct and run through the
 # exact same bootstrap (core/server) - nothing below is TOML-only, and every
-# setting here has a CLI equivalent on `tommy serve` or the single-plugin
-# shortcuts (`tommy mail`, `tommy sms`). See docs/contracts.md ("core/config")
-# for the full field reference and docs/implementation-plan.md §4 for why the
-# config is shaped this way.
+# setting here has a CLI equivalent on `tommy serve` or one of the
+# single-plugin shortcuts (`tommy mail`, `tommy sms`, `tommy files`,
+# `tommy chat`). A handful of provider tuning knobs - noted where they appear
+# below - are deliberately file-only; everything else has a flag. See
+# docs/contracts.md ("core/config") for the full field reference and
+# docs/implementation-plan.md §4 for why the config is shaped this way.
 #
 # Run with:  tommy serve --config tommy.toml
 # Inspect a config without starting anything:  tommy providers --config tommy.toml
@@ -64,10 +66,17 @@ blob_limit = "256MB"
 # What a plugin or provider does when its own [plugins.<x>] or
 # [plugins.<x>.providers.<y>] section is missing, or present with no `enabled`
 # key of its own. true (the default, shown here) means "unmentioned means
-# on". The single-plugin CLI shortcuts (tommy mail, tommy sms) build a config
-# with this flipped to false in memory and then enable only the plugin and
-# providers that were actually asked for - see cmd/mail.go.
+# on". The single-plugin CLI shortcuts (tommy mail, tommy sms, tommy files,
+# tommy chat) build a config with this flipped to false in memory and then
+# enable only the plugin and providers that were actually asked for - see
+# cmd/mail.go.
 default_enabled = true
+
+# Every HTTP provider below (mailjet, sendgrid, twilio, slack, msteams) shares
+# the one [ingress] listener above and is told apart by path - there is no
+# per-provider listener for an HTTP provider, so none of their sections below
+# has a `port` key. Only smtp, ftp and sftp - real protocol servers, not HTTP
+# APIs - get a listener and a port of their own.
 
 # -----------------------------------------------------------------------------
 # mail - captures the email your application sends, whether it went out
@@ -81,30 +90,32 @@ enabled = true
 # Mailjet's transactional Send API v3.1: POST /v3.1/send. Any Basic-auth
 # credentials are accepted and recorded by default.
 enabled = true
-# port = 9001            # optional dedicated listener instead of the shared ingress
-# api_key    = "any-key"    # pin credentials; a mismatch then gets Mailjet's real 401
-# secret_key = "any-secret" # only checked when api_key is also set
+# api_key    = "any-key"     # pin credentials; a mismatch then gets Mailjet's real 401. CLI: --mailjet-api-key
+# secret_key = "any-secret"  # only checked when api_key is also set. CLI: --mailjet-secret-key
 
 [plugins.mail.providers.sendgrid]
 # Twilio SendGrid's v3 Mail Send API: POST /v3/mail/send. Any bearer token is
 # accepted and recorded by default.
 enabled = true
-# port = 9002
-# api_key = "SG.fake-key"   # pin a token; a mismatch gets SendGrid's real 401
+# api_key = "SG.fake-key"    # pin a token; a mismatch gets SendGrid's real 401. CLI: --sendgrid-api-key
 
 [plugins.mail.providers.smtp]
 # A real SMTP server on its own port. Point any mail library at it with no
 # further setup - nothing is ever relayed anywhere.
 enabled = true
-port    = 1025          # the provider's own listener, not the shared ingress
+port    = 1025          # the provider's own listener, not the shared ingress. CLI: --smtp-port
+# username = "any"        # pin AUTH credentials; unset accepts anything, or none at all. CLI: --smtp-username
+# password = "any"        # CLI: --smtp-password
+#
+# The rest are tuning knobs nobody needs to flip per test run, so they stay
+# file-only (no CLI flag):
+# bind              = "127.0.0.1"  # interface this listener binds, independent of the top-level `bind`
 # domain            = "tommy"      # hostname in the SMTP greeting banner
 # max_message_bytes = 26214400     # 25MiB, caps one DATA transaction
 # max_recipients    = 100          # caps RCPT TO per transaction
 # max_line_length   = 65536        # 64KiB, generous for long unwrapped HTML lines
 # read_timeout      = 60           # seconds
 # write_timeout     = 60           # seconds
-# username = "any"        # pin AUTH credentials; unset accepts anything, or none at all
-# password = "any"
 
 # -----------------------------------------------------------------------------
 # sms - captures the SMS/MMS your application sends through a provider API.
@@ -119,6 +130,74 @@ enabled = true
 # and fetch endpoints, served straight out of tommy's event store. Any
 # Basic-auth credentials are accepted and recorded by default.
 enabled = true
-# port = 9003
-# account_sid = "AC00000000000000000000000000000000"  # pin the expected sid
-# auth_token  = "any-token"                            # and token; both must match to enable the check
+# account_sid = "AC00000000000000000000000000000000"  # pin the expected sid. CLI: --twilio-account-sid
+# auth_token  = "any-token"                            # and token; both must match to enable the check. CLI: --twilio-auth-token
+
+# -----------------------------------------------------------------------------
+# files - captures files your application uploads over FTP or SFTP into a
+# shared in-memory virtual filesystem, downloadable back over the API or the
+# UI. Shortcut: `tommy files`.
+# -----------------------------------------------------------------------------
+
+[plugins.files]
+enabled = true
+
+[plugins.files.providers.ftp]
+# A real FTP server on its own port, backed by the plugin's shared virtual
+# filesystem. Point any FTP client or library at it with no further setup.
+enabled = true
+port = 2121              # the provider's own listener, not the shared ingress. CLI: --ftp-port
+# passive_host  = "127.0.0.1"    # IPv4 advertised to clients for PASV/EPSV. CLI: --ftp-passive-host
+# passive_ports = "50000-50100"  # restrict passive data connections to this range. CLI: --ftp-passive-ports
+# username = "any"        # pin the login the ftp provider accepts; unset accepts anything, or none at all. CLI: --ftp-username
+# password = "any"        # CLI: --ftp-password
+#
+# The rest are tuning knobs nobody needs to flip per test run, so they stay
+# file-only (no CLI flag):
+# bind               = "127.0.0.1"  # interface this listener binds, independent of the top-level `bind`
+# idle_timeout       = 900          # seconds a connection may sit with no command
+# connection_timeout = 30           # seconds to establish a data connection
+
+[plugins.files.providers.sftp]
+# A real SFTP server (SSH transport plus the SFTP subsystem) on its own port,
+# backed by the same shared virtual filesystem as ftp above. Point any sftp
+# client, scp, or an SDK's SFTP support at it with no further setup.
+enabled = true
+port = 2222               # the provider's own listener, not the shared ingress. CLI: --sftp-port
+# host_key_path = "~/.config/tommy/sftp_host_ed25519"  # generated on first use, then reused so
+                                                        # a client never sees the host identity change. CLI: --sftp-host-key
+# authorized_keys = "/path/to/authorized_keys"  # check public-key auth against this file; unset accepts any key. CLI: --sftp-authorized-keys
+# username = "any"         # pin the password-auth login the sftp provider accepts. CLI: --sftp-username
+# password = "any"         # CLI: --sftp-password
+#
+# The rest are tuning knobs nobody needs to flip per test run, so they stay
+# file-only (no CLI flag):
+# bind              = "127.0.0.1"     # interface this listener binds, independent of the top-level `bind`
+# server_version    = "SSH-2.0-tommy" # identification string sent before the handshake
+# handshake_timeout = 30              # seconds allowed to complete authentication
+# idle_timeout      = 600             # seconds a connection may sit with no read or write
+# max_connections   = 64              # concurrent SSH connections
+# max_auth_tries    = 6               # authentication attempts per connection
+
+# -----------------------------------------------------------------------------
+# chat - captures chat messages your application posts to Slack or Microsoft
+# Teams via an incoming webhook, rendered as the real Block Kit / Adaptive
+# Card markup would look. Shortcut: `tommy chat`.
+# -----------------------------------------------------------------------------
+
+[plugins.chat]
+enabled = true
+
+[plugins.chat.providers.slack]
+# Slack incoming webhooks (POST /services/{team}/{bot}/{token}) and the Web
+# API's chat.postMessage. Any bearer token / webhook URL is accepted and
+# recorded by default; neither slack nor msteams takes any provider-specific
+# option at all.
+enabled = true
+
+[plugins.chat.providers.msteams]
+# Both generations of Microsoft Teams incoming webhook actually in use: the
+# retired Office 365 connector (MessageCard) and the current Power Automate
+# workflow trigger (Adaptive Card). The webhook URL is the only credential
+# either presents, and it is always accepted and recorded.
+enabled = true

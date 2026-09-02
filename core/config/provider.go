@@ -14,8 +14,15 @@ import (
 type ProviderConfig struct {
 	// Enabled is nil when the section does not say, which means "inherit".
 	Enabled *bool
-	// Port, when non-zero, gives the provider its own listener instead of the
-	// shared ingress (HTTP providers) or sets its listen port (SMTP, FTP, ...).
+	// Port, when non-zero, sets a listener provider's listen port - SMTP,
+	// FTP, SFTP each read it in their own LoadConfig, and the core uses it in
+	// listenerAddr only to report where such a provider can be reached.
+	//
+	// It does nothing for an HTTP provider. Every HTTP provider is path-routed
+	// onto the one shared ingress (core/server/ingress), which has no notion
+	// of a per-provider port; giving one a port here is validated for range
+	// and collisions and then ignored. Wiring a provider onto a dedicated
+	// listener is unbuilt work - see docs/implementation-plan.md.
 	Port int
 
 	raw    []byte
