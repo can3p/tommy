@@ -1,6 +1,6 @@
 # Tommy — Implementation Plan (forward-looking)
 
-Waves 0–6·0 are built. This document plans what comes next.
+Waves 0–6a are built. This document plans what comes next.
 
 - **What was built and why:** `docs/archive/history.md`
 - **The interfaces as built (authoritative):** `docs/contracts.md`
@@ -31,15 +31,19 @@ wave you expected, look in the history.
 |---|---|---|
 | `mail` | mailjet, sendgrid, smtp | done |
 | `sms` | twilio | done |
-| `files` | ftp, sftp | done |
+| `files` | ftp, sftp, tftp | done |
 | `chat` | slack, msteams | done |
+| `hl7` | — | **core done (Wave 6a); unwired until MLLP lands in 6b** |
 | `push` | — | **not started; named in the original brief** |
 
-Every plugin has a `tommy <plugin>` subcommand, and every provider option worth
-setting has a flag.
+Every *shipping* plugin has a `tommy <plugin>` subcommand, and every provider
+option worth setting has a flag. `hl7` is the one exception, and deliberately so:
+it has no provider yet, so there is nothing for a subcommand to run. Both land
+together in 6b.
 
-Waves 0–6·0 are merged to `main`. **Start each new wave on its own branch**,
-named for what it builds, so a wave stays a reviewable unit.
+Waves 0–6·0 are merged to `main`; 6a is on `feat/hl7-and-tftp`. **Start each new
+wave on its own branch**, named for what it builds, so a wave stays a reviewable
+unit.
 
 ## 2. The scoping rule
 
@@ -62,7 +66,7 @@ async AS2 MDN) — which would need outbound HTTP and a scenario definition form
 
 ## 3. How to run a wave
 
-The pattern that worked for waves 0–6·0, in short. `docs/lessons.md` has the
+The pattern that worked for waves 0–6a, in short. `docs/lessons.md` has the
 reasoning; `CLAUDE.md` has the rules.
 
 1. **Branch first.** One branch per wave, named for what it builds
@@ -94,53 +98,11 @@ The CLI catch-up that opened this wave is done and is in the history. Keep it
 closed: **each new provider carries its own CLI flags as part of its task**
 (`CLAUDE.md` rule 10), so this never has to be repeated as a wave of its own.
 
-Four additions, chosen because each removes real pain and each has a mechanical
-reply. Two are `files` providers over the VFS that already exists, so they need no
-new plugin and no new UI.
+Four additions were planned, chosen because each removes real pain and each has
+a mechanical reply. **6a is done** — the HL7 plugin core and the TFTP provider
+are in the history. What remains is 6b and 6c below.
 
 Sequenced only by `go.mod` ownership — see rule 4 above.
-
-### 6a · two agents in parallel
-
-| Task | Owns | `go.mod` | Model |
-|---|---|---|---|
-| **HL1 — HL7 plugin core** | `plugins/hl7/**` (not `providers/`) | no | stronger |
-| **P-tftp** | `plugins/files/providers/tftp/**` | **yes** — `pin/tftp` | cheaper |
-
-**HL1 — HL7 v2 plugin core.** Probably the best single fit in the roadmap: every
-hospital integration project hits HL7, the framing is trivial, the `ACK` is
-mechanical, there is no good lightweight local mock, and the inspection value is
-enormous.
-
-- Canonical model: a **segment/field/component tree** (`MSH`, `PID`, `OBX`, …).
-  HL7 v2 is pipe-delimited with configurable separators declared in `MSH-1`/`MSH-2`
-  — read them from the message rather than assuming `|^~\&`.
-- Handle repetition, components and subcomponents, and escape sequences (`\F\`,
-  `\S\`, `\T\`, `\R\`, `\E\`). Preserve the raw message exactly; `Raw.Transport`
-  is `"tcp"`.
-- `Event.Type` is `hl7.message`; put the message type (`ADT^A01`), control id,
-  sending/receiving application and facility in `Summary` and `Meta`.
-- API: `GET /messages`, `GET /messages/{id}`, `GET /messages/{id}/raw`, `DELETE`.
-- UI: a **segment tree** view — collapsible segments, field numbers alongside
-  values, and a raw pane. This is the view that makes the plugin worth having; a
-  generic JSON dump would waste it. Data-element *names* (`PID-5` = patient name)
-  for the common segments are a nice touch if cheap, but the field positions
-  matter more than a complete dictionary.
-- No providers yet, so `New(providers ...plugin.Provider)` variadic, tests driven
-  by a fake provider.
-
-**P-tftp.** Best effort-to-value ratio in the whole roadmap: RFC 1350 is tiny,
-`pin/tftp` is mature, and it is a **UDP `files` provider over the existing VFS** —
-no new plugin, no new UI, no new canonical model.
-
-- `ListenerProvider` + `AddressableProvider`, default port 69 but **0 in tests**;
-  note 69 is privileged, so default to 6969 and document why.
-- RRQ and WRQ, `octet` mode at minimum, `netascii` if cheap; the `blksize`,
-  `tsize` and `timeout` options are common enough to be worth supporting.
-- Writes go through a `files.Session` so uploads land in the tree *and* the event
-  log. Never interpret paths — `VFS.Resolve` is the gate.
-- Test with a real TFTP client over UDP (`curl` speaks tftp; the `tftp` binary is
-  another option, skip if absent) plus a hand-driven packet-level test.
 
 ### 6b · two agents in parallel
 
@@ -148,6 +110,20 @@ no new plugin, no new UI, no new canonical model.
 |---|---|---|---|---|
 | **P-mllp** | `plugins/hl7/providers/mllp/**` | no | cheaper | HL1 |
 | **P-nfs** | `plugins/files/providers/nfs/**` | **yes** — `willscott/go-nfs` | stronger | — |
+
+**P-mllp inherits three obligations from HL1**, none of them optional:
+
+1. **Wire `hl7` into `plugins/all/all.go`** — the core is deliberately unwired,
+   because `plugintest` rejects a plugin with no providers and is right to: a
+   plugin that can never receive anything is not shippable. It goes in with the
+   provider.
+2. **Add `cmd/hl7.go`** (`CLAUDE.md` rule 10), with `--mllp-port` as the option
+   worth a flag, plus the `[plugins.hl7]` section in `tommy.toml` and the README
+   rows. Follow `cmd/files.go`'s `providerOptionBuilder` pattern.
+3. **Decide `AA`/`AE`/`AR` from the parsed message, not from an error.** `Parse`
+   fails only on an empty message; everything else returns a message carrying
+   coded `Issue`s. Use `HasHeader()` and `HasIssue(code)` — that API exists for
+   this task.
 
 **P-mllp.** MLLP framing is three control bytes — `0x0B` … `0x1C 0x0D` — around
 each message on a TCP connection. The substance is correctness at the edges:
@@ -297,6 +273,10 @@ Independent of each other and of the protocol work; each is one agent.
 | **Upstream: kleiner** | — | Fix `MaybeNotifyAboutNewVersion` in `can3p/kleiner`: it prints the error and falls through to dereference a nil version, panicking a released binary at startup when GitHub is unreachable. Second latent deref on the same path. Affects every project scaffolded from kleiner. |
 
 ## Backlog — small, unblocked, good first tasks
+
+- `event.DecodePayload[T]` in core. `sms`, `chat` and `hl7` each carry a
+  near-identical pointer/value/JSON-round-trip payload decoder, ~25 lines apiece.
+  A convenience rather than a gap, reported by the third plugin to write one.
 
 - `sms.New(sms.WithProviders(...))` uses an options pattern while `mail.New`,
   `files.New` and `chat.New` are variadic. Unify.
