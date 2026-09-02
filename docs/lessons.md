@@ -126,6 +126,14 @@ treating an unknown one as stale, and re-resolving the components behind a minte
 handle through the same one gate on every operation is what keeps the invariant —
 the gate stays in one place, the lookup just arrives differently.
 
+**When a library's convenience wrapper does not fit, look one layer down before
+giving up on the library.** gosnmp ships a `TrapListener` that owns its socket and
+never reveals the port it bound, which is incompatible with a discovery surface
+that renders every snippet against the address a provider actually bound. The
+exported marshal/unmarshal functions underneath it were exactly right. The same
+question is worth asking of any library whose top-level helper assumes it owns the
+process.
+
 ## On the runtime
 
 **A graceful shutdown must close connections that never asked for anything.**
