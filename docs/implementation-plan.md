@@ -1,6 +1,6 @@
 # Tommy — Implementation Plan (forward-looking)
 
-Waves 0–5 are built. This document plans what comes next.
+Waves 0–6·0 are built. This document plans what comes next.
 
 - **What was built and why:** `docs/archive/history.md`
 - **The interfaces as built (authoritative):** `docs/contracts.md`
@@ -35,8 +35,11 @@ wave you expected, look in the history.
 | `chat` | slack, msteams | done |
 | `push` | — | **not started; named in the original brief** |
 
-Waves 0–5 are merged to `main`. **Start each new wave on its own branch**, named
-for what it builds, so a wave stays a reviewable unit.
+Every plugin has a `tommy <plugin>` subcommand, and every provider option worth
+setting has a flag.
+
+Waves 0–6·0 are merged to `main`. **Start each new wave on its own branch**,
+named for what it builds, so a wave stays a reviewable unit.
 
 ## 2. The scoping rule
 
@@ -59,7 +62,7 @@ async AS2 MDN) — which would need outbound HTTP and a scenario definition form
 
 ## 3. How to run a wave
 
-The pattern that worked for waves 0–5, in short. `docs/lessons.md` has the
+The pattern that worked for waves 0–6·0, in short. `docs/lessons.md` has the
 reasoning; `CLAUDE.md` has the rules.
 
 1. **Branch first.** One branch per wave, named for what it builds
@@ -85,47 +88,17 @@ well-specified translation against a fixed contract to the cheaper one.
 
 ---
 
-## Wave 6 — CLI catch-up, then tier 1 protocols
+## Wave 6 — tier 1 protocols
 
-**Do this before any new protocol work.** The CLI is already two plugins behind:
-`tommy mail` and `tommy sms` exist, but `files` and `chat` shipped without a
-subcommand, so they can only be run from a config file. Every wave that adds a
-plugin or a provider widens that gap, so it gets closed first and then kept
-closed — see `CLAUDE.md` rule 10.
-
-### 6·0 — CLI catch-up · one agent · cheaper model
-
-| Task | Owns |
-|---|---|
-| **CLI-1** | `cmd/files.go`, `cmd/chat.go`, `cmd/*_test.go`, `tommy.toml`, `README.md` |
-
-- `tommy files` and `tommy chat`, following `cmd/mail.go` exactly: build a
-  `Config` in memory and hand it to **the same bootstrap** `tommy serve` uses,
-  never a second code path. The shared helpers (`singlePluginConfig`,
-  `runSinglePlugin`, flag registration) already exist in `cmd/mail.go`.
-- `--enabled-providers` must accept every provider the plugin ships, and reject
-  an unknown name before anything binds, naming the valid ones.
-- Listener providers need their ports on the command line too — `files` has two
-  (`--ftp-port`, `--sftp-port`, plus FTP's passive range and SFTP's host key
-  path), and `mail` has SMTP. Check what `tommy.toml` exposes and make sure
-  nothing is reachable only through a file.
-- Extend the e2e CLI test that already proves the flag path and the config path
-  behave identically (`test/e2e/cli_test.go`) to cover the new commands.
-- Update `tommy.toml`'s comments and the README's command list to match.
-
-**Definition of done:** for every plugin, `tommy <plugin> --help` lists its
-providers, and anything settable in `tommy.toml` has a flag or a documented
-reason it does not.
-
-### Then: tier 1 protocols
+The CLI catch-up that opened this wave is done and is in the history. Keep it
+closed: **each new provider carries its own CLI flags as part of its task**
+(`CLAUDE.md` rule 10), so this never has to be repeated as a wave of its own.
 
 Four additions, chosen because each removes real pain and each has a mechanical
 reply. Two are `files` providers over the VFS that already exists, so they need no
 new plugin and no new UI.
 
-Sequenced only by `go.mod` ownership — see rule 4 above. **Each new provider
-carries its own CLI flags as part of its task**, so 6·0 does not have to be
-repeated later.
+Sequenced only by `go.mod` ownership — see rule 4 above.
 
 ### 6a · two agents in parallel
 
@@ -335,5 +308,12 @@ Independent of each other and of the protocol work; each is one agent.
   the cold-start snippet work with real OpenSSH, but revisit if capture matters
   more than convenience.
 - The `files` and `chat` tabs have not had the polish pass mail and sms got.
-- (The missing `tommy files` / `tommy chat` subcommands were promoted out of this
-  backlog into Wave 6·0, since every later wave widens the gap.)
+- **`ProviderConfig.Port` is inert for HTTP providers — implement it or delete
+  it.** `tommy.toml` advertised a dedicated listener per HTTP provider from the
+  moment the config landed, but nothing ever built one: the ingress path-routes
+  every HTTP provider onto one listener, and the field's only reader reports
+  where a *listener* provider bound. `Validate` range- and collision-checks the
+  value, which is what kept the gap hidden. Wave 6·0 removed the claim rather
+  than implementing it. Either give a provider a listener of its own (worth
+  having when a client cannot be pointed at a path, and it shares shape with the
+  Wave 9 TLS work) or drop the field and its validation.
