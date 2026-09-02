@@ -55,7 +55,7 @@ configuration actually bound — useful before you've sent anything at all.
 |---|---|---|
 | `mail`  | `mailjet`, `sendgrid`, `smtp` | The vendor HTTP send APIs, plus a real SMTP listener |
 | `sms`   | `twilio` | The Programmable Messaging REST API (create, list, fetch) |
-| `files` | `ftp`, `sftp` | A real FTP and a real SFTP server, backed by one shared virtual filesystem |
+| `files` | `ftp`, `sftp`, `tftp` | A real FTP, SFTP and TFTP server, backed by one shared virtual filesystem |
 | `chat`  | `slack`, `msteams` | Slack incoming webhooks + `chat.postMessage`, and both generations of Teams incoming webhook |
 
 Every plugin and provider describes itself: `Description()`, the endpoints it
@@ -185,6 +185,7 @@ response:
 | `sendgrid` (`tommy mail`) | `--sendgrid-api-key` |
 | `smtp` (`tommy mail`)     | `--smtp-port`, `--smtp-username`, `--smtp-password` |
 | `twilio` (`tommy sms`)    | `--twilio-account-sid`, `--twilio-auth-token` |
+| `tftp` (`tommy files`)    | `--tftp-port` |
 | `ftp` (`tommy files`)     | `--ftp-port`, `--ftp-passive-host`, `--ftp-passive-ports`, `--ftp-username`, `--ftp-password` |
 | `sftp` (`tommy files`)    | `--sftp-port`, `--sftp-host-key`, `--sftp-authorized-keys`, `--sftp-username`, `--sftp-password` |
 

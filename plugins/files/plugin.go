@@ -97,7 +97,7 @@ func (p *Plugin) Title() string { return "Files" }
 
 // Description implements plugin.Plugin.
 func (p *Plugin) Description() string {
-	return "Accepts the files your application uploads over FTP or SFTP instead of shipping them anywhere, and keeps them in a virtual filesystem you can browse, download from and assert against. " +
+	return "Accepts the files your application uploads over FTP, SFTP or TFTP instead of shipping them anywhere, and keeps them in a virtual filesystem you can browse, download from and assert against. " +
 		"Every upload, mkdir, delete and rename is also recorded as an event, so the tree shows what is there now and the log shows how it got that way."
 }
 
