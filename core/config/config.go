@@ -18,13 +18,27 @@ const (
 	DefaultHost        = "localhost"
 )
 
+// DefaultIngressH2C is why the ingress speaks cleartext HTTP/2 unless told not
+// to. Some vendor APIs have no HTTP/1.1 form at all - APNs is
+// POST /3/device/{token} over HTTP/2 and nothing else - so a fake that only
+// spoke HTTP/1.1 could not be pointed at by their clients, and a fake exists to
+// be easy to point things at. It costs the HTTP/1.1 path nothing: h2c is
+// recognized from the HTTP/2 client preface, a byte sequence no HTTP/1.1 client
+// ever sends, and everything else is served exactly as before.
+const DefaultIngressH2C = true
+
 // ListenerConfig configures one of the core HTTP listeners.
 //
 // Port is a pointer so "unset" and "port 0" stay distinguishable: port 0 means
 // "bind an ephemeral port", which is what the test harness uses.
 type ListenerConfig struct {
-	Port *int
-	Bind string
+	Port *int   `toml:"port"`
+	Bind string `toml:"bind"`
+
+	// H2C serves cleartext HTTP/2 (h2c) alongside HTTP/1.1 on this listener.
+	// nil means unset, which defaults to true for the ingress and false for
+	// the UI and the API - see DefaultIngressH2C and Config.H2C.
+	H2C *bool `toml:"h2c"`
 }
 
 // StorageConfig configures retention.
@@ -156,6 +170,15 @@ func (c *Config) ApplyDefaults() {
 	if c.Ingress.Bind == "" {
 		c.Ingress.Bind = c.Bind
 	}
+	if c.Ingress.H2C == nil {
+		c.Ingress.H2C = Bool(DefaultIngressH2C)
+	}
+	if c.UI.H2C == nil {
+		c.UI.H2C = Bool(false)
+	}
+	if c.API.H2C == nil {
+		c.API.H2C = Bool(false)
+	}
 	c.ingressShared = *c.Ingress.Port == *c.UI.Port && *c.UI.Port != 0
 	if c.ingressShared {
 		c.Ingress.Bind = c.UI.Bind
@@ -174,6 +197,41 @@ func (c *Config) ApplyDefaults() {
 		c.Plugins = map[string]PluginConfig{}
 	}
 }
+
+// H2C reports whether the physical listener carrying the named core surface
+// ("ui", "api" or "ingress") serves cleartext HTTP/2.
+//
+// It has to be answered per listener rather than per surface: h2c is decided
+// from the first bytes of a connection, long before any routing could say which
+// surface the request is for. So a listener that several surfaces share speaks
+// h2c when any one of them asks for it - which by default is what happens the
+// moment the ingress is pointed at the UI port, since the ingress asks for h2c
+// and the UI does not. That is safe: browsers never attempt h2c (they require
+// TLS for HTTP/2), and an HTTP/1.1 request is unaffected either way.
+func (c *Config) H2C(surface string) bool {
+	uiListener := func() bool {
+		return boolValue(c.UI.H2C) ||
+			(c.apiShared && boolValue(c.API.H2C)) ||
+			(c.ingressShared && boolValue(c.Ingress.H2C))
+	}
+	switch surface {
+	case "ui":
+		return uiListener()
+	case "api":
+		if c.apiShared {
+			return uiListener()
+		}
+		return boolValue(c.API.H2C)
+	case "ingress":
+		if c.ingressShared {
+			return uiListener()
+		}
+		return boolValue(c.Ingress.H2C)
+	}
+	return false
+}
+
+func boolValue(p *bool) bool { return p != nil && *p }
 
 // APISharesUIListener reports whether the API is served by the UI listener.
 func (c *Config) APISharesUIListener() bool { return c.apiShared }

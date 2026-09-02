@@ -304,6 +304,7 @@ host = "localhost"   # hostname used in printed URLs and snippets
 [ui]      port = 8811
 [api]     port = 8811      # omit to share the UI listener
 [ingress] port = 8822
+          h2c  = true      # cleartext HTTP/2 alongside HTTP/1.1; on by default
 
 [storage]
 capacity   = 500            # events retained per plugin
@@ -318,6 +319,24 @@ enabled = true
 enabled = true
 port    = 1025              # a listener provider's own port
 ```
+
+```go
+type ListenerConfig struct {
+    Port *int   `toml:"port"`
+    Bind string `toml:"bind"`
+    H2C  *bool  `toml:"h2c"` // nil = unset: true for ingress, false for ui/api
+}
+const DefaultIngressH2C = true
+
+func (c *Config) H2C(surface string) bool // "ui" | "api" | "ingress"
+```
+
+**h2c is a property of the listener, not the surface.** A listener several
+surfaces share serves cleartext HTTP/2 when *any* of them asks for it, and the
+ingress asks by default — so pointing the ingress at the UI port puts h2c on the
+listener carrying the UI and the API too. That is safe (a browser never attempts
+h2c) and it is logged rather than silent. `[ingress] h2c = false` clears the
+shared listener as well.
 
 ```go
 func Default() *Config
@@ -527,6 +546,15 @@ declared endpoint is unreachable. `Start` runs every HTTP listener plus every
 `ListenerProvider` in its own goroutine; `Shutdown` cancels their context,
 gracefully stops the HTTP servers, and waits (5s by default).
 
+Every core listener is built through one seam (`newHTTPServer` + `listenerOptions`)
+which decides the protocols it speaks. The ingress serves **cleartext HTTP/2
+alongside HTTP/1.1 on the same port** — prior knowledge only; the deprecated
+`Upgrade: h2c` handshake is answered as HTTP/1.1, since RFC 9113 removed it. This
+uses `net/http`'s own `Server.Protocols`/`SetUnencryptedHTTP2` (Go 1.26), **not**
+`golang.org/x/net/http2/h2c`, which is deprecated and would fail the staticcheck
+gate. Wave 9's `--tls` adds a field to `listenerOptions` rather than a second
+construction path.
+
 Listener composition: the API shares the UI listener unless it has a port of its
 own; the ingress shares it when the ports match. On a shared listener the core
 prefixes win over the ingress catch-all.
@@ -558,13 +586,13 @@ exercises the generic view). Read it before writing a plugin.
 
 ## CLI
 
-- `tommy serve [-c tommy.toml] [--ui-port] [--api-port] [--ingress-port] [--bind] [--host] [--log-level]`
+- `tommy serve [-c tommy.toml] [--ui-port] [--api-port] [--ingress-port] [--bind] [--host] [--log-level] [--h2c]`
 - `tommy providers [plugin|plugin/provider] [--json] [-c tommy.toml]` — prints
   descriptions, endpoints and snippets rendered against the ports the current
   configuration would bind.
 - `tommy <plugin>` — one single-plugin shortcut per plugin (`mail`, `sms`,
   `files`, `chat`), each mirroring `serve`'s flags where they apply plus
-  `--in-port` and `--enabled-providers`. It builds the same `Config` in memory
+  `--in-port`, `--h2c` and `--enabled-providers`. It builds the same `Config` in memory
   and runs the same bootstrap; there is no lighter-weight second server.
 - Provider options are `--<provider>-<option>` (`--smtp-port`,
   `--ftp-passive-ports`, `--mailjet-api-key`, …), contributed only when the flag

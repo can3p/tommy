@@ -13,6 +13,7 @@ import (
 	"github.com/can3p/tommy/generated/buildinfo"
 	"github.com/can3p/tommy/plugins/all"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var serveFlags struct {
@@ -23,6 +24,7 @@ var serveFlags struct {
 	bind        string
 	host        string
 	logLevel    string
+	h2c         bool
 }
 
 var serveCmd = &cobra.Command{
@@ -89,6 +91,10 @@ API on :8811 and the shared ingress on :8822.`,
 	},
 }
 
+// serveFlagSet is serveCmd's flag set, kept so loadConfig can ask whether a
+// flag was actually given without referring to serveCmd itself.
+var serveFlagSet *pflag.FlagSet
+
 // loadConfig builds the config from --config plus flag overrides. Both entry
 // points produce the same Config struct and run the same bootstrap.
 func loadConfig() (*config.Config, error) {
@@ -119,6 +125,14 @@ func loadConfig() (*config.Config, error) {
 	if serveFlags.host != "" {
 		cfg.Host = serveFlags.host
 	}
+	// Only when the flag was actually given, so h2c = false in a config file
+	// is not clobbered by the flag's own default. Held as a flag set rather
+	// than reached through serveCmd, which would make loadConfig and serveCmd
+	// a package-level initialisation cycle; tommy providers shares loadConfig
+	// and never registers the flag, so there the file always wins.
+	if serveFlagSet != nil && serveFlagSet.Changed("h2c") {
+		cfg.Ingress.H2C = config.Bool(serveFlags.h2c)
+	}
 
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -144,6 +158,9 @@ func init() {
 	f.StringVar(&serveFlags.bind, "bind", "", "interface to bind (default 127.0.0.1)")
 	f.StringVar(&serveFlags.host, "host", "", "hostname used in printed URLs and snippets (default localhost)")
 	f.StringVar(&serveFlags.logLevel, "log-level", "info", "debug, info, warn or error")
+	f.BoolVar(&serveFlags.h2c, "h2c", true,
+		"serve cleartext HTTP/2 (h2c) on the ingress alongside HTTP/1.1; --h2c=false disables it")
+	serveFlagSet = f
 
 	rootCmd.AddCommand(serveCmd)
 }

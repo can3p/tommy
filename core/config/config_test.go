@@ -286,3 +286,108 @@ func TestApplyDefaultsIsIdempotent(t *testing.T) {
 		})
 	}
 }
+
+func TestH2CDefaults(t *testing.T) {
+	c := config.Default()
+	if !c.H2C("ingress") {
+		t.Error("the ingress should serve cleartext HTTP/2 by default")
+	}
+	if c.H2C("ui") || c.H2C("api") {
+		t.Error("the ui and api listeners must not serve h2c by default")
+	}
+	if c.H2C("nonsense") {
+		t.Error("an unknown surface must not report h2c")
+	}
+}
+
+func TestH2CFromTOML(t *testing.T) {
+	c, err := config.Parse([]byte("[ingress]\nport = 8822\nh2c = false\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if c.H2C("ingress") {
+		t.Error("[ingress] h2c = false was ignored")
+	}
+
+	c, err = config.Parse([]byte("[ui]\nport = 8811\nh2c = true\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !c.H2C("ui") {
+		t.Error("[ui] h2c = true was ignored")
+	}
+	// The API rides the UI listener here, so it inherits the decision.
+	if !c.H2C("api") {
+		t.Error("the api shares the ui listener and must inherit its protocols")
+	}
+}
+
+// TestH2CFollowsTheListener: h2c is settled from the first bytes of a
+// connection, so it belongs to a listener rather than to a surface. A listener
+// several surfaces share speaks h2c when any of them asks for it.
+func TestH2CFollowsTheListener(t *testing.T) {
+	shared := &config.Config{
+		UI:      config.ListenerConfig{Port: config.Int(9411)},
+		Ingress: config.ListenerConfig{Port: config.Int(9411)},
+	}
+	shared.ApplyDefaults()
+	if !shared.IngressSharesUIListener() {
+		t.Fatal("the ingress should share the ui listener")
+	}
+	for _, surface := range []string{"ui", "api", "ingress"} {
+		if !shared.H2C(surface) {
+			t.Errorf("%s: a shared listener carrying the ingress serves h2c", surface)
+		}
+	}
+
+	off := &config.Config{
+		UI:      config.ListenerConfig{Port: config.Int(9411)},
+		Ingress: config.ListenerConfig{Port: config.Int(9411), H2C: config.Bool(false)},
+	}
+	off.ApplyDefaults()
+	for _, surface := range []string{"ui", "api", "ingress"} {
+		if off.H2C(surface) {
+			t.Errorf("%s: turning the ingress setting off must clear the shared listener", surface)
+		}
+	}
+
+	// A dedicated API listener is its own decision either way.
+	own := &config.Config{
+		UI:      config.ListenerConfig{Port: config.Int(9411)},
+		API:     config.ListenerConfig{Port: config.Int(9412), H2C: config.Bool(true)},
+		Ingress: config.ListenerConfig{Port: config.Int(9411)},
+	}
+	own.ApplyDefaults()
+	if !own.H2C("api") {
+		t.Error("an api listener of its own honors its own h2c setting")
+	}
+}
+
+func TestH2CSurvivesRepeatedDefaults(t *testing.T) {
+	c := config.Ephemeral()
+	c.Ingress.H2C = config.Bool(false)
+	c.ApplyDefaults()
+	c.ApplyDefaults()
+	if c.H2C("ingress") {
+		t.Error("a second ApplyDefaults pass turned h2c back on")
+	}
+}
+
+func TestH2CRoundTripsThroughTOML(t *testing.T) {
+	c := config.Default()
+	c.Ingress.H2C = config.Bool(false)
+	data, err := c.Marshal()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(data), "h2c = false") {
+		t.Fatalf("marshaled config does not carry the h2c key:\n%s", data)
+	}
+	back, err := config.Parse(data)
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	if back.H2C("ingress") {
+		t.Error("h2c = false did not survive a marshal/parse round trip")
+	}
+}

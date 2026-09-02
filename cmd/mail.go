@@ -70,6 +70,7 @@ type singlePluginFlags struct {
 	host             string
 	logLevel         string
 	enabledProviders string
+	h2c              bool
 }
 
 // registerSinglePluginFlags wires the shared flag set onto cmd.
@@ -81,6 +82,8 @@ func registerSinglePluginFlags(cmd *cobra.Command, f *singlePluginFlags) {
 	fl.StringVar(&f.bind, "bind", "", "interface to bind (default 127.0.0.1)")
 	fl.StringVar(&f.host, "host", "", "hostname used in printed URLs and snippets (default localhost)")
 	fl.StringVar(&f.logLevel, "log-level", "info", "debug, info, warn or error")
+	fl.BoolVar(&f.h2c, "h2c", true,
+		"serve cleartext HTTP/2 (h2c) on the ingress alongside HTTP/1.1; --h2c=false disables it")
 	fl.StringVar(&f.enabledProviders, "enabled-providers", "",
 		"comma-separated providers to enable (default: every provider this plugin ships)")
 }
@@ -174,6 +177,9 @@ func singlePluginConfig(pluginName string, allProviders []string, f singlePlugin
 	if f.host != "" {
 		cfg.Host = f.host
 	}
+	// Unconditional: a shortcut builds its config from scratch, so there is no
+	// file value for the flag's default to clobber.
+	cfg.Ingress.H2C = config.Bool(f.h2c)
 
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {

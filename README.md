@@ -156,6 +156,7 @@ filtered by config:
 ```bash
 tommy serve --config tommy.toml
 tommy serve --ui-port 8811 --api-port 8811 --ingress-port 8822 --bind 127.0.0.1 --host localhost
+tommy serve --h2c=false   # the ingress serves cleartext HTTP/2 alongside HTTP/1.1 by default
 ```
 
 The repo root ships [`tommy.toml`](./tommy.toml), a complete example with
