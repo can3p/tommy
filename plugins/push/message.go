@@ -36,6 +36,17 @@
 //     them as plain strings through html/template and none of them renders a
 //     captured value as HTML.
 //
+// # A note on FCM field spellings
+//
+// FCM v1 is a proto3-backed Google API, so its JSON parser accepts both the
+// canonical lowerCamelCase name and the original snake_case proto field name:
+// collapseKey and collapse_key are the same field, as are clickAction and
+// click_action, validateOnly and validate_only. The discovery document lists
+// only the camelCase form because that is the canonical output name, not
+// because the other is rejected - snake_case here is NOT the deprecated Legacy
+// API. The comments below use whichever spelling reads more clearly; a provider
+// must accept both, and the fcm provider normalises them before decoding.
+//
 // # What was checked against live vendor documentation
 //
 // The FCM shape is taken from the live discovery document served at

@@ -1,0 +1,9 @@
+{
+  "message": {
+    "topic": "weather",
+    "data": {
+      "my_custom_key": "value",
+      "otherCamelKey": "value2"
+    }
+  }
+}

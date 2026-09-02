@@ -66,9 +66,31 @@ response and that tommy's event store actually captured it correctly.
   different routes — the strongest fidelity check in the suite.
 - **SMTP** (`smtp_test.go`) — stdlib `net/smtp` delivering a real MIME
   multipart message with an attachment.
+- **FCM** (`fcm_test.go`) — `google.golang.org/api/fcm/v1`, the discovery-
+  document-generated Go client (none of the Firebase Admin SDKs expose a
+  custom-endpoint hook, so this is the closest thing to an official Go SDK
+  FCM has), pointed at tommy with `option.WithEndpoint` +
+  `option.WithoutAuthentication`. Covers a notification-plus-android-override
+  send decoded back into the SDK's own `fcm.Message` response type, a
+  data-only send confirmed silent, and a request with no target field
+  confirmed to surface as the SDK's own `*googleapi.Error` rather than a
+  decode panic. Boots the `push` plugin directly (`push.New(fcm.New())`)
+  rather than through `startTommy`/`all.Plugins()`, since `push` is not yet
+  wired into `plugins/all` (see `plugins/push/README.md`).
 
 ## Fidelity findings
 
-None. Every SDK, unmodified, sent and read back real data on the first
-passing run — no gap in a provider fake needed a workaround here. See each
+None from these tests themselves. Every SDK, unmodified, sent and read back
+real data on the first passing run against its provider - no gap in a
+provider fake needed a workaround here. (The FCM provider did have a real
+fidelity bug during development, caught by fetching and parsing the live
+discovery document directly rather than assuming: FCM v1 is a proto3-backed
+API, so per the proto3 JSON mapping spec both camelCase - `collapseKey`,
+the discovery document's canonical spelling - and the underscore form -
+`collapse_key` - are valid input, and the provider's wire structs originally
+matched only the former, silently dropping any field a client sent
+snake_case. Fixed with a general key-normalizing pass rather than a
+per-field patch; `fcm_test.go`'s SDK send here confirms the camelCase side
+of that from the wire direction. See
+`plugins/push/providers/fcm/README.md`.) See each
 test file's doc comment for exactly what it proves and why.

@@ -1,0 +1,46 @@
+{
+  "message": {
+    "token": "cQAdeviceRegistrationTokenExample000111222333444555",
+    "notification": {
+      "title": "Base title",
+      "body": "Base body"
+    },
+    "android": {
+      "priority": "HIGH",
+      "ttl": "3600s",
+      "collapseKey": "weather",
+      "notification": {
+        "title": "Android title",
+        "sound": "default",
+        "clickAction": "OPEN_ACTIVITY_1",
+        "channelId": "alerts",
+        "notificationCount": 3,
+        "notificationPriority": "PRIORITY_HIGH"
+      }
+    },
+    "apns": {
+      "headers": {
+        "apns-priority": "10"
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "title": "iOS title",
+            "body": "iOS body"
+          },
+          "sound": "default"
+        }
+      }
+    },
+    "webpush": {
+      "headers": {
+        "Urgency": "high"
+      },
+      "notification": {
+        "title": "Web title",
+        "body": "Web body",
+        "icon": "https://example.com/icon.png"
+      }
+    }
+  }
+}

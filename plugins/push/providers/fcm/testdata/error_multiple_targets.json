@@ -1,0 +1,10 @@
+{
+  "message": {
+    "token": "abc",
+    "topic": "weather",
+    "notification": {
+      "title": "x",
+      "body": "y"
+    }
+  }
+}

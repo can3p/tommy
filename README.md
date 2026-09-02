@@ -56,6 +56,7 @@ configuration actually bound — useful before you've sent anything at all.
 | `mail`  | `mailjet`, `sendgrid`, `smtp` | The vendor HTTP send APIs, plus a real SMTP listener |
 | `sms`   | `twilio` | The Programmable Messaging REST API (create, list, fetch) |
 | `files` | `ftp`, `sftp`, `tftp`, `nfs` | Real FTP, SFTP, TFTP and NFSv3 servers, backed by one shared virtual filesystem |
+| `push`  | `fcm` | Firebase Cloud Messaging's HTTP v1 send API, shown as a lock-screen card |
 | `hl7`   | `mllp` | A real MLLP listener that parses HL7 v2 and answers with a mechanical ACK |
 | `chat`  | `slack`, `msteams` | Slack incoming webhooks + `chat.postMessage`, and both generations of Teams incoming webhook |
 | `snmp`  | `trap` | A real UDP trap receiver: v1/v2c traps and informs, every varbind decoded by its wire type |
@@ -174,6 +175,7 @@ tommy sms   --ui-port 8811 --in-port 8822 --enabled-providers twilio
 tommy files --ui-port 8811 --in-port 8822 --ftp-port 2121 --sftp-port 2222
 tommy chat  --ui-port 8811 --in-port 8822 --enabled-providers slack
 tommy hl7   --ui-port 8811 --in-port 8822 --mllp-port 2575
+tommy push  --ui-port 8811 --in-port 8822 --enabled-providers fcm
 tommy snmp  --ui-port 8811 --in-port 8822 --trap-port 1162
 ```
 
@@ -210,6 +212,7 @@ response:
 | `tftp` (`tommy files`)    | `--tftp-port` |
 | `nfs` (`tommy files`)     | `--nfs-port` |
 | `mllp` (`tommy hl7`)      | `--mllp-port` |
+| `fcm` (`tommy push`)      | `--fcm-bearer-token` |
 | `trap` (`tommy snmp`)     | `--trap-port` |
 | `ftp` (`tommy files`)     | `--ftp-port`, `--ftp-passive-host`, `--ftp-passive-ports`, `--ftp-username`, `--ftp-password` |
 | `sftp` (`tommy files`)    | `--sftp-port`, `--sftp-host-key`, `--sftp-authorized-keys`, `--sftp-username`, `--sftp-password` |

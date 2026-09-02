@@ -1,0 +1,10 @@
+{
+  "message": {
+    "topic": "weather",
+    "notification": {
+      "title": "Storm warning",
+      "body": "Batten down the hatches",
+      "image": "https://example.com/storm.png"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "message": {
+    "token": "device-token-dual-test",
+    "notification": {
+      "title": "Base title",
+      "body": "Base body"
+    },
+    "android": {
+      "collapse_key": "weather",
+      "priority": "HIGH",
+      "ttl": "3600s",
+      "notification": {
+        "title": "Android title",
+        "title_loc_key": "TITLE_KEY",
+        "title_loc_args": ["a", "b"],
+        "body_loc_key": "BODY_KEY",
+        "body_loc_args": ["c", "d"],
+        "notification_count": 5
+      }
+    }
+  },
+  "validate_only": true
+}

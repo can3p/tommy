@@ -20,6 +20,8 @@ import (
 	"github.com/can3p/tommy/plugins/mail/providers/mailjet"
 	"github.com/can3p/tommy/plugins/mail/providers/sendgrid"
 	"github.com/can3p/tommy/plugins/mail/providers/smtp"
+	"github.com/can3p/tommy/plugins/push"
+	"github.com/can3p/tommy/plugins/push/providers/fcm"
 	"github.com/can3p/tommy/plugins/sms"
 	"github.com/can3p/tommy/plugins/sms/providers/twilio"
 	"github.com/can3p/tommy/plugins/snmp"
@@ -52,6 +54,9 @@ func Plugins() []plugin.Plugin {
 		),
 		snmp.New(
 			trap.New(),
+		),
+		push.New(
+			fcm.New(),
 		),
 	}
 }

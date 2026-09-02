@@ -1,0 +1,10 @@
+{
+  "message": {
+    "topic": "weather",
+    "notification": {
+      "title": "Test",
+      "body": "Validate only"
+    }
+  },
+  "validateOnly": true
+}
