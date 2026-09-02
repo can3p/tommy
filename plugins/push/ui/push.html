@@ -1,0 +1,199 @@
+{{/*
+The push tab: a phone lock screen on the left carrying one card per captured
+push, the selected push broken down on the right.
+
+The lock screen is the whole reason this tab exists rather than the generic
+event view. An aps dictionary in a JSON dump does not tell you that the push you
+are staring at displays nothing at all; a card that visibly is not a
+notification does.
+
+Everything here came off the wire from whatever backend is under test: titles,
+bodies, bundle ids, device tokens, arbitrary data keys. Every one of them is
+interpolated as a plain string so html/template escapes it, and nothing on this
+page is ever rendered as template.HTML. The image URL an alert carries is shown
+as text and never as an <img> src or an href, so a captured URL cannot make a
+browser reach out to whatever the sender named.
+*/}}
+
+{{define "push-tab"}}
+{{template "push-style"}}
+<div class="push-tab">
+{{template "how-to-test" .HowToTest}}
+{{- if .HasMessages}}
+{{template "master-detail" (dict
+    "Title" "Push"
+    "Toolbar" (render "push-toolbar" .)
+    "List" (render "push-list" .)
+    "ListID" "list"
+    "Detail" (render "push-detail" .)
+    "DetailID" "detail"
+    "Empty" "")}}
+{{- else}}
+<div class="toolbar">{{template "push-toolbar" .}}</div>
+<div id="list" hx-get="{{.Base}}/" hx-trigger="sse:{{.StreamEvent}} throttle:400ms" hx-target="#main" hx-swap="innerHTML">
+  {{template "push-empty" .}}
+</div>
+{{- end}}
+</div>
+{{end}}
+
+
+{{define "push-toolbar"}}
+<form class="filters" hx-get="{{.Base}}/list" hx-target="#list" hx-swap="innerHTML"
+      hx-trigger="input changed delay:250ms from:find input, submit" hx-push-url="false">
+  <input type="search" name="search" placeholder="Search titles, bodies, tokens, topics" value="{{.Search}}" aria-label="Search pushes">
+  <button type="button" class="danger"
+          hx-delete="{{.Base}}/events"
+          hx-target="#main"
+          hx-swap="innerHTML"
+          hx-confirm="Delete every captured push?">Clear</button>
+</form>
+{{end}}
+
+
+{{define "push-empty"}}
+<div class="empty-state">
+  <h3>No pushes captured yet</h3>
+  <p>Point your backend's push code at tommy instead of Apple or Google and every notification it sends
+     appears here as a lock-screen card - including the ones that display nothing at all.</p>
+</div>
+{{end}}
+
+
+{{/* push-card is one lock-screen notification. A push that displays nothing
+     gets a visibly different card - dashed, muted, and captioned with what the
+     device actually does - because mistaking one for the other is the failure
+     this tab exists to prevent. */}}
+{{define "push-card"}}
+<div class="push-card push-kind-{{.Kind}}">
+  <div class="push-card-app">
+    <span class="push-card-appname">{{.App}}</span>
+    {{- if not .Displays}}<span class="push-card-flag">{{.Kind}}</span>{{end}}
+  </div>
+  {{- if .Displays}}
+  {{- with .Title}}<div class="push-card-title">{{.}}</div>{{end}}
+  {{- with .Subtitle}}<div class="push-card-subtitle">{{.}}</div>{{end}}
+  {{- with .Body}}<div class="push-card-body">{{.}}</div>{{end}}
+  {{- with .LocalizedNote}}<div class="push-card-note">{{.}}</div>{{end}}
+  {{- with .Note}}<div class="push-card-note">{{.}}</div>{{end}}
+  {{- with .Image}}<div class="push-card-note">image: <span class="mono">{{.}}</span></div>{{end}}
+  {{- else}}
+  <div class="push-card-silent">{{.Explain}}</div>
+  {{- with .Note}}<div class="push-card-note">{{.}}</div>{{end}}
+  {{- end}}
+</div>
+{{end}}
+
+
+{{/* push-list is the phone, refreshed whenever a push arrives. */}}
+{{define "push-list"}}
+<div id="push-messages"
+     hx-get="{{.ListURL}}"
+     hx-trigger="sse:{{.StreamEvent}} throttle:400ms"
+     hx-target="#list"
+     hx-swap="innerHTML">
+  <div class="push-phone">
+    <ul class="push-cards">
+    {{- range .Messages}}
+      <li class="push-item{{if .Selected}} selected{{end}}">
+        <a href="{{.URL}}" hx-get="{{.URL}}" hx-target="#detail" hx-swap="innerHTML" hx-push-url="true">
+          {{template "push-card" .Card}}
+          <span class="push-item-foot">
+            <span class="muted push-item-target mono">{{.Target}}</span>
+            <span class="muted push-item-time" title="{{timeFull .At}}">{{since .At}} ago</span>
+          </span>
+        </a>
+      </li>
+    {{- else}}
+      <li class="muted push-none">No push matches that search.</li>
+    {{- end}}
+    </ul>
+  </div>
+  <p class="muted count">{{len .Messages}} push{{if ne (len .Messages) 1}}es{{end}}{{if .Silent}}, {{.Silent}} displaying nothing{{end}}</p>
+</div>
+{{end}}
+
+
+{{/* push-detail is the right-hand pane: the card again at full size, then what
+     the device does with it, then the payload exactly as it was posted. */}}
+{{define "push-detail"}}
+{{- if .Selected}}
+<article class="push-detail" id="push-detail">
+  <header class="push-detail-head">
+    <h2>{{.Selected.Title}}</h2>
+    <p class="muted">Received <span title="{{timeFull .Selected.At}}">{{since .Selected.At}} ago</span>
+      {{- with .Selected.Provider}} · via {{.}}{{end}}
+      · <a class="push-raw-link" href="{{.Selected.RawURL}}">raw payload</a>
+      · <a class="push-raw-link" href="{{.Selected.EventURL}}">event</a></p>
+    <p class="push-badges">{{template "badges" .Selected.Badges}}</p>
+  </header>
+
+  <div class="push-verdict push-kind-{{.Selected.Kind}}">{{.Selected.Explain}}</div>
+
+  <div class="push-preview">{{template "push-card" .Selected.Card}}</div>
+
+  {{template "kv-table" .Selected.Routing}}
+  {{template "kv-table" .Selected.Alert}}
+  {{template "kv-table" .Selected.Delivery}}
+
+  {{- with .Selected.Data}}
+  <h3>Data for the app</h3>
+  {{template "json-inspector" .}}
+  {{- end}}
+
+  {{- with .Selected.Payloads}}
+  <h3>As it was posted</h3>
+  <div class="push-payloads">
+  {{- range .}}
+    {{template "json-inspector" .}}
+  {{- end}}
+  </div>
+  {{- end}}
+
+  <h3>The request</h3>
+  {{template "raw-viewer" .Selected.Raw}}
+</article>
+{{- else}}
+<div class="empty-state">
+  <h3>Pick a push</h3>
+  <p>Select a card on the left to see where it was addressed, what the device would display, and the
+     payload exactly as it was posted.</p>
+</div>
+{{- end}}
+{{end}}
+
+
+{{define "push-style"}}
+<style>
+.push-tab .push-phone { padding: .5rem; }
+.push-tab .push-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .45rem; }
+.push-tab .push-item > a { display: block; text-decoration: none; color: inherit; }
+.push-tab .push-item.selected .push-card { outline: 2px solid rgba(64,140,255,.65); }
+.push-tab .push-none { padding: .7rem; }
+.push-tab .push-card { border-radius: .7rem; padding: .5rem .65rem; background: rgba(128,128,128,.14); border: 1px solid rgba(128,128,128,.28); }
+.push-tab .push-item:hover .push-card { background: rgba(128,128,128,.2); }
+.push-tab .push-card-app { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; font-size: .74em; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+.push-tab .push-card-appname { overflow-wrap: anywhere; }
+.push-tab .push-card-flag { flex: none; border: 1px solid currentColor; border-radius: .5rem; padding: 0 .3rem; }
+.push-tab .push-card-title { font-weight: 600; margin-top: .12rem; overflow-wrap: anywhere; }
+.push-tab .push-card-subtitle { opacity: .9; overflow-wrap: anywhere; }
+.push-tab .push-card-body { margin-top: .1rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.push-tab .push-card-note { margin-top: .2rem; font-size: .82em; opacity: .75; overflow-wrap: anywhere; }
+.push-tab .push-card-silent { margin-top: .2rem; font-size: .86em; opacity: .8; font-style: italic; }
+/* A push that displays nothing must not look like one that does. */
+.push-tab .push-kind-silent { background: transparent; border-style: dashed; }
+.push-tab .push-kind-empty { background: transparent; border-style: dashed; border-color: rgba(220,90,60,.6); }
+.push-tab .push-item-foot { display: flex; justify-content: space-between; gap: .5rem; padding: .18rem .3rem 0; font-size: .76em; }
+.push-tab .push-item-target { overflow-wrap: anywhere; }
+.push-tab .push-item-time { flex: none; }
+.push-tab .push-detail-head h2 { margin: 0 0 .15rem; overflow-wrap: anywhere; }
+.push-tab .push-detail-head p { margin: 0 0 .4rem; }
+.push-tab .push-badges { display: flex; flex-wrap: wrap; gap: .3rem; }
+.push-tab .push-raw-link { text-decoration: underline dotted; }
+.push-tab .push-verdict { border-radius: .4rem; padding: .4rem .7rem; margin: .5rem 0; border: 1px solid rgba(128,128,128,.4); }
+.push-tab .push-verdict.push-kind-silent { border-color: rgba(220,150,60,.6); }
+.push-tab .push-verdict.push-kind-empty { border-color: rgba(220,90,60,.6); }
+.push-tab .push-preview { max-width: 26rem; margin: .5rem 0 .8rem; }
+.push-tab .push-payloads { display: flex; flex-direction: column; gap: .4rem; }
+</style>
+{{end}}

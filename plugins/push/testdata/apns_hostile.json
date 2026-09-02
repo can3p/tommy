@@ -1,0 +1,12 @@
+{
+  "aps": {
+    "alert": {
+      "title": "<script>alert(1)</script>",
+      "subtitle": "<img src=x onerror=\"alert(1)\">",
+      "body": "</pre><iframe src=\"javascript:alert(1)\"></iframe>"
+    },
+    "category": "\"><script>alert(1)</script>"
+  },
+  "<script>alert(1)</script>": "javascript:alert(1)",
+  "link": "javascript:alert(1)"
+}

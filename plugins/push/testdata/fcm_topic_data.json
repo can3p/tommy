@@ -1,0 +1,13 @@
+{
+  "message": {
+    "topic": "weather",
+    "data": {
+      "kind": "refresh",
+      "region": "north"
+    },
+    "android": {
+      "priority": "NORMAL",
+      "ttl": "0s"
+    }
+  }
+}
