@@ -56,6 +56,7 @@ configuration actually bound — useful before you've sent anything at all.
 | `mail`  | `mailjet`, `sendgrid`, `smtp` | The vendor HTTP send APIs, plus a real SMTP listener |
 | `sms`   | `twilio` | The Programmable Messaging REST API (create, list, fetch) |
 | `files` | `ftp`, `sftp`, `tftp` | A real FTP, SFTP and TFTP server, backed by one shared virtual filesystem |
+| `hl7`   | `mllp` | A real MLLP listener that parses HL7 v2 and answers with a mechanical ACK |
 | `chat`  | `slack`, `msteams` | Slack incoming webhooks + `chat.postMessage`, and both generations of Teams incoming webhook |
 
 Every plugin and provider describes itself: `Description()`, the endpoints it
@@ -154,6 +155,7 @@ tommy mail  --ui-port 8811 --in-port 8822 --enabled-providers mailjet,sendgrid
 tommy sms   --ui-port 8811 --in-port 8822 --enabled-providers twilio
 tommy files --ui-port 8811 --in-port 8822 --ftp-port 2121 --sftp-port 2222
 tommy chat  --ui-port 8811 --in-port 8822 --enabled-providers slack
+tommy hl7   --ui-port 8811 --in-port 8822 --mllp-port 2575
 ```
 
 `tommy mail`, `tommy sms`, `tommy files` and `tommy chat` are shortcuts that
@@ -186,6 +188,7 @@ response:
 | `smtp` (`tommy mail`)     | `--smtp-port`, `--smtp-username`, `--smtp-password` |
 | `twilio` (`tommy sms`)    | `--twilio-account-sid`, `--twilio-auth-token` |
 | `tftp` (`tommy files`)    | `--tftp-port` |
+| `mllp` (`tommy hl7`)      | `--mllp-port` |
 | `ftp` (`tommy files`)     | `--ftp-port`, `--ftp-passive-host`, `--ftp-passive-ports`, `--ftp-username`, `--ftp-password` |
 | `sftp` (`tommy files`)    | `--sftp-port`, `--sftp-host-key`, `--sftp-authorized-keys`, `--sftp-username`, `--sftp-password` |
 

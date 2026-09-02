@@ -216,3 +216,27 @@ enabled = true
 # workflow trigger (Adaptive Card). The webhook URL is the only credential
 # either presents, and it is always accepted and recorded.
 enabled = true
+
+# -----------------------------------------------------------------------------
+# hl7 - captures the HL7 v2 messages your integration sends to a hospital
+# system, parsed with the separators each message declares for itself.
+# Shortcut: `tommy hl7`.
+# -----------------------------------------------------------------------------
+
+[plugins.hl7]
+enabled = true
+
+[plugins.hl7.providers.mllp]
+# A real MLLP listener (the 0x0B ... 0x1C 0x0D framing every integration engine
+# speaks) on its own TCP port. Every message is acknowledged mechanically: the
+# MSH is echoed with sender and receiver swapped and an MSA|AA carries the
+# original control id back, built with the separators the inbound message
+# declared rather than the conventional ones.
+enabled = true
+port = 2575               # the provider's own listener. 2575 is IANA-registered
+                          # for hl7 and is unprivileged. CLI: --mllp-port
+#
+# The rest are tuning knobs nobody needs to flip per test run, so they stay
+# file-only (no CLI flag):
+# bind              = "127.0.0.1"  # interface this listener binds, independent of the top-level `bind`
+# max_message_bytes = 10485760     # 10MiB; a frame that never terminates is dropped and the connection closed
