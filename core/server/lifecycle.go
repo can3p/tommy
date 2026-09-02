@@ -96,6 +96,7 @@ type httpListener struct {
 	name string
 	ln   net.Listener
 	srv  *http.Server
+	h2c  bool
 
 	// unused holds connections a client opened but never sent a request on.
 	// See trackConn.
@@ -348,12 +349,22 @@ func (s *Server) build() error {
 		case "ingress":
 			h = s.ingress.Handler()
 		}
-		l.srv = &http.Server{
-			Handler:           logRequests(s.log.With("listener", l.name), h),
-			ReadHeaderTimeout: 15 * time.Second,
-			ConnState:         l.trackConn,
-			// No WriteTimeout: SSE responses are long-lived by design.
-		}
+		// Protocols are a property of the listener, not of the surface: a
+		// shared listener speaks h2c when any of the surfaces on it asks for
+		// it, which the config works out.
+		l.h2c = s.cfg.H2C(l.name)
+		l.srv = newHTTPServer(logRequests(s.log.With("listener", l.name), h), listenerOptions{
+			H2C:       l.h2c,
+			ConnState: l.trackConn,
+		})
+	}
+
+	// Say it out loud rather than letting it fall out of the port arithmetic:
+	// pointing the ingress at the UI port puts h2c on the listener carrying the
+	// UI and the API too, because there is only one listener to decide about.
+	if s.cfg.IngressSharesUIListener() && s.cfg.H2C("ingress") {
+		s.log.Info("ingress shares the ui listener, so cleartext HTTP/2 is enabled for the ui and the api as well",
+			"addr", s.addrs.UI)
 	}
 
 	s.listeners = s.reg.ListenerRefs()
@@ -362,7 +373,7 @@ func (s *Server) build() error {
 
 func logRequests(log *slog.Logger, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Debug("request", "method", r.Method, "path", r.URL.Path, "peer", r.RemoteAddr)
+		log.Debug("request", "method", r.Method, "path", r.URL.Path, "proto", r.Proto, "peer", r.RemoteAddr)
 		h.ServeHTTP(w, r)
 	})
 }
@@ -385,7 +396,7 @@ func (s *Server) Start(ctx context.Context) error {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			s.log.Info("listening", "listener", l.name, "addr", l.ln.Addr().String())
+			s.log.Info("listening", "listener", l.name, "addr", l.ln.Addr().String(), "h2c", l.h2c)
 			if err := l.srv.Serve(l.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				s.recordErr(fmt.Errorf("%s listener: %w", l.name, err))
 				cancel()

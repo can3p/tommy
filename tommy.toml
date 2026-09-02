@@ -32,6 +32,10 @@ host = "localhost"
 [ui]
 port = 8811
 # bind = "127.0.0.1"   # overrides the top-level `bind` for just this listener
+# h2c  = false         # browsers cannot use cleartext HTTP/2, so this is off here.
+                       # Note h2c is a property of the listener, not the surface:
+                       # give the ingress this same port and the shared listener
+                       # speaks h2c for the ui and api too (logged at startup).
 
 [api]
 # Omitting this section, or giving it the same port as [ui] (the default),
@@ -44,6 +48,16 @@ port = 8811
 # /v3/mail/send, Twilio's /2010-04-01/Accounts/{sid}/Messages.json. SMTP has
 # its own listener (below) and ignores this port entirely.
 port = 8822
+
+# Serve cleartext HTTP/2 (h2c) on this listener alongside HTTP/1.1, on the same
+# port. On by default because APNs has no HTTP/1.1 form at all - Apple retired
+# the binary protocol in 2021 - so a push client would otherwise meet a
+# connection error and go hunting for a flag. HTTP/1.1 clients are unaffected:
+# h2c is recognised by an exact match on the HTTP/2 client preface, which no
+# HTTP/1.1 client ever sends. Only prior-knowledge h2c is served; the
+# `Upgrade: h2c` handshake was removed from HTTP/2 by RFC 9113 and is answered
+# over HTTP/1.1. CLI: --h2c=false
+h2c = true
 
 [storage]
 # Events retained per plugin, ring-buffer style: once a plugin's own buffer is
