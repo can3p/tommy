@@ -1,0 +1,199 @@
+{{/*
+The HL7 tab: captured messages on the left, the selected one as a segment tree
+on the right. The tree is the whole reason this tab exists rather than the
+generic event view - a JSON dump of the same model tells you nothing about where
+PID-5.2 is.
+
+Everything here comes off the wire from whatever system is under test: patient
+names, free-text notes, segment ids. Every one of them is interpolated as a
+plain string so html/template escapes it, and nothing on this page is ever
+rendered as template.HTML. Values keep their whitespace through CSS, never
+through markup.
+*/}}
+
+{{define "hl7-tab"}}
+{{template "hl7-style"}}
+<div class="hl7-tab">
+{{template "how-to-test" .HowToTest}}
+{{- if .HasMessages}}
+{{template "master-detail" (dict
+    "Title" "HL7"
+    "Toolbar" (render "hl7-toolbar" .)
+    "List" (render "hl7-list" .)
+    "ListID" "list"
+    "Detail" (render "hl7-detail" .)
+    "DetailID" "detail"
+    "Empty" "")}}
+{{- else}}
+<div class="toolbar">{{template "hl7-toolbar" .}}</div>
+<div id="list" hx-get="{{.Base}}/" hx-trigger="sse:{{.StreamEvent}} throttle:400ms" hx-target="#main" hx-swap="innerHTML">
+  {{template "hl7-empty" .}}
+</div>
+{{- end}}
+</div>
+{{end}}
+
+
+{{define "hl7-toolbar"}}
+<form class="filters" hx-get="{{.Base}}/list" hx-target="#list" hx-swap="innerHTML"
+      hx-trigger="input changed delay:250ms from:find input, submit" hx-push-url="false">
+  <input type="search" name="search" placeholder="Search control ids, patients, segments" value="{{.Search}}" aria-label="Search messages">
+  <button type="button" class="danger"
+          hx-delete="{{.Base}}/events"
+          hx-target="#main"
+          hx-swap="innerHTML"
+          hx-confirm="Delete every captured HL7 message?">Clear</button>
+</form>
+{{end}}
+
+
+{{define "hl7-empty"}}
+<div class="empty-state">
+  <h3>No HL7 messages captured yet</h3>
+  <p>Point an interface engine, an integration test or a plain socket at tommy's MLLP listener and the
+     messages it sends will appear here, parsed segment by segment.</p>
+</div>
+{{end}}
+
+
+{{/* hl7-list is the message list, refreshed whenever a message arrives. */}}
+{{define "hl7-list"}}
+<div id="hl7-messages"
+     hx-get="{{.ListURL}}"
+     hx-trigger="sse:{{.StreamEvent}} throttle:400ms"
+     hx-target="#list"
+     hx-swap="innerHTML">
+  <ul class="hl7-msg-list">
+  {{- range .Messages}}
+    <li class="hl7-msg{{if .Selected}} selected{{end}}">
+      <a href="{{.URL}}" hx-get="{{.URL}}" hx-target="#detail" hx-swap="innerHTML" hx-push-url="true">
+        <span class="hl7-msg-head">
+          <span class="hl7-msg-type mono">{{.MessageType}}</span>
+          <span class="muted hl7-msg-time" title="{{timeFull .At}}">{{since .At}} ago</span>
+        </span>
+        {{- with .ControlID}}<span class="hl7-msg-control mono muted">{{.}}</span>{{end}}
+        {{- if or .Sender .Receiver}}
+        <span class="hl7-msg-route muted">{{if .Sender}}{{.Sender}}{{else}}(unknown){{end}} &rarr; {{if .Receiver}}{{.Receiver}}{{else}}(unknown){{end}}</span>
+        {{- end}}
+        {{- with .Preview}}<span class="hl7-msg-preview">{{.}}</span>{{end}}
+        <span class="hl7-msg-foot">{{template "badges" .Badges}}</span>
+      </a>
+    </li>
+  {{- else}}
+    <li class="muted hl7-msg-none">No message matches that search.</li>
+  {{- end}}
+  </ul>
+  <p class="muted count">{{len .Messages}} message{{if ne (len .Messages) 1}}s{{end}}</p>
+</div>
+{{end}}
+
+
+{{/* hl7-detail is the right-hand pane: the header, the segment tree, and the
+     bytes as they arrived. */}}
+{{define "hl7-detail"}}
+{{- if .Selected}}
+<article class="hl7-detail" id="hl7-detail">
+  <header class="hl7-detail-head">
+    <h2>{{.Selected.Title}}</h2>
+    <p class="muted">Received <span title="{{timeFull .Selected.At}}">{{since .Selected.At}} ago</span>
+      {{- with .Selected.Provider}} · via {{.}}{{end}}
+      · <a class="hl7-raw-link" href="{{.Selected.RawURL}}">raw message</a>
+      · <a class="hl7-raw-link" href="{{.Selected.EventURL}}">event</a></p>
+    <p class="hl7-badges">{{template "badges" .Selected.Badges}}</p>
+  </header>
+
+  {{- with .Selected.Issues}}
+  <div class="hl7-issues">
+    <h3>What the parser had to work around</h3>
+    <ul>{{range .}}<li><span class="mono">{{.Code}}</span> {{.Detail}}</li>{{end}}</ul>
+  </div>
+  {{- end}}
+
+  {{template "kv-table" .Selected.Header}}
+
+  <h3>Segments</h3>
+  <div class="hl7-segments">
+  {{- range .Selected.Segments}}
+    {{- $seg := .}}
+    <details class="hl7-segment"{{if .Open}} open{{end}}>
+      <summary>
+        <span class="mono hl7-seg-id">{{.Label}}</span>
+        {{- with .Name}} <span class="muted hl7-seg-name">{{.}}</span>{{end}}
+        <span class="muted hl7-seg-count">{{len .Rows}} value{{if ne (len .Rows) 1}}s{{end}}</span>
+      </summary>
+      <table class="hl7-fields">
+        <tbody>
+        {{- range .Rows}}
+          <tr class="hl7-row hl7-depth-{{.Depth}} hl7-kind-{{.Kind}}">
+            <th scope="row" class="mono hl7-path">{{.Path}}</th>
+            <td class="hl7-name muted">{{.Name}}</td>
+            <td class="hl7-value">{{if .Note}}<span class="muted">{{.Note}}</span>{{else}}{{.Value}}{{end}}</td>
+          </tr>
+        {{- else}}
+          <tr><td colspan="3" class="muted">This segment carried no values.</td></tr>
+        {{- end}}
+        {{- with .Empty}}
+          <tr class="hl7-empty-row">
+            <td colspan="3" class="muted">empty: <span class="mono">{{join . ", "}}</span>{{if $seg.MoreEmpty}} and {{$seg.MoreEmpty}} more{{end}}</td>
+          </tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </details>
+  {{- end}}
+  </div>
+
+  <h3>As it arrived</h3>
+  {{template "raw-viewer" .Selected.Raw}}
+</article>
+{{- else}}
+<div class="empty-state">
+  <h3>Pick a message</h3>
+  <p>Select a message on the left to read it segment by segment, with every field at its own position.</p>
+</div>
+{{- end}}
+{{end}}
+
+
+{{define "hl7-style"}}
+<style>
+.hl7-tab .hl7-msg-list { list-style: none; margin: 0; padding: 0; }
+.hl7-tab .hl7-msg { border-bottom: 1px solid rgba(128,128,128,.25); }
+.hl7-tab .hl7-msg > a { display: block; padding: .55rem .7rem; text-decoration: none; color: inherit; }
+.hl7-tab .hl7-msg:hover { background: rgba(128,128,128,.08); }
+.hl7-tab .hl7-msg.selected { background: rgba(128,128,128,.16); }
+.hl7-tab .hl7-msg-head { display: flex; justify-content: space-between; gap: .5rem; align-items: baseline; }
+.hl7-tab .hl7-msg-type { font-weight: 600; }
+.hl7-tab .hl7-msg-time { font-size: .8em; }
+.hl7-tab .hl7-msg-control { display: block; font-size: .82em; }
+.hl7-tab .hl7-msg-route { display: block; font-size: .82em; }
+.hl7-tab .hl7-msg-preview { display: block; margin: .15rem 0; opacity: .85; overflow-wrap: anywhere; }
+.hl7-tab .hl7-msg-foot { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; font-size: .8em; }
+.hl7-tab .hl7-msg-none { padding: .7rem; }
+.hl7-tab .hl7-detail-head h2 { margin: 0 0 .15rem; }
+.hl7-tab .hl7-detail-head p { margin: 0 0 .4rem; }
+.hl7-tab .hl7-badges { display: flex; flex-wrap: wrap; gap: .3rem; }
+.hl7-tab .hl7-raw-link { text-decoration: underline dotted; }
+.hl7-tab .hl7-issues { border: 1px solid rgba(220,120,60,.5); border-radius: .4rem; padding: .4rem .7rem; margin: .6rem 0; }
+.hl7-tab .hl7-issues h3 { margin: .2rem 0 .3rem; font-size: .95em; }
+.hl7-tab .hl7-issues ul { margin: 0 0 .3rem; padding-left: 1.1rem; }
+.hl7-tab .hl7-segments { display: flex; flex-direction: column; gap: .3rem; }
+.hl7-tab .hl7-segment { border: 1px solid rgba(128,128,128,.3); border-radius: .4rem; }
+.hl7-tab .hl7-segment > summary { cursor: pointer; padding: .35rem .6rem; display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+.hl7-tab .hl7-seg-id { font-weight: 600; }
+.hl7-tab .hl7-seg-count { margin-left: auto; font-size: .8em; }
+.hl7-tab table.hl7-fields { width: 100%; border-collapse: collapse; margin: 0 0 .3rem; }
+.hl7-tab table.hl7-fields th, .hl7-tab table.hl7-fields td { text-align: left; vertical-align: top; padding: .12rem .6rem; font-weight: 400; }
+.hl7-tab .hl7-row.hl7-kind-field > th { font-weight: 600; }
+.hl7-tab .hl7-row:hover { background: rgba(128,128,128,.1); }
+.hl7-tab .hl7-path { white-space: nowrap; width: 1%; }
+.hl7-tab .hl7-name { white-space: nowrap; width: 1%; font-size: .85em; }
+.hl7-tab .hl7-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+.hl7-tab .hl7-depth-1 > th { padding-left: 1.6rem; }
+.hl7-tab .hl7-depth-2 > th { padding-left: 2.6rem; }
+.hl7-tab .hl7-depth-3 > th { padding-left: 3.6rem; }
+.hl7-tab .hl7-kind-repetition > th, .hl7-tab .hl7-kind-component > th, .hl7-tab .hl7-kind-subcomponent > th { opacity: .75; }
+.hl7-tab .hl7-kind-repetition { background: rgba(64,140,255,.09); }
+.hl7-tab .hl7-empty-row td { font-size: .82em; padding-top: .3rem; }
+</style>
+{{end}}
