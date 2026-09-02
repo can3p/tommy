@@ -13,6 +13,8 @@ import (
 	"github.com/can3p/tommy/plugins/files/providers/ftp"
 	"github.com/can3p/tommy/plugins/files/providers/sftp"
 	"github.com/can3p/tommy/plugins/files/providers/tftp"
+	"github.com/can3p/tommy/plugins/hl7"
+	"github.com/can3p/tommy/plugins/hl7/providers/mllp"
 	"github.com/can3p/tommy/plugins/mail"
 	"github.com/can3p/tommy/plugins/mail/providers/mailjet"
 	"github.com/can3p/tommy/plugins/mail/providers/sendgrid"
@@ -41,5 +43,8 @@ func Plugins() []plugin.Plugin {
 			slack.New(),
 			msteams.New(),
 		).WithRichRenderer(blocks.Render),
+		hl7.New(
+			mllp.New(),
+		),
 	}
 }
