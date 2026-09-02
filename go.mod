@@ -9,6 +9,7 @@ require (
 	github.com/emersion/go-smtp v0.25.0
 	github.com/fclairamb/ftpserverlib v0.32.3
 	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/pin/tftp/v3 v3.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.11
 	github.com/spf13/afero v1.15.0

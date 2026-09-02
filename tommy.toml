@@ -134,7 +134,7 @@ enabled = true
 # auth_token  = "any-token"                            # and token; both must match to enable the check. CLI: --twilio-auth-token
 
 # -----------------------------------------------------------------------------
-# files - captures files your application uploads over FTP or SFTP into a
+# files - captures files your application uploads over FTP, SFTP or TFTP into a
 # shared in-memory virtual filesystem, downloadable back over the API or the
 # UI. Shortcut: `tommy files`.
 # -----------------------------------------------------------------------------
@@ -178,6 +178,21 @@ port = 2222               # the provider's own listener, not the shared ingress.
 # idle_timeout      = 600             # seconds a connection may sit with no read or write
 # max_connections   = 64              # concurrent SSH connections
 # max_auth_tries    = 6               # authentication attempts per connection
+
+[plugins.files.providers.tftp]
+# A real TFTP server (RFC 1350) on its own UDP port, backed by the same shared
+# virtual filesystem as ftp and sftp above. TFTP has no credentials at all, so
+# there is nothing to pin - a client just reads and writes.
+enabled = true
+port = 6969               # the provider's own UDP listener. 6969 rather than TFTP's
+                          # traditional 69, which is privileged and would need root.
+                          # CLI: --tftp-port
+#
+# The rest are tuning knobs nobody needs to flip per test run, so they stay
+# file-only (no CLI flag):
+# bind            = "127.0.0.1"  # interface this listener binds, independent of the top-level `bind`
+# timeout_seconds = 5            # how long to wait for an ACK or DATA packet before retransmitting
+# retries         = 5            # retransmission attempts before a transfer is abandoned
 
 # -----------------------------------------------------------------------------
 # chat - captures chat messages your application posts to Slack or Microsoft

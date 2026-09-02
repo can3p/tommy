@@ -12,6 +12,7 @@ import (
 	"github.com/can3p/tommy/plugins/files"
 	"github.com/can3p/tommy/plugins/files/providers/ftp"
 	"github.com/can3p/tommy/plugins/files/providers/sftp"
+	"github.com/can3p/tommy/plugins/files/providers/tftp"
 	"github.com/can3p/tommy/plugins/mail"
 	"github.com/can3p/tommy/plugins/mail/providers/mailjet"
 	"github.com/can3p/tommy/plugins/mail/providers/sendgrid"
@@ -34,6 +35,7 @@ func Plugins() []plugin.Plugin {
 		files.New(
 			ftp.New(),
 			sftp.New(),
+			tftp.New(),
 		),
 		chat.New(
 			slack.New(),
