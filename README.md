@@ -1,15 +1,16 @@
 # tommy
 
 tommy stands in for the services an application talks to but which are
-awkward to run locally — mail providers, SMS gateways, and more to come — and
-shows you exactly what your code sent. It answers the fake vendor APIs the
-way the real ones do, so official SDKs work against it unmodified, and it
-gives you a UI, a JSON API and an SSE stream to inspect every message as it
-arrives.
+awkward to run locally — mail providers, SMS gateways, file transfer, chat
+webhooks, and more to come — and shows you exactly what your code sent. It
+answers the fake vendor APIs the way the real ones do, so official SDKs work
+against it unmodified, and it gives you a UI, a JSON API and an SSE stream to
+inspect every message as it arrives.
 
-Point your application's mail or SMS client at tommy instead of Mailjet,
-SendGrid, Twilio or a real SMTP relay; nothing is ever delivered anywhere,
-and every message it captured is one API call or one browser tab away.
+Point your application's mail, SMS, file-transfer or chat client at tommy
+instead of Mailjet, SendGrid, Twilio, a real SMTP/FTP/SFTP server or a Slack/
+Teams webhook; nothing is ever delivered anywhere, and every message it
+captured is one API call or one browser tab away.
 
 ## 30-second quickstart
 
@@ -24,6 +25,8 @@ tommy is running
   ingress  http://127.0.0.1:8822
   plugin   mail ([mailjet sendgrid smtp])
   plugin   sms ([twilio])
+  plugin   files ([ftp sftp])
+  plugin   chat ([slack msteams])
 run `tommy providers` for copy-paste examples
 ```
 
@@ -50,8 +53,10 @@ configuration actually bound — useful before you've sent anything at all.
 
 | Plugin | Providers | What it fakes |
 |---|---|---|
-| `mail` | `mailjet`, `sendgrid`, `smtp` | The vendor HTTP send APIs, plus a real SMTP listener |
-| `sms`  | `twilio` | The Programmable Messaging REST API (create, list, fetch) |
+| `mail`  | `mailjet`, `sendgrid`, `smtp` | The vendor HTTP send APIs, plus a real SMTP listener |
+| `sms`   | `twilio` | The Programmable Messaging REST API (create, list, fetch) |
+| `files` | `ftp`, `sftp` | A real FTP and a real SFTP server, backed by one shared virtual filesystem |
+| `chat`  | `slack`, `msteams` | Slack incoming webhooks + `chat.postMessage`, and both generations of Teams incoming webhook |
 
 Every plugin and provider describes itself: `Description()`, the endpoints it
 mounts, and at least one runnable snippet, surfaced identically in the UI's
@@ -145,25 +150,69 @@ which one you used.
 When you only care about one content type, skip the config file entirely:
 
 ```bash
-tommy mail --ui-port 8811 --in-port 8822 --enabled-providers mailjet,sendgrid
-tommy sms  --ui-port 8811 --in-port 8822 --enabled-providers twilio
+tommy mail  --ui-port 8811 --in-port 8822 --enabled-providers mailjet,sendgrid
+tommy sms   --ui-port 8811 --in-port 8822 --enabled-providers twilio
+tommy files --ui-port 8811 --in-port 8822 --ftp-port 2121 --sftp-port 2222
+tommy chat  --ui-port 8811 --in-port 8822 --enabled-providers slack
 ```
 
-`tommy mail` and `tommy sms` are shortcuts that build a `Config` with every
-other plugin switched off in memory, then run through that identical
-bootstrap — there is no second, lighter-weight server. `--enabled-providers`
-narrows which of that plugin's providers run; leave it off and every provider
-the plugin ships is enabled. An unknown provider name is rejected up front,
-naming the valid ones:
+`tommy mail`, `tommy sms`, `tommy files` and `tommy chat` are shortcuts that
+build a `Config` with every other plugin switched off in memory, then run
+through that identical bootstrap — there is no second, lighter-weight server.
+`--enabled-providers` narrows which of that plugin's providers run; leave it
+off and every provider the plugin ships is enabled. An unknown provider name
+is rejected up front, naming the valid ones:
 
 ```
 $ tommy mail --enabled-providers bogus
 Error: unknown mail provider "bogus": valid providers are mailjet, sendgrid, smtp
 ```
 
-Both subcommands mirror `serve`'s flags where they apply: `--ui-port`,
+All four subcommands mirror `serve`'s flags where they apply: `--ui-port`,
 `--api-port`, `--in-port` (the shared ingress port), `--bind`, `--host` and
 `--log-level`.
+
+Every provider also gets its own flags for whatever credentials it takes,
+named `--<provider>-<option>` so two providers of one plugin never collide.
+Pinning a vendor credential — Mailjet's `api_key`, Twilio's `auth_token`,
+SMTP's AUTH password — is the same error-path test either way: unset it and
+anything is accepted, set it and a mismatch gets that vendor's real error
+response:
+
+| Provider | Flags |
+|---|---|
+| `mailjet` (`tommy mail`)  | `--mailjet-api-key`, `--mailjet-secret-key` |
+| `sendgrid` (`tommy mail`) | `--sendgrid-api-key` |
+| `smtp` (`tommy mail`)     | `--smtp-port`, `--smtp-username`, `--smtp-password` |
+| `twilio` (`tommy sms`)    | `--twilio-account-sid`, `--twilio-auth-token` |
+| `ftp` (`tommy files`)     | `--ftp-port`, `--ftp-passive-host`, `--ftp-passive-ports`, `--ftp-username`, `--ftp-password` |
+| `sftp` (`tommy files`)    | `--sftp-port`, `--sftp-host-key`, `--sftp-authorized-keys`, `--sftp-username`, `--sftp-password` |
+
+`slack` and `msteams` take no provider-specific flags at all: neither reads
+any option beyond `enabled`. Only smtp, ftp and sftp get a `--<provider>-port`
+— they are real protocol servers with a listener of their own. mailjet,
+sendgrid, twilio, slack and msteams are HTTP providers that all share the one
+`--in-port` / `[ingress]` listener and are told apart by path; there is no
+per-provider listener for an HTTP provider (that would be real core work, not
+this shortcut), so none of them gets a `--<provider>-port` flag.
+
+An unset flag never overrides a provider's own default, and setting one for a
+provider `--enabled-providers` excludes is a clear error rather than a flag
+that silently does nothing:
+
+```
+$ tommy files --enabled-providers ftp --sftp-port 2200
+Error: files: flags were given for provider "sftp", but --enabled-providers only enables ftp
+```
+
+Everything else settable in a provider's `tommy.toml` section — smtp's,
+ftp's and sftp's own `bind`, and tuning knobs like timeouts, message/recipient
+limits and connection caps — is deliberately config-file-only; see the
+comments next to each key in [`tommy.toml`](./tommy.toml) for why.
+
+Every subcommand rejects a stray positional argument rather than silently
+starting a server with it ignored — `tommy mail serve` and `tommy files oops`
+are both errors, not a running server you have to notice and kill by hand.
 
 ## API surface
 
