@@ -259,3 +259,26 @@ port = 2575               # the provider's own listener. 2575 is IANA-registered
 # file-only (no CLI flag):
 # bind              = "127.0.0.1"  # interface this listener binds, independent of the top-level `bind`
 # max_message_bytes = 10485760     # 10MiB; a frame that never terminates is dropped and the connection closed
+
+# -----------------------------------------------------------------------------
+# snmp - captures the SNMP v1 and v2c traps and informs your infrastructure
+# sends instead of a real network management station, decoding every varbind
+# by its actual wire type. Shortcut: `tommy snmp`.
+# -----------------------------------------------------------------------------
+
+[plugins.snmp]
+enabled = true
+
+[plugins.snmp.providers.trap]
+# A real SNMP trap receiver on its own UDP port: v1 traps, v2c traps and v2c
+# informs are all accepted, with an inform getting a GetResponse back that
+# echoes its request id and varbinds - the one reply SNMP actually requires
+# here. Any community string is accepted and recorded, never checked.
+enabled = true
+port = 1162               # the provider's own UDP listener. 1162 rather than SNMP's
+                          # traditional 162, which is privileged and would need root.
+                          # CLI: --trap-port
+#
+# The rest are tuning knobs nobody needs to flip per test run, so they stay
+# file-only (no CLI flag):
+# bind = "127.0.0.1"      # interface this listener binds, independent of the top-level `bind`
