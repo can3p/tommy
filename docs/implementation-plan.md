@@ -1,6 +1,6 @@
 # Tommy — Implementation Plan (forward-looking)
 
-Waves 0–6a are built. This document plans what comes next.
+Waves 0–6b are built. This document plans what comes next.
 
 - **What was built and why:** `docs/archive/history.md`
 - **The interfaces as built (authoritative):** `docs/contracts.md`
@@ -31,19 +31,17 @@ wave you expected, look in the history.
 |---|---|---|
 | `mail` | mailjet, sendgrid, smtp | done |
 | `sms` | twilio | done |
-| `files` | ftp, sftp, tftp | done |
+| `files` | ftp, sftp, tftp, nfs | done |
 | `chat` | slack, msteams | done |
-| `hl7` | — | **core done (Wave 6a); unwired until MLLP lands in 6b** |
+| `hl7` | mllp | done |
 | `push` | — | **not started; named in the original brief** |
 
-Every *shipping* plugin has a `tommy <plugin>` subcommand, and every provider
-option worth setting has a flag. `hl7` is the one exception, and deliberately so:
-it has no provider yet, so there is nothing for a subcommand to run. Both land
-together in 6b.
+Every plugin has a `tommy <plugin>` subcommand, and every provider option worth
+setting has a flag.
 
-Waves 0–6·0 are merged to `main`; 6a is on `feat/hl7-and-tftp`. **Start each new
-wave on its own branch**, named for what it builds, so a wave stays a reviewable
-unit.
+Waves 0–6·0 are merged to `main`; 6a is on `feat/hl7-and-tftp` and 6b on
+`feat/mllp-and-nfs`, both awaiting review. **Start each new wave on its own
+branch**, named for what it builds, so a wave stays a reviewable unit.
 
 ## 2. The scoping rule
 
@@ -66,7 +64,7 @@ async AS2 MDN) — which would need outbound HTTP and a scenario definition form
 
 ## 3. How to run a wave
 
-The pattern that worked for waves 0–6a, in short. `docs/lessons.md` has the
+The pattern that worked for waves 0–6b, in short. `docs/lessons.md` has the
 reasoning; `CLAUDE.md` has the rules.
 
 1. **Branch first.** One branch per wave, named for what it builds
@@ -99,56 +97,10 @@ closed: **each new provider carries its own CLI flags as part of its task**
 (`CLAUDE.md` rule 10), so this never has to be repeated as a wave of its own.
 
 Four additions were planned, chosen because each removes real pain and each has
-a mechanical reply. **6a is done** — the HL7 plugin core and the TFTP provider
-are in the history. What remains is 6b and 6c below.
+a mechanical reply. **6a and 6b are done** — the HL7 plugin core, TFTP, MLLP and
+NFS are in the history. What remains is 6c below.
 
 Sequenced only by `go.mod` ownership — see rule 4 above.
-
-### 6b · two agents in parallel
-
-| Task | Owns | `go.mod` | Model | Depends on |
-|---|---|---|---|---|
-| **P-mllp** | `plugins/hl7/providers/mllp/**` | no | cheaper | HL1 |
-| **P-nfs** | `plugins/files/providers/nfs/**` | **yes** — `willscott/go-nfs` | stronger | — |
-
-**P-mllp inherits three obligations from HL1**, none of them optional:
-
-1. **Wire `hl7` into `plugins/all/all.go`** — the core is deliberately unwired,
-   because `plugintest` rejects a plugin with no providers and is right to: a
-   plugin that can never receive anything is not shippable. It goes in with the
-   provider.
-2. **Add `cmd/hl7.go`** (`CLAUDE.md` rule 10), with `--mllp-port` as the option
-   worth a flag, plus the `[plugins.hl7]` section in `tommy.toml` and the README
-   rows. Follow `cmd/files.go`'s `providerOptionBuilder` pattern.
-3. **Decide `AA`/`AE`/`AR` from the parsed message, not from an error.** `Parse`
-   fails only on an empty message; everything else returns a message carrying
-   coded `Issue`s. Use `HasHeader()` and `HasIssue(code)` — that API exists for
-   this task.
-
-**P-mllp.** MLLP framing is three control bytes — `0x0B` … `0x1C 0x0D` — around
-each message on a TCP connection. The substance is correctness at the edges:
-partial reads, several messages pipelined in one connection, a message split
-across packets, and a missing trailer.
-
-- Generate the **ACK** from the request: `MSH` echoed with sender and receiver
-  swapped, `MSA|AA|<original control id>`. Support `AE`/`AR` for a message that
-  fails to parse, since that is still a mechanical reply, not a policy decision.
-- Bound message size and reject a frame that never terminates.
-- Test by speaking MLLP over a socket, including the pipelining and split-packet
-  cases, and assert the ACK a real integration engine would accept.
-
-**P-nfs.** `willscott/go-nfs` is a genuine NFSv3 server library with a pluggable
-filesystem backend, which is what makes this affordable; without it this would be
-ONC RPC plumbing and would not be worth doing.
-
-- Adapt the `files` VFS to the library's backend interface, the way the FTP
-  provider adapts it to `afero.Fs`. Check whether the library wants a `billy`
-  filesystem and write the adapter accordingly.
-- NFS needs a portmapper/mount story — confirm what the library provides and what
-  must be configured, and document the client mount command in the snippet, since
-  it is the least obvious part for a user.
-- Stronger model because the RPC/mount layer has more room for subtle error than
-  the other three tasks here.
 
 ### 6c · one agent
 
@@ -274,6 +226,15 @@ Independent of each other and of the protocol work; each is one agent.
 
 ## Backlog — small, unblocked, good first tasks
 
+- **NFS event granularity.** One logical upload over NFS is a CREATE plus one
+  `files.upload` per WRITE chunk, because NFS has no open/close on the wire and
+  `COMMIT` never reaches the backend. Deliberate — a debounce would make reads
+  see stale content — but if the files tab ever looks noisy, this is why.
+- **NFS records the mounting connection's peer.** `go-billy`'s methods take
+  neither a context nor a connection, so per-client identity can only come from
+  `Handler.Mount`'s `net.Conn`. For a kernel client that is the same host on a
+  possibly different source port. Fixing it needs a core change nobody else
+  wants.
 - `event.DecodePayload[T]` in core. `sms`, `chat` and `hl7` each carry a
   near-identical pointer/value/JSON-round-trip payload decoder, ~25 lines apiece.
   A convenience rather than a gap, reported by the third plugin to write one.

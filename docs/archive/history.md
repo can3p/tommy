@@ -328,6 +328,79 @@ and `tommy providers files/tftp` reported no such provider — and updating the
 `files` plugin description, which still said "over FTP or SFTP". A wave that adds
 a provider is not finished at the provider's directory boundary.
 
+## Wave 6b — MLLP and NFSv3 · 2 agents in parallel
+
+The two providers that make Wave 6a's work usable: the HL7 core got its first
+real listener, and the `files` VFS got its fourth and most structurally demanding
+transport.
+
+**Both agents were killed by a session rate limit inside their first few tool
+calls**, before either had written a file. Resuming them with their transcripts
+intact, plus an explicit statement that nothing had reached disk and they should
+start from the beginning rather than hunt for partial work, cost one round trip
+each. This is the second kind of interruption the project has survived on the
+same principle — the earlier one was machine sleep — and the handling is the
+same: check what is actually on disk, say so, and resume rather than re-brief.
+
+**Built — `plugins/hl7/providers/mllp`:** the `0x0B … 0x1C 0x0D` framing, and an
+ACK generated entirely from the request. The framing itself is trivial; the work
+is the edges, each with its own socket-driven test — a message split across
+packets, several pipelined into one read, junk before a start byte or after a
+trailer, a connection closing mid-frame, and a frame that never terminates being
+bounded and dropped.
+
+**The ACK uses the inbound message's separators.** A message declaring `!` as its
+field separator gets an ACK delimited by `!`. Emitting the conventional `|^~\&`
+would have been precisely the bug the HL7 plugin exists to expose, so this was
+verified independently rather than taken on trust.
+
+**The core's "recover and record" design paid off exactly where it was aimed.**
+`AA`/`AE`/`AR` are chosen from `HasHeader()` and `HasIssue(code)`, never from an
+error: no usable header is `AR`, a header whose separators cannot be trusted is
+`AE`, and an unrelated segment issue leaves it `AA` because it does not
+compromise the header. With no header there is no control id to echo, so `MSA-2`
+is left empty rather than invented — a fake that makes up an id would be lying to
+the one system best placed to notice.
+
+**Built — `plugins/files/providers/nfs`:** NFSv3 over the same tree. The backend
+interface is **go-billy, not afero**, so this is a second adapter shape rather
+than a copy of the FTP one — worth knowing before a fifth transport is attempted.
+
+**Handle-based addressing is the interesting part** for a project whose one path
+invariant is that `VFS.Resolve` decides everything. Handles are random UUIDs
+minted per path into an LRU and encode no path at all; an unknown or evicted
+handle is `STALE`; the components behind a handle the server did mint are
+re-resolved through the VFS on every operation. The escape tests had to be driven
+with **raw RPC**, because the client library `path.Clean`s before anything
+reaches the wire — a test through the client alone would have proved nothing.
+
+**No portmapper, deliberately.** Both RPC programs are served on one port. rpcbind
+lives on privileged 111, and registering a fake there would advertise it to
+everything on the machine — so a client must be given `port=` and `mountport=`
+explicitly. That is the least obvious thing about using this provider, which is
+why the mount command leads its snippets in both Linux and macOS spellings. 2049
+needed no unprivileged stand-in; unlike 21, 22 and 69 it is already unprivileged.
+
+**Two limitations recorded rather than papered over.** One logical NFS upload is a
+CREATE plus one event per WRITE chunk, because NFS has no open or close on the
+wire and `COMMIT` never reaches the backend; the alternative was a debounce that
+would make reads see stale content. And because billy's methods take neither a
+context nor a connection, the recorded peer is the *mounting* connection's
+address. Both are in the plan's backlog.
+
+**A library edge worth remembering:** go-nfs opens `O_WRONLY|O_EXCL` without
+`O_CREATE` on its truncate path, meaning "do not create". POSIX leaves that
+undefined; the VFS read it strictly as "must not exist", so truncate over a mount
+failed outright until the adapter dropped the flag. Also, go-nfs compares
+filesystems with `reflect.DeepEqual`, which would deep-walk the whole VFS tree —
+the adapter puts a cheap discriminator first so it never gets that far.
+
+**Neither agent found a core gap**, and both were asked directly. `ListenerProvider`
+being transport-agnostic held for a second time, `AddressableProvider` supplied the
+ephemeral port, and `VFSBinder` the shared tree. The `hl7` core needed nothing added
+for its first real consumer, which is the useful signal about a contract written one
+wave ahead of its use.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project
