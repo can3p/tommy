@@ -1,5 +1,7 @@
 # as2
 
+## What it is
+
 Tommy's AS2 content type. It stands in for a trading partner's AS2 endpoint:
 it accepts the EDIINT messages your integration posts — signed, encrypted,
 compressed, in any combination — unwraps them layer by layer, stores the EDI
@@ -10,10 +12,68 @@ AS2 is RFC 4130, with compression from RFC 5402 and RFC 3274. It belongs in
 tommy because the reply is *mechanical*: everything in an MDN is derivable from
 the request. Tommy reports what arrived; it does not decide policy about it.
 
-**This package is the plugin core.** The HTTP provider that mounts a route and
-feeds it lives under `plugins/as2/providers/` and is a separate task. Until one
-exists, `plugintest.Conformance` correctly complains that the plugin has no
-provider, and the plugin is not wired into `plugins/all/all.go`.
+## What it's for
+
+Your integration posts an S/MIME-wrapped EDI document to a trading partner's
+AS2 endpoint and blocks waiting on the synchronous MDN receipt before it
+considers the send successful. Getting a *real* partner endpoint to test
+against means a certificate exchange and a partner willing to be your test
+target — neither of which exists yet when you're still writing the
+integration. tommy stands in for that partner: fetching its certificate is
+one `curl`, and every message it receives — whatever combination of signing,
+encryption and compression it arrived in, however badly malformed — comes
+back with a real MDN and is shown unwrapped layer by layer, with exactly what
+the signature did and did not prove about who sent it.
+
+## How to test it for real
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . as2 --ui-port 8811 --in-port 8822 --as2-in-memory
+```
+
+`--as2-in-memory` generates a throwaway key pair and writes nothing to disk —
+use it (or `--as2-cert-dir <a scratch dir>`) for anything other than a real
+long-running instance, since the default location is your real
+`os.UserConfigDir()/tommy/as2`.
+
+```bash
+# Fetch tommy's certificate - every AS2 relationship starts here.
+curl -sO http://localhost:8811/api/v1/as2/certificate
+
+# Post a plain (unsigned, unencrypted) message and read the MDN back.
+printf 'ISA*00*          *00*          *ZZ*PARTNER        *ZZ*TOMMY          *260903*1200*U*00401*000000001*0*P*>~SE*1*0001~IEA*1*000000001~' |
+curl -s -D - --data-binary @- \
+  -H 'AS2-From: PARTNER' -H 'AS2-To: TOMMY' -H 'AS2-Version: 1.1' \
+  -H 'Message-ID: <1@partner.example>' \
+  -H 'Content-Type: application/edi-x12' \
+  -H 'Disposition-Notification-To: as2@partner.example' \
+  http://localhost:8822/as2
+```
+
+For the full signed-and-encrypted exchange, verified against the returned
+MDN with OpenSSL, see `providers/http/README.md`'s "Trying it" section — it
+is executed, not just written down, and it is where the real trap (an
+`-outform SMIME` body that reads as valid MIME but is not legal AS2 wire
+format) is explained.
+
+Read the captures back either through the plugin's own API or the generic
+event feed:
+
+```bash
+curl -s http://localhost:8811/api/v1/as2/messages | jq '.[].meta.security'
+curl -s 'http://localhost:8811/api/v1/events?plugin=as2' | jq length
+```
+
+Or open the tab: `http://localhost:8811/ui/as2/`.
+
+## What is deliberately not implemented, in short
+
+Only **synchronous** MDNs. `Receipt-Delivery-Option` asks for the receipt to
+be POSTed back later to a URL of the sender's choosing, which means tommy
+originating an outbound request — outside its charter of answering what it is
+sent, never driving traffic. The header is recorded and an issue is raised
+rather than silently ignored; see "What is deliberately not implemented"
+below for the full reasoning.
 
 ## The three rules this package is built on
 

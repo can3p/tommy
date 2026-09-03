@@ -1,5 +1,7 @@
 # as2/http
 
+## What it is
+
 The AS2-over-HTTP binding of RFC 4130: the route a trading partner POSTs an
 EDIINT message to, and the certificate endpoint that tells it what to encrypt to.
 
@@ -13,59 +15,29 @@ computing the `Received-Content-MIC` over the right bytes, building and signing
 the MDN, storing the document — lives in the plugin core behind `as2.Receiver`.
 See `../../README.md` for how that works and what it deliberately does not do.
 
-## Endpoints
+## What it's for
 
-| Route | What |
-|---|---|
-| `POST /as2` | Accept an AS2 message and answer with a synchronous MDN receipt. Signed, encrypted and compressed messages are unwrapped; anything that cannot be opened is still captured and reported honestly in the MDN's disposition rather than refused. |
-| `GET /as2/certificate` | Serve tommy's certificate as PEM, before any message has arrived. This is where an exchange starts. |
+Standing up a real AS2 trading-partner relationship to test against means a
+certificate exchange and a partner on the other end willing to be your test
+target — usually neither exists yet while an integration is still being
+written. This provider is that partner: `GET /as2/certificate` is the one
+command that starts the relationship, and `POST /as2` accepts whatever your
+software sends — signed, encrypted, compressed, any combination, or none —
+and always answers with a real MDN, so a client waiting synchronously on that
+receipt gets one. When something arrives malformed or cannot be decrypted,
+the response says so honestly rather than hanging up or refusing, which is
+usually the more useful case to test: knowing what your own integration does
+when a partner's MDN reports a problem.
 
-**The paths are not configurable, and that is a core limitation rather than a
-choice.** `plugin.Provider.Endpoints()` takes no `Deps`, so a provider cannot
-declare a route whose path depends on configuration, and the ingress refuses to
-start when a mounted route is not declared. Real AS2 partners do configure each
-other's URLs. It has been reported rather than worked around.
-
-## Configuration
-
-```toml
-[plugins.as2.providers.http]
-enabled           = true
-cert_file         = "/etc/tommy/as2-cert.pem"   # PEM certificate; needs key_file
-key_file          = "/etc/tommy/as2-key.pem"    # unencrypted PEM key (PKCS#1 or PKCS#8)
-partner_cert_file = "/etc/tommy/partner.pem"    # what inbound signatures are checked against
-cert_dir          = "/var/lib/tommy/as2"        # where a generated pair is kept
-common_name       = "tommy AS2"                 # subject of a generated certificate
-in_memory         = false                       # generate a pair and write nothing at all
-as2_to            = "TOMMY"                     # the identifier this endpoint answers to
-max_body          = 67108864                    # cap on a captured message, in bytes
-```
-
-Every setting is optional. With none of them, a key pair is generated on first
-start and kept beside the config file, or in `os.UserConfigDir()/tommy/as2` when
-the config was built in memory.
-
-`cert_file` and `key_file` must be given together and the key must be
-**unencrypted** — tommy is a background process with no terminal to prompt on,
-and a passphrase in a config file is worse than no passphrase. Convert one with
-`openssl pkey -in key.pem -out key-plain.pem`.
-
-`partner_cert_file` is what turns "this signature is intact" into "this is who it
-says it is". Without it a signature can be shown to be valid and never
-attributed, and every read surface says so.
-
-`as2_to` **does not refuse anything.** RFC 4130 §6.2: *"There is no required
-response to a client request containing invalid or unknown AS2-From or AS2-To
-header values."* So a message addressed elsewhere still gets a receipt and is
-still captured; the mismatch is recorded on the event as `as2_to_expected` and
-`as2_to_matched` so it is visible in the tab instead of being a green light. The
-comparison is byte-exact, because §6.2 makes AS2 identifiers case-sensitive.
-
-## Trying it
+## How to test it for real
 
 Both snippets below are executed against a live instance by
-`TestSnippetsActuallyRun`, not merely rendered. Substitute the ingress port your
-instance reports — `tommy providers as2` prints it.
+`TestSnippetsActuallyRun`, not merely rendered. Substitute the ingress port
+your instance reports — `tommy providers as2` prints it, or start one at a
+known port with `TOMMY_NO_UPDATE_CHECK=1 go run . as2 --ui-port 8811
+--in-port 8822 --as2-in-memory` (`--as2-in-memory` avoids writing a generated
+certificate to your real config directory, which otherwise defaults to
+`os.UserConfigDir()/tommy/as2`).
 
 ### A plain message, from a cold start
 
@@ -85,6 +57,14 @@ curl -s -D - --data-binary @- \
 ```
 
 ### Signed and encrypted, with the MDN verified
+
+`openssl` here means a real OpenSSL, not LibreSSL — macOS ships LibreSSL as
+`/usr/bin/openssl`, which cannot do everything below. Homebrew's
+`/opt/homebrew/bin/openssl` (verified against 3.6.1) works; `$OPENSSL` in the
+package's own tests overrides both. Homebrew's build has no zlib, so if you
+were tempted to add `openssl cms -compress` to this chain, it fails outright
+with "unsupported compression algorithm" — compressed fixtures in this
+package are built a different way; see `../../README.md`'s Fixtures section.
 
 ```bash
 # 1. Fetch tommy's certificate. Every AS2 relationship starts here.
@@ -145,6 +125,62 @@ where they are not base64, and the receiver answers
 `processed/Error: unexpected-processing-error` with
 `illegal base64 data at input byte 7`. Asking for DER and encoding it yourself
 sidesteps the question entirely.
+
+Read the capture back either through the plugin's own API or the generic
+event feed, and via the UI tab:
+
+```bash
+curl -s http://localhost:8811/api/v1/as2/messages | jq '.[].meta.security'
+curl -s 'http://localhost:8811/api/v1/events?plugin=as2' | jq length
+```
+
+## Endpoints
+
+| Route | What |
+|---|---|
+| `POST /as2` | Accept an AS2 message and answer with a synchronous MDN receipt. Signed, encrypted and compressed messages are unwrapped; anything that cannot be opened is still captured and reported honestly in the MDN's disposition rather than refused. |
+| `GET /as2/certificate` | Serve tommy's certificate as PEM, before any message has arrived. This is where an exchange starts. |
+
+**The paths are not configurable, and that is a core limitation rather than a
+choice.** `plugin.Provider.Endpoints()` takes no `Deps`, so a provider cannot
+declare a route whose path depends on configuration, and the ingress refuses to
+start when a mounted route is not declared. Real AS2 partners do configure each
+other's URLs. It has been reported rather than worked around.
+
+## Configuration
+
+```toml
+[plugins.as2.providers.http]
+enabled           = true
+cert_file         = "/etc/tommy/as2-cert.pem"   # PEM certificate; needs key_file
+key_file          = "/etc/tommy/as2-key.pem"    # unencrypted PEM key (PKCS#1 or PKCS#8)
+partner_cert_file = "/etc/tommy/partner.pem"    # what inbound signatures are checked against
+cert_dir          = "/var/lib/tommy/as2"        # where a generated pair is kept
+common_name       = "tommy AS2"                 # subject of a generated certificate
+in_memory         = false                       # generate a pair and write nothing at all
+as2_to            = "TOMMY"                     # the identifier this endpoint answers to
+max_body          = 67108864                    # cap on a captured message, in bytes
+```
+
+Every setting is optional. With none of them, a key pair is generated on first
+start and kept beside the config file, or in `os.UserConfigDir()/tommy/as2` when
+the config was built in memory.
+
+`cert_file` and `key_file` must be given together and the key must be
+**unencrypted** — tommy is a background process with no terminal to prompt on,
+and a passphrase in a config file is worse than no passphrase. Convert one with
+`openssl pkey -in key.pem -out key-plain.pem`.
+
+`partner_cert_file` is what turns "this signature is intact" into "this is who it
+says it is". Without it a signature can be shown to be valid and never
+attributed, and every read surface says so.
+
+`as2_to` **does not refuse anything.** RFC 4130 §6.2: *"There is no required
+response to a client request containing invalid or unknown AS2-From or AS2-To
+header values."* So a message addressed elsewhere still gets a receipt and is
+still captured; the mismatch is recorded on the event as `as2_to_expected` and
+`as2_to_matched` so it is visible in the tab instead of being a green light. The
+comparison is byte-exact, because §6.2 makes AS2 identifiers case-sensitive.
 
 ## Testing
 

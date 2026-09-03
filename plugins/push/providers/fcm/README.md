@@ -1,11 +1,50 @@
 # `fcm` provider
 
+## What it is
+
 Imitates [Firebase Cloud Messaging's HTTP v1 send
 API](https://firebase.google.com/docs/cloud-messaging/send-message):
 `POST /v1/projects/{project}/messages:send`, mounted on the shared ingress
 exactly as the real API paths it. Plain HTTP/1.1-compatible JSON with an
 OAuth2 bearer token - no HTTP/2 needed, unlike the `apns` provider that
-follows it.
+follows it. It records which of the four addressing fields was actually used,
+lifts the `android`/`apns`/`webpush` override blocks out as their own
+inspectable payloads, and answers with the real success or error shape so the
+generated Google API client works unmodified.
+
+## What it's for
+
+Your backend sends push through Firebase and you want to see, without a real
+device or a Firebase project, whether a given send targets the device token
+you expect rather than a stale one, whether an `android` override actually
+replaces the platform-independent title the way you think it does, or whether
+a `data`-only message - the kind meant to wake the app silently - really
+carries no visible notification. It is also where you catch the field-name
+mistake this README exists to document: FCM v1 accepts both `collapseKey` and
+`collapse_key` on the wire, and a client (or a hand-built test fixture) that
+sends the "wrong" one still gets a `200 OK` from the real service - tommy has
+to accept it too, or a passing test here would fail against Firebase itself.
+
+## How to test it for real
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . push --ui-port 8811 --in-port 8822
+```
+
+```bash
+curl -s -X POST http://localhost:8822/v1/projects/my-project/messages:send \
+  -H 'Authorization: Bearer any-oauth-access-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"message":{"topic":"weather","notification":{"title":"Storm warning","body":"Batten down the hatches"}}}'
+```
+
+```bash
+curl -s http://localhost:8811/api/v1/push/messages | jq '.[0].message.target'
+```
+
+For a real client rather than `curl`, see "Driving a real SDK" below -
+`google.golang.org/api/fcm/v1`, exercised end to end in
+`test/integration/fcm_test.go`.
 
 ## A wire-format finding, corrected: both spellings are valid v1 input
 
@@ -182,20 +221,7 @@ trace. This mirrors the mail plugin's `mailjet` provider, which records a
 `SandboxMode` send the same way (`Event.Meta.sandbox_mode`) rather than
 skipping it - see `plugins/mail/providers/mailjet`.
 
-## How to test
-
-```bash
-curl -s -X POST http://localhost:8822/v1/projects/my-project/messages:send \
-  -H 'Authorization: Bearer any-oauth-access-token' \
-  -H 'Content-Type: application/json' \
-  -d '{"message":{"topic":"weather","notification":{"title":"Storm warning","body":"Batten down the hatches"}}}'
-```
-
-Read it back through the push plugin's own API:
-
-```bash
-curl -s http://localhost:8811/api/v1/push/messages | jq '.[0].message.target'
-```
+## Running the package tests
 
 Run the package tests, which cover a notification, a data-only (silent)
 message, each targeting form including `fid`, the android/apns/webpush
