@@ -242,12 +242,15 @@ response:
 | `http` (`tommy as2`)      | `--as2-cert-file`, `--as2-key-file`, `--as2-partner-cert-file`, `--as2-cert-dir`, `--as2-common-name`, `--as2-in-memory`, `--as2-to`, `--as2-max-body` |
 
 `slack` and `msteams` take no provider-specific flags at all: neither reads
-any option beyond `enabled`. Only smtp, ftp and sftp get a `--<provider>-port`
-— they are real protocol servers with a listener of their own. mailjet,
-sendgrid, twilio, slack and msteams are HTTP providers that all share the one
-`--in-port` / `[ingress]` listener and are told apart by path; there is no
-per-provider listener for an HTTP provider (that would be real core work, not
-this shortcut), so none of them gets a `--<provider>-port` flag.
+any option beyond `enabled`.
+
+Only the real protocol servers get a `--<provider>-port`, because only they
+have a listener of their own: smtp, ftp, sftp, tftp, nfs, mllp and trap.
+Every HTTP provider — mailjet, sendgrid, twilio, slack, msteams, fcm, apns and
+as2's http — shares the one `--in-port` / `[ingress]` listener and is told
+apart by path. There is no per-provider listener for an HTTP provider (that
+would be real core work, not this shortcut), so none of them gets a
+`--<provider>-port` flag.
 
 An unset flag never overrides a provider's own default, and setting one for a
 provider `--enabled-providers` excludes is a clear error rather than a flag

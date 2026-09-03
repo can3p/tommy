@@ -6,6 +6,7 @@ Waves 0–8 are built. This document plans what comes next.
 - **The interfaces as built (authoritative):** `docs/contracts.md`
 - **What the work taught us:** `docs/lessons.md`
 - **The original brief:** `docs/plan.md`
+- **What each plugin and provider is for:** `docs/catalogue.md`
 
 ## 0. Keeping this document current
 
@@ -39,7 +40,9 @@ wave you expected, look in the history.
 | `as2` | http | done |
 
 Every plugin has a `tommy <plugin>` subcommand, and every provider option worth
-setting has a flag.
+setting has a flag. Every plugin and provider carries user-facing documentation
+— what it is, what it is for, and commands that have been run — indexed in
+`docs/catalogue.md` and required from here on by `CLAUDE.md` rule 12.
 
 Waves 0–6·0 are merged to `main`. Waves 6a, 6b, 6c, 7 and 8 are on
 `feat/hl7-and-tftp`, `feat/mllp-and-nfs`, `feat/snmp-traps`, `feat/push-plugin`

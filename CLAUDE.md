@@ -43,6 +43,7 @@ cd test/integration && go test -tags integration ./...
 | `docs/archive/history.md` | What was built and why, wave by wave, with the decisions that changed under contact with real code. |
 | `docs/lessons.md` | What this codebase taught us. Read before orchestrating more work. |
 | `docs/clients.md` | Pointing official vendor SDKs at tommy. |
+| `docs/catalogue.md` | **Index of every plugin and provider**, what each is for, and a link to its own README. Start here when asking whether tommy covers something. |
 | `core/` | Event, store, blob, plugin contracts, config, server (ui/api/ingress), testutil. |
 | `plugins/` | One directory per content type; providers nested under each. |
 | `plugins/all/all.go` | The single shared wiring file. Every plugin and provider is registered here explicitly. |
@@ -94,6 +95,25 @@ them be built in parallel.
     must also be configurable: tommy may run in a cluster that already has its
     own CA, and someone running a different plugin must never meet a credential
     at all. `plugins/as2/identity.go` is the worked example.
+12. **Ship user-facing documentation, not just implementation notes.** Every
+    plugin and every provider carries a `README.md` that opens with these three
+    sections, in this order, before any internals:
+
+    - **What it is** — what real service this stands in for, and what it
+      captures. One short paragraph.
+    - **What it's for** — the situation in which somebody reaches for this.
+      Concrete ("your app sends order confirmations through SendGrid and you
+      want to see them in CI"), never a restatement of the name.
+    - **How to test it for real** — runnable commands, from a cold start, that
+      drive the actual thing: the vendor's own SDK or CLI where one exists,
+      otherwise `curl`, `openssl`, `snmptrap`, OpenSSH `sftp`. **Every command
+      must have been executed against a running tommy**, because a snippet
+      nobody ran is a guess — this project has shipped two that could not work.
+
+    Internals go below, and are still worth writing. The failure mode this
+    rule exists to prevent is documentation aimed at the next implementer
+    while the next *user* is never told what the thing is for: the coverage
+    looks complete and the useful half is missing.
 
 ## Security invariants — do not weaken these
 
@@ -146,9 +166,15 @@ reported, and stale docs cost the next session more than they cost you.
 4. **`docs/lessons.md`** — add anything that generalises beyond this wave. A
    finding that would change how someone works, not a fact about one provider.
 5. **`CLAUDE.md`** — update if a rule, invariant, command or convention changed.
-6. **Commit the documentation** as its own commit, so the history shows the plan
+6. **Update the documentation of every plugin and provider the wave touched** —
+   rule 12's three sections, plus anything the wave changed underneath them. A
+   new plugin or provider needs its `README.md` written in the same wave, and a
+   changed endpoint, flag or default needs it corrected there too. This is the
+   step most easily skipped, because the code works without it and nothing
+   fails; it is also the one a user notices first.
+7. **Commit the documentation** as its own commit, so the history shows the plan
    moving in step with the code.
-7. **Hand the branch over.** Report what landed and stop; merging is the user's
+8. **Hand the branch over.** Report what landed and stop; merging is the user's
    call. The next wave starts from a fresh branch off whatever they merged.
 
 A useful test for step 2: if a new session read only your archive entry, would it
