@@ -94,13 +94,18 @@ const (
 // inbound signatures against. It is safe for concurrent use: providers read it
 // on every request while the tab reads it to show the fingerprint.
 type Identity struct {
-	mu      sync.RWMutex
-	cfg     IdentityConfig
-	loaded  bool
-	source  string
-	cert    *x509.Certificate
-	key     *rsa.PrivateKey
-	certPEM []byte
+	mu     sync.RWMutex
+	cfg    IdentityConfig
+	loaded bool
+	// materialized records that the deferred half of Configure has run. A key
+	// pair is generated on first use rather than at registration, so merely
+	// building a server - which every conformance test and every `tommy
+	// providers` invocation does - writes nothing to anyone's disk.
+	materialized bool
+	source       string
+	cert         *x509.Certificate
+	key          *rsa.PrivateKey
+	certPEM      []byte
 
 	certPath string
 	keyPath  string
@@ -136,6 +141,7 @@ func (i *Identity) Configure(cfg IdentityConfig) error {
 	defer i.mu.Unlock()
 	i.cfg = cfg
 	i.loaded = true
+	i.materialized = false
 	i.cert, i.key, i.certPEM = nil, nil, nil
 	i.certPath, i.keyPath = "", ""
 	i.partner, i.partnerPEM = nil, nil
@@ -146,11 +152,40 @@ func (i *Identity) Configure(cfg IdentityConfig) error {
 		// and carry on unauthenticated, which is the default state anyway.
 		i.err = err
 	}
-	if err := i.load(); err != nil {
-		i.err = err
-		return err
+
+	// Explicit files are read now, because a path that does not resolve is a
+	// mistake the operator wants to hear about at startup rather than on the
+	// first message. Reading them creates nothing.
+	//
+	// Generation is deliberately NOT done here. See materialize.
+	if cfg.CertFile != "" || cfg.KeyFile != "" {
+		i.materialize()
+		if i.err != nil {
+			return i.err
+		}
 	}
 	return i.err
+}
+
+// materialize runs the half of Configure that can create something: generating
+// a key pair, and writing it where a partner can be told to find it. It happens
+// on first use rather than at registration, and the distinction is not
+// cosmetic - Configure runs in RegisterIngress, which means it runs for anything
+// that merely builds a server. plugintest.Conformance does exactly that, so
+// generating eagerly put a real private key in the user's own config directory
+// during `make check`. Deferring it means the only things that mint a
+// certificate are the ones that genuinely need one: an arriving message, a
+// partner fetching /as2/certificate, or the tab showing the fingerprint.
+//
+// The caller holds the write lock.
+func (i *Identity) materialize() {
+	if !i.loaded || i.materialized {
+		return
+	}
+	i.materialized = true
+	if err := i.load(); err != nil {
+		i.err = err
+	}
 }
 
 // Configured reports whether Configure has run.
@@ -163,8 +198,9 @@ func (i *Identity) Configured() bool {
 // KeyPair returns the certificate and private key, or the reason there are
 // none.
 func (i *Identity) KeyPair() (*x509.Certificate, *rsa.PrivateKey, error) {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.materialize()
 	if !i.loaded {
 		return nil, nil, ErrIdentityNotConfigured
 	}
@@ -179,16 +215,18 @@ func (i *Identity) KeyPair() (*x509.Certificate, *rsa.PrivateKey, error) {
 
 // Certificate returns tommy's certificate, or nil.
 func (i *Identity) Certificate() *x509.Certificate {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.materialize()
 	return i.cert
 }
 
 // CertificatePEM is what a partner imports. It is served by the plugin's API so
 // the how-to-test panel can hand out a URL rather than a filesystem path.
 func (i *Identity) CertificatePEM() []byte {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.materialize()
 	return i.certPEM
 }
 
@@ -221,8 +259,9 @@ type IdentityInfo struct {
 // Info describes the identity without changing it, so the tab can render before
 // any message has arrived and without ever triggering generation.
 func (i *Identity) Info() IdentityInfo {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.materialize()
 	info := IdentityInfo{
 		Configured: i.loaded,
 		Ready:      i.cert != nil && i.key != nil,
