@@ -37,6 +37,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/sftp v1.13.11 // indirect
 	github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
+	github.com/smallstep/pkcs7 v0.2.3 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/willscott/go-nfs v0.0.4 // indirect
 	github.com/willscott/go-nfs-client v0.0.0-20240104095149-b44639837b00 // indirect
