@@ -1,18 +1,51 @@
 # `smtp` mail provider
 
-A real SMTP server that accepts mail from any client on its own port and never
-delivers it anywhere. It parses MIME — nested multiparts, attachments, inline
-images and encoded-word headers — into the canonical `mail.Message`, records the
-envelope and any `AUTH` that was offered in `Event.Meta`, and keeps the
-untouched wire bytes in `Event.Raw`.
+## What it is
 
-Point an application's mail configuration at `localhost:1025` with no
-credentials and everything it sends shows up in the **Mail** tab.
+A real SMTP server — not an HTTP API imitation — that accepts mail from any
+client on its own port and never delivers it anywhere. It parses MIME — nested
+multiparts, attachments, inline images and encoded-word headers — into the
+canonical `mail.Message`, records the envelope and any `AUTH` that was offered
+in `Event.Meta`, and keeps the untouched wire bytes in `Event.Raw`.
 
-## Try it
+## What it's for
+
+Reach for this provider when your application (or the infrastructure in front
+of it) speaks SMTP directly, rather than calling a vendor's HTTP API — which is
+most languages' standard mail libraries, most mail-sending frameworks in their
+default configuration, and any relay or `sendmail`-compatible tool with no
+concept of Mailjet's or SendGrid's wire format at all:
+
+- Your app is configured with an SMTP host/port/credentials (the classic
+  `SMTP_HOST`/`SMTP_PORT` environment variables), and switching it to tommy
+  during development or in CI is a config change, not a code change.
+- You want to see exactly what a library like Python's `email` package, or a
+  framework's mailer, actually produced on the wire — headers, MIME structure,
+  encoding — including bugs that only show up in the raw bytes.
+- You need a mail server for a whole staging environment that will never
+  actually deliver anything, no matter what address someone types in a test
+  order.
+
+Pick `smtp` over `mailjet`/`sendgrid` whenever your code has no vendor SDK in
+it at all — just point it at `localhost:1025` (or wherever this provider is
+bound) with no credentials, and everything sent shows up in the **Mail** tab.
+If your code does call a specific vendor's SDK, use that vendor's provider
+instead so the wire format matches exactly.
+
+## How to test it for real
+
+Boot the mail plugin with smtp enabled (it's on by default) on ports that
+won't collide with anything else running:
 
 ```bash
-curl -s smtp://localhost:1025 \
+TOMMY_NO_UPDATE_CHECK=1 go run . mail --ui-port 18901 --in-port 18902 --smtp-port 11025
+```
+
+`curl`'s `smtp://` scheme drives a real SMTP conversation without any client
+library:
+
+```bash
+curl -s smtp://localhost:11025 \
   --mail-from alice@example.com --mail-rcpt bob@example.com -T - <<'EOF'
 From: Alice <alice@example.com>
 To: Bob <bob@example.com>
@@ -21,6 +54,9 @@ Subject: Hello from tommy
 It works.
 EOF
 ```
+
+Python's standard library sends a MIME multipart message with an HTML
+alternative and an attachment — the shape a real application mailer produces:
 
 ```python
 import smtplib
@@ -35,16 +71,52 @@ msg.add_alternative("<p>It <b>works</b>.</p>", subtype="html")
 msg.add_attachment(b"id,total\n1,42\n", maintype="text", subtype="csv",
                    filename="invoice.csv")
 
-with smtplib.SMTP("localhost", 1025) as s:
+with smtplib.SMTP("localhost", 11025) as s:
     s.send_message(msg)
 ```
 
-Both snippets are `Snippets()` entries rendered against the live `SnippetCtx`,
-so `tommy providers mail/smtp` prints them with the port this instance actually
-bound. The tests execute both against a running listener.
+Read either back — the tab, or the API filtered to this provider:
 
-`swaks --server localhost:1025 --to bob@example.com --from alice@example.com`
-works too, if you have it.
+```bash
+open http://localhost:18901/ui/mail/
+curl -s "http://localhost:18901/api/v1/mail/messages?provider=smtp" | jq '.[0].message | {subject, attachments}'
+```
+
+which (for the Python message) came back as:
+
+```json
+{
+  "subject": "Hello from tommy",
+  "attachments": [
+    {"filename": "invoice.csv", "content_type": "text/csv", "size": 14, "blob": {"id": "...", "size": 14}}
+  ]
+}
+```
+
+For the standard library treated as the "official client" for a protocol
+rather than a vendor HTTP API, `test/integration/smtp_test.go` — in the
+separate `test/integration` Go module — builds a real MIME multipart message
+with `mime/multipart` and delivers it with `net/smtp.SendMail`, then checks the
+text part and the attachment's bytes round-tripped through the blob store
+unchanged. It is run with
+`cd test/integration && go test -tags integration -run TestSMTP ./...`.
+That command was verified, but only after fixing a break it exposed: adding the
+`as2` plugin's S/MIME dependency to the root module left `test/integration`'s
+own `go.sum` stale, and since it is a **separate module** that `./...` never
+reaches, `make check` compiled none of it. Every test in the module had stopped
+building. Re-tidying that module fixed it; the lesson is that adding a
+dependency to the root module is a two-module change.
+
+`swaks --server localhost:11025 --to bob@example.com --from alice@example.com`
+should also work, going by its documented interface, but `swaks` was not
+available in the environment this document was written in, so that specific
+invocation was not executed.
+
+Both the `curl` command and the Python script above were executed against a
+running tommy while writing this document, including the readback shown.
+`Snippets()` in `provider.go` renders both against the live `SnippetCtx`, so
+`tommy providers mail/smtp` prints them with the port this instance actually
+bound, and the package tests execute both against a running listener.
 
 ## Configuration
 

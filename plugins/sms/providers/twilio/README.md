@@ -1,9 +1,84 @@
 # twilio
 
-Imitates Twilio's [Programmable Messaging REST API](https://www.twilio.com/docs/messaging/api/message-resource)
-closely enough that the `twilio-go` SDK, or any HTTP client pointed at
-tommy's ingress, can send a message and read it back the way it would
-against `api.twilio.com`.
+## What it is
+
+Stands in for Twilio's [Programmable Messaging REST API](https://www.twilio.com/docs/messaging/api/message-resource):
+the `Messages` resource's create, list and fetch calls. It captures the
+message your code posts — recipient, sender, body, media — and answers with
+the same JSON shape `api.twilio.com` would, so `twilio-go`, or any HTTP client
+pointed at tommy's ingress, sends and reads back exactly as it would in
+production.
+
+## What it's for
+
+Point whatever normally calls `api.twilio.com` at tommy instead — an
+environment variable or a base-URL override, see `docs/clients.md` — and you
+get, without touching a real phone number or a Twilio account:
+
+- CI assertions that a signup flow, a password reset, or an alert texts the
+  right number exactly once, with the right body.
+- Seeing the real segment/encoding cost of a template before it ships — this
+  provider's `num_segments` is computed by the same code the `sms` tab's badge
+  uses, so the two can never disagree.
+- Exercising the MMS path (repeated `MediaUrl`, `MessagingServiceSid` instead
+  of a bare `From`) without hosting real media anywhere.
+
+## How to test it for real
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . sms --ui-port 18911 --in-port 18912
+```
+
+Send a message:
+
+```bash
+curl -s -u ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:authtokenxxxxxxxxxxxxxxxxxxxxxxxx \
+  http://127.0.0.1:18912/2010-04-01/Accounts/ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/Messages.json \
+  --data-urlencode 'To=+15558675310' \
+  --data-urlencode 'From=+15557122661' \
+  --data-urlencode 'Body=It works.'
+```
+
+which returns Twilio's own resource shape:
+
+```json
+{"account_sid":"ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","body":"It works.","date_created":"Thu, 03 Sep 2026 16:25:06 +0000","direction":"outbound-api","error_code":null,"from":"+15557122661","num_media":"0","num_segments":"1","price":null,"sid":"SM01a06816996600017cbf20c8","status":"queued","to":"+15558675310", "...": "..."}
+```
+
+Read it back through the list and fetch routes — same account, same auth:
+
+```bash
+curl -s -u ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:authtokenxxxxxxxxxxxxxxxxxxxxxxxx \
+  http://127.0.0.1:18912/2010-04-01/Accounts/ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/Messages.json
+```
+
+and confirm the capture landed, either through this plugin's own API or the
+cross-plugin one:
+
+```bash
+curl -s "http://127.0.0.1:18911/api/v1/sms/messages"
+curl -s "http://127.0.0.1:18911/api/v1/events?plugin=sms"
+```
+
+then open `http://127.0.0.1:18911/ui/sms/` to see the same message as a
+conversation bubble.
+
+**For the real vendor SDK**, `test/integration` (a separate Go module, kept
+apart so `twilio-go` never enters tommy's own `go.mod`) drives `twilio-go`
+itself through `clienthelp.HTTPClient` — see `twilio_test.go`,
+`TestTwilioSDKCreateMessageIsParsedFaithfully`. It sends via `CreateMessage`,
+then reads the same message back with `FetchMessage` and `ListMessage`, all
+through the SDK's own generated structs — the strongest check that the wire
+shape is right, since a mismatched type (`num_segments` as a bare number
+instead of a quoted string, say) fails the SDK's own JSON decode rather than
+just looking different in a raw diff. Run it with:
+
+```bash
+cd test/integration && go test -tags integration -run TestTwilioSDK ./...
+```
+
+Kill the server when done (`go run` forks a child `tommy` binary — kill that
+child, not just the shell job, or the ports stay held).
 
 ## Routes
 
@@ -62,26 +137,7 @@ account_sid = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 auth_token  = "your-auth-token"
 ```
 
-## How to test
-
-```bash
-tommy serve   # then open http://localhost:8811/ui/sms/
-```
-
-```bash
-curl -s -u ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:authtokenxxxxxxxxxxxxxxxxxxxxxxxx \
-  http://localhost:8822/2010-04-01/Accounts/ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/Messages.json \
-  --data-urlencode 'To=+15558675310' \
-  --data-urlencode 'From=+15557122661' \
-  --data-urlencode 'Body=It works.'
-```
-
-Read it back:
-
-```bash
-curl -s -u ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:authtokenxxxxxxxxxxxxxxxxxxxxxxxx \
-  http://localhost:8822/2010-04-01/Accounts/ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/Messages.json
-```
+## Package tests
 
 ```bash
 go test ./plugins/sms/providers/twilio/...

@@ -1,5 +1,7 @@
 # `mllp` hl7 provider
 
+## What it is
+
 A real MLLP server - the three-control-byte framing (`0x0B` … `0x1C 0x0D`)
 almost every HL7 v2 integration engine speaks on the wire - on its own TCP
 port. It parses every message with whatever separators it declared for
@@ -9,29 +11,84 @@ itself, captures it as an `hl7.Message`, and answers with a mechanical
 Point an interface engine's outbound HL7 connection at `localhost:2575` and
 everything it sends shows up in the **HL7** tab.
 
-## Try it
+## What it's for
 
-```python
-import socket
+MLLP is a framed TCP protocol, not HTTP — there is no request/response
+cycle an HTTP client can drive, so there is no way to point `curl` at it.
+When your integration (or Mirth, Rhapsody, or any other engine) needs an
+outbound MLLP target to test against, this is that target: it never refuses
+a connection or a malformed frame, so you can see exactly what your engine
+put on the wire — field by field — and check that your code handles an
+`AE`/`AR` ack correctly, not just the happy-path `AA`.
 
-MSH = "MSH|^~\\&|SendingApp|SendingFac|ReceivingApp|ReceivingFac|20240101120000||ADT^A01|MSG00001|P|2.5\r"
-PID = "PID|1||123456^^^MRN||DOE^JOHN^A||19800101|M\r"
-message = MSH + PID
+## How to test it for real
 
-with socket.create_connection(("localhost", 2575)) as s:
-    s.sendall(b"\x0b" + message.encode() + b"\x1c\r")
-    print(s.recv(65536).decode(errors="replace"))
-```
+Boot the plugin with just this provider (every hl7 provider is on by
+default, and mllp is the only one today):
 
 ```bash
-printf '\x0bMSH|^~\\&|SendingApp|SendingFac|ReceivingApp|ReceivingFac|20240101120000||ADT^A01|MSG00001|P|2.5\rPID|1||123456^^^MRN||DOE^JOHN^A||19800101|M\r\x1c\r' \
-  | nc localhost 2575 -w 1
+TOMMY_NO_UPDATE_CHECK=1 go run . hl7 --ui-port 18933 --in-port 18934 --mllp-port 12575
 ```
+
+MLLP frames a message between three control bytes: a start block `0x0B`, the
+message itself, then the trailer `0x1C 0x0D` (`<FS><CR>`). No HTTP tool speaks
+this, so a plain `curl` will not work — the two options that do are a raw
+socket client, or piping the framed bytes at a raw TCP tool.
+
+With Python's stdlib (verified against the running server above; it prints
+the real `AA` ack tommy sends back):
+
+```bash
+python3 -c '
+import socket
+MSH = "MSH|^~\\&|SendingApp|SendingFac|ReceivingApp|ReceivingFac|20240101120000||ADT^A01|MSG00001|P|2.5\r"
+PID = "PID|1||123456^^^MRN||DOE^JOHN^A||19800101|M\r"
+with socket.create_connection(("localhost", 12575)) as s:
+    s.sendall(b"\x0b" + (MSH + PID).encode() + b"\x1c\r")
+    print(s.recv(65536).decode(errors="replace"))
+'
+```
+
+This printed, byte for byte:
+
+```
+MSH|^~\&|ReceivingApp|ReceivingFac|SendingApp|SendingFac|20260903182626||ACK^A01|01a06817d1a6000270a8dd4e|P|2.5
+MSA|AA|MSG00001
+```
+
+(the ack's separators, sender/receiver swap and echoed control id are exactly
+what "The acknowledgement" section below spells out).
+
+With `nc` and `printf`, spelling out the framing bytes yourself — `\x0b`
+before the message, `\x1c\r` after it — also works (macOS/BSD `nc`; on
+`nc` builds without a hard timeout add `-w 1`):
+
+```bash
+printf '\x0bMSH|^~\\&|SendingApp|SendingFac|ReceivingApp|ReceivingFac|20240101120000||ADT^A01|MSG00002|P|2.5\rPID|1||123456^^^MRN||DOE^JOHN^A||19800101|M\r\x1c\r' \
+  | nc -w 1 localhost 12575 | xxd
+```
+
+which returns the same ack, framed the same way, as raw bytes (hence `xxd`
+rather than treating it as text).
 
 Both are `Snippets()` entries rendered against the live `SnippetCtx`, so
 `tommy providers hl7/mllp` prints them with the port this instance actually
-bound - `2575` above is only the fallback for when nothing is running. The
-tests drive both shapes over a real socket.
+bound - the ports above are pinned for this README; a real run would use
+whatever it actually bound. The tests drive both shapes over a real socket.
+
+See the capture over HTTP:
+
+```bash
+curl -s http://localhost:18933/api/v1/hl7/messages | jq '.[0].meta'
+curl -s 'http://localhost:18933/api/v1/events?plugin=hl7' | jq '.[0].summary'
+```
+
+or open the tab at `http://localhost:18933/ui/hl7/`.
+
+Both snippets above are `Snippets()` entries rendered against the live
+`SnippetCtx`, so `tommy providers hl7/mllp` prints them with the port this
+instance actually bound — `12575` above is only what this README's example
+run happened to bind. The tests drive both shapes over a real socket.
 
 ## Configuration
 

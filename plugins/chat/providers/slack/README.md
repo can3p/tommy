@@ -1,11 +1,66 @@
 # slack
 
+## What it is
+
 Imitates the two surfaces a Slack SDK, or any HTTP client, uses to post a
 message: [incoming webhooks](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks)
 and the Web API's [`chat.postMessage`](https://docs.slack.dev/reference/methods/chat.postMessage).
 Both convert into tommy's canonical `chat.Message`; Block Kit `blocks` and
 legacy `attachments` are stored verbatim so a card renderer never has to
 re-derive them.
+
+## What it's for
+
+Pointing whatever your code already uses to talk to Slack — the official SDK,
+a bare `http.Post` to a webhook URL, an alerting library — at tommy instead of
+a real workspace. The webhook path is the one most CI jobs are already wired
+for (an app posts a JSON body to a fixed URL, no auth), so swapping the
+webhook host is usually the entire change. Useful for the same three cases
+the plugin README describes: watching a deploy notification render without
+spamming a channel, asserting in CI that a job posted the right message, and
+iterating on a Block Kit layout with no workspace at all.
+
+## How to test it for real
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . chat --ui-port 18931 --in-port 18932 --enabled-providers slack
+```
+
+An incoming webhook, plain text:
+
+```bash
+curl -s http://localhost:18932/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"It works.","channel":"#general","username":"deploy-bot"}'
+```
+
+returned `ok` (`text/plain`, exactly what a real webhook returns). The same
+webhook with Block Kit blocks:
+
+```bash
+curl -s http://localhost:18932/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX \
+  -H 'Content-Type: application/json' \
+  -d '{"channel":"#alerts","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*It works.*"}}]}'
+```
+
+also returned `ok`. The Web API method instead of a webhook:
+
+```bash
+curl -s http://localhost:18932/api/chat.postMessage \
+  -H 'Authorization: Bearer xoxb-fake-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"channel":"C0123ABCD","text":"It works."}'
+```
+
+returned `{"channel":"C0123ABCD","message":{"type":"message","text":"It works.","bot_id":"B…","ts":"…"},"ok":true,"ts":"…"}`.
+Read every message back:
+
+```bash
+curl -s http://localhost:18931/api/v1/chat/channels | jq
+curl -s http://localhost:18931/api/v1/chat/messages | jq '.[0].message'
+```
+
+or open the tab at `http://localhost:18931/ui/chat/`.
 
 ## Routes
 
@@ -83,37 +138,7 @@ token at all always gets `not_authed`:
 bot_token = "xoxb-fake-token"
 ```
 
-## How to test
-
-```bash
-tommy serve   # then open http://localhost:8811/ui/chat/
-```
-
-```bash
-curl -s http://localhost:8822/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX \
-  -H 'Content-Type: application/json' \
-  -d '{"text":"It works.","channel":"#general","username":"deploy-bot"}'
-```
-
-```bash
-curl -s http://localhost:8822/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX \
-  -H 'Content-Type: application/json' \
-  -d '{"channel":"#alerts","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*It works.*"}}]}'
-```
-
-```bash
-curl -s http://localhost:8822/api/chat.postMessage \
-  -H 'Authorization: Bearer xoxb-fake-token' \
-  -H 'Content-Type: application/json' \
-  -d '{"channel":"C0123ABCD","text":"It works."}'
-```
-
-Read it back:
-
-```bash
-curl -s http://localhost:8811/api/v1/chat/channels | jq
-curl -s http://localhost:8811/api/v1/chat/messages | jq '.[0].message'
-```
+## Package tests
 
 ```bash
 go test ./plugins/chat/providers/slack/...
