@@ -1,9 +1,97 @@
 # `mail` plugin
 
-Captures the email an application sends instead of delivering it, whether it
-went out through a vendor's HTTP API or plain SMTP. Every message is parsed into
-one canonical `mail.Message`, stored as an event, and served back over
-`/api/v1/mail/…` and the **Mail** tab.
+## What it is
+
+A stand-in for wherever your application's email would otherwise go: a
+transactional-email vendor's HTTP API, or a real SMTP server. Tommy accepts the
+message — over Mailjet's or SendGrid's API shape, or a genuine SMTP
+conversation — parses it into one canonical `mail.Message` regardless of which
+route it came in on, and never delivers it anywhere. Every message is stored as
+an event and served back over `/api/v1/mail/…` and the **Mail** tab.
+
+## What it's for
+
+The situations this plugin exists for are all "I need to see the email, not
+send it":
+
+- **Checking what a password-reset or order-confirmation email actually renders
+  as**, including the HTML, without sending it to a real inbox or a colleague.
+- **Asserting in CI that signing up sends exactly one message, to the right
+  address, with the right subject** — `GET /api/v1/mail/messages` after the
+  request under test, no mailbox to poll.
+- **Confirming an attachment survived** — an invoice PDF, a CSV export — byte
+  for byte, by fetching it back from the blob store.
+- **Pointing a whole staging environment at something harmless**, so a bug in
+  an environment check can never leak a test order confirmation to a real
+  customer's inbox.
+
+Which of the three providers to reach for depends on how your application talks
+to mail: **mailjet** and **sendgrid** are HTTP APIs, for when your code calls
+those vendors' SDKs or a compatible client library. **smtp** is a real mail
+server on its own port, for anything that speaks SMTP directly — most
+languages' standard mail libraries, mail-sending frameworks that default to
+SMTP, or infrastructure (a mail relay, a `sendmail`-compatible tool) that has no
+concept of a vendor API at all. If your application is already coded against a
+specific vendor's SDK, use that vendor's provider so the wire format matches
+exactly; if it just wants "an SMTP server", the smtp provider is the more
+faithful stand-in and needs no code changes at all — just a different host and
+port.
+
+## How to test it for real
+
+Boot mail on its own, using ports that will not collide with anything else on
+your machine:
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . mail --ui-port 18901 --in-port 18902 --smtp-port 11025
+```
+
+Send one message through each route. Mailjet and SendGrid are HTTP:
+
+```bash
+curl -s http://localhost:18902/v3.1/send \
+  -u "any-key:any-secret" -H 'Content-Type: application/json' -d '{
+  "Messages":[{"From":{"Email":"a@example.com","Name":"Alice"},"To":[{"Email":"b@example.com"}],
+  "Subject":"Hello from mailjet","TextPart":"It works."}]}'
+
+curl -si http://localhost:18902/v3/mail/send \
+  -H 'Authorization: Bearer SG.fake-key' -H 'Content-Type: application/json' -d '{
+  "personalizations": [{"to": [{"email": "bob@example.com"}], "subject": "Hello from sendgrid"}],
+  "from": {"email": "alice@example.com"},
+  "content": [{"type": "text/plain", "value": "It works."}]}'
+```
+
+SMTP is a real conversation — `curl`'s `smtp://` scheme drives one:
+
+```bash
+curl -s smtp://localhost:11025 \
+  --mail-from alice@example.com --mail-rcpt bob@example.com -T - <<'EOF'
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Hello from smtp
+
+It works.
+EOF
+```
+
+All three show up the same way, because they all become the same canonical
+model — open the tab or ask the API, newest first:
+
+```bash
+open http://localhost:18901/ui/mail/
+curl -s "http://localhost:18901/api/v1/events?plugin=mail" | jq '[.[].summary]'
+```
+
+Every command above was run against a live instance while writing this
+document; each provider's own README goes deeper on that provider's wire
+format, and `test/integration/` drives the real `mailjet-apiv3-go`,
+`sendgrid-go` and stdlib `net/smtp` clients against tommy end to end — read
+`mailjet_test.go`, `sendgrid_test.go` and `smtp_test.go` there for the
+SDK-level version of what curl does above. Running that suite is
+also what revealed a stale `go.sum` in it, since it is a separate module the
+main gate never compiles — see the mailjet provider's README.
+
+## Internals
 
 - `message.go` — the canonical model every provider converts into.
 - `api.go` — the read-back API.
@@ -81,7 +169,7 @@ from `GET /api/v1/mail/messages/{id}/html` into a fully restricted
 `<iframe sandbox="">`. The list refreshes live off the shell's SSE connection on
 `mail.message`.
 
-## How to test
+## Package tests and the fixture provider
 
 Run the package tests, which boot a whole tommy on ephemeral ports:
 

@@ -1,13 +1,96 @@
 # sms
 
-Captures the SMS and MMS your code sends through a provider API instead of
-delivering them, and shows each one as a phone-style conversation with the
-**segment count and encoding** it would really cost on the wire.
+## What it is
 
-That last part is the reason this tab exists rather than the generic event view:
-a body that looks like 158 characters in your editor is three billed segments
-the moment somebody pastes a curly quote into it, and nothing else in a test
-environment tells you.
+Stands in for an SMS/MMS provider's send API — currently Twilio's Programmable
+Messaging REST API. It captures the message your code posts and shows it as a
+phone-style conversation, with the **segment count and encoding** it would
+really cost on the wire, instead of actually delivering anything.
+
+## What it's for
+
+The concrete situations this tab is for:
+
+- Checking a one-time-passcode or alert message actually fits in one segment
+  before it ships — a body that looks like 158 characters in your editor is
+  three billed segments the moment somebody pastes a curly quote or an emoji
+  into the template, and nothing else in a test environment tells you that.
+- Seeing exactly what a shortened link, an emoji, or an MMS attachment looks
+  like in the delivered body, without a real phone.
+- Asserting in CI that a signup flow texts the right number exactly once —
+  point the vendor SDK at tommy's ingress, send, then read the capture back
+  over `/api/v1/sms/messages` or the generic `/api/v1/events?plugin=sms`.
+
+## How to test it for real
+
+From a cold start, with no provider configured yet you still get the tab and
+the API, just no ingress route to post to:
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . sms --ui-port 18911 --in-port 18912
+```
+
+```
+tommy is running (sms only)
+  ui       http://127.0.0.1:18911/ui/
+  api      http://127.0.0.1:18911/api/v1
+  ingress  http://127.0.0.1:18912
+  plugin   sms ([twilio])
+```
+
+Send a message through the Twilio-shaped ingress and read it back — see
+`providers/twilio/README.md` for the exact commands and what the Twilio
+wire response looks like. The short version, run against the instance above:
+
+```bash
+curl -s -u ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:authtokenxxxxxxxxxxxxxxxxxxxxxxxx \
+  http://127.0.0.1:18912/2010-04-01/Accounts/ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/Messages.json \
+  --data-urlencode 'To=+15558675310' \
+  --data-urlencode 'From=+15557122661' \
+  --data-urlencode 'Body=Your OTP is 483920. Reply STOP to opt out.'
+```
+
+returns Twilio's own resource shape, `num_segments` and all:
+
+```json
+{"sid":"SM01a06816996600017cbf20c8","status":"queued","num_segments":"1", "...": "..."}
+```
+
+Then open `http://127.0.0.1:18911/ui/sms/` to see it as a conversation bubble
+with its segment badge, or pull it back over the API:
+
+```bash
+curl -s "http://127.0.0.1:18911/api/v1/sms/messages"
+curl -s "http://127.0.0.1:18911/api/v1/events?plugin=sms"
+```
+
+A body with a character outside GSM-7 — a curly quote is the classic one —
+flips `encoding` to `UCS-2` and shrinks the per-segment capacity from 160 to
+70, all still visible in the same read-back:
+
+```bash
+curl -s -u ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:authtokenxxxxxxxxxxxxxxxxxxxxxxxx \
+  http://127.0.0.1:18912/2010-04-01/Accounts/ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/Messages.json \
+  --data-urlencode 'To=+15558675310' \
+  --data-urlencode 'From=+15557122661' \
+  --data-urlencode "Body=We're confirming your order." # use a real U+2019 apostrophe to trigger it
+```
+
+which comes back with `"segments":{"count":1,"encoding":"UCS-2","units":28,"capacity":70,"remaining":42}`.
+
+For driving the real vendor SDK rather than curl, `test/integration`'s
+`twilio_test.go` (a separate Go module, so the SDK never enters tommy's own
+`go.mod`) points `twilio-go` at tommy through `clienthelp.HTTPClient` and
+asserts the SDK decodes `CreateMessage`/`FetchMessage`/`ListMessage` without
+error — the strongest check that the response shape is real. Run it with:
+
+```bash
+cd test/integration && go test -tags integration -run TestTwilioSDK ./...
+```
+
+Kill your server(s) when done — `kill` the `go run . sms` process (it forks a
+child `tommy` binary; killing the shell job alone leaves the child holding the
+ports).
 
 ## The canonical model
 
@@ -88,19 +171,7 @@ a segment + encoding badge under every message, thumbnails for image media, and
 live updates over SSE on `sms.message`. `GET /ui/sms/events/{id}` is left to the
 core, so any message also opens in the generic raw inspector.
 
-## How to test
-
-No provider ships yet — the Twilio provider is Wave 2 — so the runnable snippets
-appear once one is enabled. From a cold start:
-
-```bash
-tommy serve                 # then open http://localhost:8811/ui/sms/
-tommy providers sms         # descriptions, endpoints and snippets for this build
-curl -s http://localhost:8811/api/v1/sms/messages
-```
-
-The package's own tests drive a test-only fake provider that both accepts JSON
-over the ingress and injects messages straight into the store:
+## Package tests
 
 ```bash
 go test ./plugins/sms/...

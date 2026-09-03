@@ -1,5 +1,7 @@
 # `msteams` provider
 
+## What it is
+
 Imitates a Microsoft Teams incoming webhook: the retired Office 365 / M365
 connector's `MessageCard` format and the current Power-Automate-backed
 [workflow trigger](https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook)'s
@@ -12,6 +14,76 @@ POST /webhookb2/{guid}@{tenant}/IncomingWebhook/{id}/{key}
 Bot Framework (`POST /v3/conversations/{id}/activities`) needs an OAuth token
 exchange and is deliberately out of scope; see
 `docs/implementation-plan.md` §12.
+
+## What it's for
+
+The same webhook URL your deploy pipeline, monitoring tool or bot already
+posts to when it notifies a Teams channel — point it at tommy while
+developing or testing that integration, and see the card rendered (or the
+raw JSON, when no renderer is wired up) instead of a real channel filling up
+with test noise. Particularly useful while building an Adaptive Card layout:
+Teams gives no local preview for the workflow-trigger shape, so posting here
+and reading the capture back is the fast iteration loop.
+
+## How to test it for real
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . chat --ui-port 18931 --in-port 18932 --enabled-providers msteams
+```
+
+A MessageCard, the retired Office 365 connector format:
+
+```bash
+curl -si http://localhost:18932/webhookb2/11111111-1111-1111-1111-111111111111@22222222-2222-2222-2222-222222222222/IncomingWebhook/33333333333333333333333333333333/44444444-4444-4444-4444-444444444444 \
+  -H 'Content-Type: application/json' -d '{
+  "@type": "MessageCard",
+  "@context": "https://schema.org/extensions",
+  "summary": "Build failed",
+  "themeColor": "FF0000",
+  "title": "Build #482 failed",
+  "text": "It works.",
+  "sections": [{
+    "activityTitle": "deploy-bot",
+    "activitySubtitle": "2 minutes ago",
+    "facts": [{"name": "Branch", "value": "main"}]
+  }],
+  "potentialAction": [{
+    "@type": "OpenUri",
+    "name": "View build",
+    "targets": [{"os": "default", "uri": "https://example.com/build/482"}]
+  }]
+}'
+```
+
+returned `HTTP/1.1 200 OK`, `Content-Type: text/plain`, body `1` — Teams'
+actual connector success response. An Adaptive Card through a workflow
+trigger:
+
+```bash
+curl -si http://localhost:18932/webhookb2/11111111-1111-1111-1111-111111111111@22222222-2222-2222-2222-222222222222/IncomingWebhook/33333333333333333333333333333333/44444444-4444-4444-4444-444444444444 \
+  -H 'Content-Type: application/json' -d '{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "content": {
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "type": "AdaptiveCard",
+      "version": "1.4",
+      "body": [{"type": "TextBlock", "text": "It works.", "weight": "bolder"}]
+    }
+  }]
+}'
+```
+
+returned `HTTP/1.1 202 Accepted` with an empty body, exactly as the two
+"Deciding the response" rules below require. Read either back:
+
+```bash
+curl -s http://localhost:18931/api/v1/chat/messages | jq '.[0].message.text'
+curl -s 'http://localhost:18931/api/v1/events?plugin=chat' | jq '.[0].meta'
+```
+
+or open the tab at `http://localhost:18931/ui/chat/`.
 
 ## Route
 
@@ -97,51 +169,7 @@ inspection, never validated.
   `text/plain` (there is no documented JSON error envelope here, unlike
   SendGrid or Twilio).
 
-## How to test
-
-```bash
-curl -si http://localhost:8822/webhookb2/11111111-1111-1111-1111-111111111111@22222222-2222-2222-2222-222222222222/IncomingWebhook/33333333333333333333333333333333/44444444-4444-4444-4444-444444444444 \
-  -H 'Content-Type: application/json' -d '{
-  "@type": "MessageCard",
-  "@context": "https://schema.org/extensions",
-  "summary": "Build failed",
-  "themeColor": "FF0000",
-  "title": "Build #482 failed",
-  "text": "It works.",
-  "sections": [{
-    "activityTitle": "deploy-bot",
-    "activitySubtitle": "2 minutes ago",
-    "facts": [{"name": "Branch", "value": "main"}]
-  }],
-  "potentialAction": [{
-    "@type": "OpenUri",
-    "name": "View build",
-    "targets": [{"os": "default", "uri": "https://example.com/build/482"}]
-  }]
-}'
-```
-
-```bash
-curl -si http://localhost:8822/webhookb2/11111111-1111-1111-1111-111111111111@22222222-2222-2222-2222-222222222222/IncomingWebhook/33333333333333333333333333333333/44444444-4444-4444-4444-444444444444 \
-  -H 'Content-Type: application/json' -d '{
-  "type": "message",
-  "attachments": [{
-    "contentType": "application/vnd.microsoft.card.adaptive",
-    "content": {
-      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-      "type": "AdaptiveCard",
-      "version": "1.4",
-      "body": [{"type": "TextBlock", "text": "It works.", "weight": "bolder"}]
-    }
-  }]
-}'
-```
-
-Read it back through the chat plugin's own API:
-
-```bash
-curl -s http://localhost:8811/api/v1/chat/messages | jq '.[0].message.text'
-```
+## Package tests
 
 Run the package tests, which cover both payload generations, both response
 shapes, the Adaptive Card being stored unwrapped (byte for byte, no

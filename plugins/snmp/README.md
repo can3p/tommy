@@ -1,13 +1,88 @@
 # snmp
 
-Captures the SNMP v1 and v2c traps and informs your infrastructure sends
-instead of a real network management station. Every varbind is decoded by its
-actual wire type - integers, object identifiers, counters, gauges, timeticks,
-IP addresses and octet strings - rather than flattened to one string, and an
-octet string that is not printable text is hex-dumped rather than mangled.
+## What it is
+
+Stands in for a network management station's trap receiver — the thing an
+SNMP agent normally fires alerts at. It is a **trap receiver, not a trap
+sender**: it accepts v1 traps, v2c traps and v2c informs on its own UDP port,
+decodes every varbind by its actual wire type — integers, object identifiers,
+counters, gauges, timeticks, IP addresses and octet strings — rather than
+flattening everything to one string, and captures it. An octet string that
+is not printable text is hex-dumped rather than mangled.
 
 There is no listener built into the core: the trap provider (`providers/trap`)
 does that. Shortcut: `tommy snmp`.
+
+## What it's for
+
+The thing under test here is your own application's or device's *outbound*
+alerting, not tommy. The concrete question this answers: "my monitoring agent
+claims it sends a trap when the disk fills up — does it actually fire, and
+what varbinds does it put in it?" Point the agent's trap destination at tommy
+instead of a real NMS, trigger the condition, and read back exactly what went
+out on the wire — including the cases that are easy to get wrong by hand,
+like whether a v1 trap's generic/specific trap-type pair says what you think
+it says, or whether an OID that should carry a printable hostname arrived as
+binary garbage instead.
+
+Note honestly: this plugin ships with **no bespoke UI tab**. It deliberately
+rides the generic cross-plugin event view — see below — which was itself part
+of what this plugin exists to test.
+
+## How to test it for real
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . snmp --ui-port 18913 --in-port 18914 --trap-port 11162
+```
+
+```
+tommy is running (snmp only)
+  ui       http://127.0.0.1:18913/ui/
+  api      http://127.0.0.1:18913/api/v1
+  ingress  http://127.0.0.1:18914
+  plugin   snmp ([trap])
+```
+
+If net-snmp is installed (`which snmptrap`; `brew install net-snmp` /
+`apt-get install snmp` otherwise), drive it with the real tool:
+
+```bash
+snmptrap -v 2c -c public localhost:11162 '' 1.3.6.1.6.3.1.1.5.3 \
+  1.3.6.1.2.1.1.5.0 s "host01"
+```
+
+An inform, which gets a reply, works the same way with `snmpinform`:
+
+```bash
+snmpinform -v 2c -c public localhost:11162 '' 1.3.6.1.6.3.1.1.5.3 \
+  1.3.6.1.2.1.1.5.0 s "host01"
+```
+
+and a v1 trap, which carries the enterprise OID / agent address / generic-
+specific trap-type pair as header fields rather than varbinds:
+
+```bash
+snmptrap -v 1 -c public localhost:11162 1.3.6.1.4.1.8072.9999.9999 localhost 6 17 '55' \
+  1.3.6.1.2.1.1.5.0 s "host01"
+```
+
+Each of the three shows up distinctly in the capture — the v1 trap keeps its
+header fields under `v1`, the v2c trap and inform lead their varbind list with
+`sysUpTime.0`/`snmpTrapOID.0` and keep those under `v2`:
+
+```bash
+curl -s "http://127.0.0.1:18913/api/v1/events?plugin=snmp"
+```
+
+or open `http://127.0.0.1:18913/ui/snmp/` — the generic event view, filterable
+by plugin, with a collapsible JSON payload inspector that already shows every
+varbind's OID/type/value without any bespoke rendering code.
+
+`tommy providers snmp` also prints a Go snippet using `gosnmp` directly if
+net-snmp is not available.
+
+Kill the server when done (`go run` forks a child `tommy` binary — kill that
+child, not just the shell job, or the ports stay held).
 
 ## v1 and v2c are not the same shape
 

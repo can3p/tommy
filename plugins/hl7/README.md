@@ -1,16 +1,33 @@
 # hl7
 
-Captures the HL7 v2 messages your integration sends instead of handing them to a
-hospital system, and shows each one as a **segment tree**: every field at its own
-position, every repetition kept apart, next to the bytes exactly as they arrived.
+## What it is
 
-That is the reason this tab exists rather than the generic event view. A pipe
-salad in a log line tells you nothing about whether the MRN landed in `PID-3.1`
-or `PID-3.4`, and that is always the question.
+Tommy's HL7 v2 content type. It stands in for a hospital interface engine: the
+system on the other end of an ADT, ORU, ORM or any other HL7 v2 feed. It
+captures every message exactly as sent and shows it as a **segment tree** —
+every field at its own position, every repetition kept apart — next to the
+bytes exactly as they arrived, and hands back the acknowledgement the sender
+is waiting on. A pipe salad in a log line tells you nothing about whether the
+MRN landed in `PID-3.1` or `PID-3.4`, and that is always the question this tab
+exists to answer.
 
-**There is no listener yet.** The MLLP provider is the next task; until it lands
-the plugin has a model, an API and a tab, and messages get in only by being put
-in the store directly.
+## What it's for
+
+Your system emits an ADT (admit/discharge/transfer) or ORU (lab result)
+message over MLLP to a hospital interface engine, and standing up a real
+Cerner, Epic or Mirth instance to test against is not an option — those
+systems aren't yours to run, and the interface engineer who owns the real one
+is not going to hand you a sandbox for CI. Point your outbound HL7 connection
+at tommy instead: it shows you the segments and fields your code actually
+produced, not what you assume it produced, and it answers with a real
+`AA`/`AE`/`AR` acknowledgement so you can test how your code reacts to each.
+
+## How to test it for real
+
+There is one provider today, MLLP — see
+`plugins/hl7/providers/mllp/README.md` for a listener you can point a real
+socket at and read the ack back from. This package alone (model, API, tab)
+has no listener of its own; messages reach it only through a provider.
 
 ## The separators come from the message
 
@@ -167,14 +184,36 @@ test. All of it is untrusted:
 
 ## Testing it
 
-Once the MLLP provider lands:
+`plugins/hl7`'s own tests drive the plugin through a fake provider
+(`fake_test.go`), which is the shortest worked example of what a real
+provider has to do — to send a real message over the wire, see
+`plugins/hl7/providers/mllp/README.md`:
 
 ```bash
-printf 'MSH|^~\&|APP|FAC|DEST|DFAC|20240101120000||ADT^A01|MSG1|P|2.5\rPID|1||MRN1||DOE^JOHN\r' \
-  | (printf '\x0b'; cat; printf '\x1c\r') \
-  | nc localhost 2575
+go test ./plugins/hl7/...
 ```
 
-Until then, `plugins/hl7`'s own tests drive the plugin through a fake provider
-(`fake_test.go`), which is also the shortest worked example of what a real
-provider has to do.
+To exercise the model and API directly, without a real MLLP socket:
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . hl7 --ui-port 18933 --in-port 18934 --mllp-port 12575
+```
+
+then, in another shell, send a message over MLLP (the framing bytes are
+explained in the mllp provider's README) and read it back:
+
+```bash
+python3 -c '
+import socket
+MSH = "MSH|^~\\&|SendingApp|SendingFac|ReceivingApp|ReceivingFac|20240101120000||ADT^A01|MSG00001|P|2.5\r"
+PID = "PID|1||123456^^^MRN||DOE^JOHN^A||19800101|M\r"
+with socket.create_connection(("localhost", 12575)) as s:
+    s.sendall(b"\x0b" + (MSH + PID).encode() + b"\x1c\r")
+    print(s.recv(65536).decode(errors="replace"))
+'
+
+curl -s http://localhost:18933/api/v1/hl7/messages | jq '.[0].meta'
+curl -s 'http://localhost:18933/api/v1/events?plugin=hl7' | jq '.[0].summary'
+```
+
+The UI tab is at `http://localhost:18933/ui/hl7/`.

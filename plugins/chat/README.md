@@ -1,9 +1,95 @@
 # `chat` plugin
 
-Captures the Slack and Microsoft Teams messages an application posts instead of
-delivering them, keeping each one's Block Kit blocks or Adaptive Card exactly as
-it was sent. Every message is converted into one canonical `chat.Message`,
-stored as an event, and served back over `/api/v1/chat/…` and the **Chat** tab.
+## What it is
+
+Tommy's chat content type. It stands in for the Slack and Microsoft Teams
+endpoints an application posts messages to, capturing what was sent instead
+of delivering it — keeping each message's Block Kit blocks or Adaptive Card
+exactly as it arrived. Every message is converted into one canonical
+`chat.Message`, stored as an event, and served back over `/api/v1/chat/…`
+and the **Chat** tab.
+
+## What it's for
+
+Three concrete situations:
+
+- Your service posts a deploy notification or an alert to a Slack incoming
+  webhook, and you want to see the rendered card without spamming a real
+  channel every time you run it.
+- A CI job asserts that a failing build posts exactly one message with the
+  right text — against tommy, that assertion is a `curl` against
+  `/api/v1/chat/messages`, not a Slack workspace and a bot token in CI
+  secrets.
+- You're developing a Block Kit layout or an Adaptive Card and want to
+  iterate on it without a workspace or a Teams tenant at all — post it here,
+  see the JSON tommy captured, adjust, repeat.
+
+Tommy renders Block Kit and Adaptive Cards where a renderer is wired up
+(`chat.New(...).WithRichRenderer(blocks.Render)`) and falls back to plain
+text plus a collapsible JSON inspector otherwise — capture never waits on
+rendering fidelity. It also deliberately **accepts** `channel`/`username`
+overrides on the Slack webhook surface that Slack's current-generation apps
+reject: a fake that mirrors production's refusals is less useful than one
+that shows you what your code actually sent.
+
+## How to test it for real
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . chat --ui-port 18931 --in-port 18932
+```
+
+Post a plain-text Slack webhook message:
+
+```bash
+curl -s http://localhost:18932/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Deploy of api v2.14.0 succeeded.","channel":"#deploys","username":"deploy-bot"}'
+```
+
+returns the literal text `ok`. Post Block Kit blocks — the interesting case,
+since rendering is the point:
+
+```bash
+curl -s http://localhost:18932/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX \
+  -H 'Content-Type: application/json' \
+  -d '{"channel":"#deploys","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*Build 482 failed*"}}]}'
+```
+
+Post through Slack's Web API instead:
+
+```bash
+curl -s http://localhost:18932/api/chat.postMessage \
+  -H 'Authorization: Bearer xoxb-fake-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"channel":"C0123ABCD","text":"It works."}'
+```
+
+returns `{"ok":true,"channel":"C0123ABCD","ts":"…","message":{...}}`. Post a
+Teams Adaptive Card through a workflow-trigger webhook:
+
+```bash
+curl -si http://localhost:18932/webhookb2/11111111-1111-1111-1111-111111111111@22222222-2222-2222-2222-222222222222/IncomingWebhook/33333333333333333333333333333333/44444444-4444-4444-4444-444444444444 \
+  -H 'Content-Type: application/json' -d '{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "content": {"type": "AdaptiveCard", "version": "1.4",
+      "body": [{"type": "TextBlock", "text": "It works.", "weight": "bolder"}]}
+  }]
+}'
+```
+
+returns `202 Accepted`. See everything that landed, across both providers:
+
+```bash
+curl -s http://localhost:18931/api/v1/chat/channels | jq
+curl -s http://localhost:18931/api/v1/chat/messages | jq '.[0].message.text'
+curl -s 'http://localhost:18931/api/v1/events?plugin=chat' | jq '.[0].summary'
+```
+
+or open the tab at `http://localhost:18931/ui/chat/`. Each provider's own
+README (`providers/slack`, `providers/msteams`) has the full wire-format
+detail and more payload shapes to try.
 
 - `message.go` — the canonical model every provider converts into.
 - `thread.go` — the channel and thread index, **derived from the flat event list
@@ -123,9 +209,11 @@ application under test, so they are interpolated as plain strings through
 `html/template` and never as `template.HTML`. The tab refreshes off the shell's
 SSE connection on `chat.message`.
 
-## How to test
+## Testing this package
 
-Run the package tests, which boot a whole tommy on ephemeral ports:
+The section above drives a real provider end to end; this is the internal
+path, useful when working on the plugin itself rather than a provider. Run
+the package tests, which boot a whole tommy on ephemeral ports:
 
 ```bash
 go test ./plugins/chat/...

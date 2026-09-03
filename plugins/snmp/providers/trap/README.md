@@ -1,13 +1,84 @@
 # `trap` snmp provider
 
-A real SNMP trap receiver on its own UDP port. It accepts v1 traps, v2c traps
+## What it is
+
+The listener that makes the `snmp` plugin real: a UDP socket standing in for
+a network management station's trap receiver. It accepts v1 traps, v2c traps
 and v2c informs, decodes every varbind by its actual wire type, and records it
 as an `snmp.Trap`. An inform gets a `GetResponse` back, echoing its request id
 and varbinds - the one reply this protocol actually requires. A trap, v1 or
 v2c, gets none: RFC 3416 §4.2.6 defines it as unconfirmed.
 
-Point a trap sender at `localhost:1162` and everything it sends shows up in
-`GET /api/v1/events?plugin=snmp` and the generic **SNMP** tab.
+Point a trap sender at this provider's port and everything it sends shows up
+in `GET /api/v1/events?plugin=snmp` and the generic **SNMP** tab.
+
+## What it's for
+
+Verifying that whatever your agent or device is configured to alert on
+actually produces a trap, and that the trap says what you think it says: the
+right trap OID, the right varbinds in the right order, a v1 trap's
+generic/specific type pair set correctly. Point the device's trap destination
+at this port instead of a real NMS and trigger the condition for real.
+
+## How to test it for real
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . snmp --ui-port 18913 --in-port 18914 --trap-port 11162
+```
+
+This provider was originally verified against net-snmp's own `snmptrap` and
+`snmpinform` command-line tools - a second, independent implementation of the
+wire format - and the same tools are the most convincing way to check it by
+hand. Check they're on `PATH` first (`which snmptrap snmpinform`; install
+with `brew install net-snmp` or `apt-get install snmp` if not).
+
+A v2c trap:
+
+```bash
+snmptrap -v 2c -c public localhost:11162 '' 1.3.6.1.6.3.1.1.5.3 \
+  1.3.6.1.2.1.1.5.0 s "host01" \
+  1.3.6.1.2.1.25.2.3.1.6.1 i 95
+```
+
+A v2c inform - net-snmp blocks until it gets tommy's `GetResponse` back, and
+returns non-zero if it times out waiting:
+
+```bash
+snmpinform -v 2c -c public localhost:11162 '' 1.3.6.1.6.3.1.1.5.3 \
+  1.3.6.1.2.1.1.5.0 s "host01"
+```
+
+A v1 trap - note the different argument shape: enterprise OID, agent, then
+generic-trap/specific-trap/uptime before the varbinds:
+
+```bash
+snmptrap -v 1 -c public localhost:11162 1.3.6.1.4.1.8072.9999.9999 localhost 6 17 '55' \
+  1.3.6.1.2.1.1.5.0 s "host01"
+```
+
+All three land in the store, decoded and distinguishable by shape:
+
+```bash
+curl -s "http://127.0.0.1:18913/api/v1/events?plugin=snmp"
+```
+
+The v1 trap's response carries its header fields under `payload.v1`
+(`enterprise_oid`, `agent_address`, `generic_trap_name`, `specific_trap`); the
+v2c trap and inform carry `payload.v2` (`sys_uptime`, `trap_oid`) with the
+notification's own data as ordinary varbinds. The inform's varbind you sent
+(`1.3.6.1.2.1.1.5.0 s "host01"`) shows up after the automatic `sysUpTime.0`
+and `snmpTrapOID.0` entries every v2c notification leads with.
+
+If net-snmp is not installed, `gosnmp` itself works from Go - `tommy
+providers snmp` prints a ready-to-run snippet that sends both a trap and an
+inform.
+
+There is no bespoke read-back route for this plugin; `/ui/snmp/` (the
+generic event view) or the `curl` above are the only ways to see what
+landed.
+
+Kill the server when done (`go run` forks a child `tommy` binary - kill that
+child, not just the shell job, or the ports stay held).
 
 ## Why gosnmp's own `TrapListener` is not used
 
