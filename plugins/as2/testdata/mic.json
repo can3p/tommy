@@ -1,0 +1,8 @@
+{
+  "_comment": "base64 digests computed by openssl, not by tommy. See generate.sh.",
+  "inner_sha256": "DfenEzS6jEueJSj+cKngEbI7Zq3ZtqslSZkt119a7Ss=",
+  "inner_sha1": "SfslXtyLo1znE3Bxb9D33ceqUaA=",
+  "inner_md5": "ZAoE6f+i8QO1mONpcWl6PQ==",
+  "compressed_entity_sha256": "FNIumr+AFF7jdITLpfm60uBXkeL3IgvFbuDUW/c5SLw=",
+  "payload_only_sha256": "2A0PNkKuL4VobpG23t6GXAQ2rMtYylRBYDBtRxqlL6s="
+}
