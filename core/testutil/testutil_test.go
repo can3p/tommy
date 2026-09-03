@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -139,6 +140,54 @@ func TestShutdownReleasesEveryPort(t *testing.T) {
 	// Shutting down twice is a no-op, not a panic.
 	if err := srv.Shutdown(context.Background()); err != nil {
 		t.Errorf("second shutdown: %v", err)
+	}
+}
+
+// A connection that never sends a request must not hold shutdown open.
+//
+// Go's http.Server will not call itself quiescent while a connection sits in
+// StateNew, and writes one off only after five seconds - longer than any
+// shutdown budget tommy uses. Clients produce such connections routinely:
+// http.Transport dials a spare while a request waits for an idle connection,
+// and browsers preconnect. Before the server closed them itself this made
+// every shutdown run out its whole timeout and report failure, which is how it
+// surfaced - as CI flakes in unrelated tests, on Go 1.27 but not 1.26.
+func TestShutdownIsNotHeldOpenByAnIdleClientConnection(t *testing.T) {
+	srv, err := server.New(server.Options{
+		Config:          config.Ephemeral(),
+		Plugins:         []plugin.Plugin{fakeplugin.New()},
+		ShutdownTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if err := srv.Start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	// A real request first, so the accept loop is known to be running.
+	_, apiURL, _ := srv.URLs()
+	resp, err := http.Get(apiURL + "/health")
+	if err != nil {
+		t.Fatalf("health: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+
+	conn, err := net.Dial("tcp", srv.Addrs().UI)
+	if err != nil {
+		t.Fatalf("dial ui: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	if err := srv.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("shutdown took %s with one silent connection open; it should not wait for it", elapsed.Round(time.Millisecond))
 	}
 }
 

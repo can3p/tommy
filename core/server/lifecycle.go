@@ -31,6 +31,11 @@ import (
 // DefaultShutdownTimeout bounds a graceful shutdown.
 const DefaultShutdownTimeout = 5 * time.Second
 
+// unusedConnGrace is how long shutdown waits before closing connections that
+// have never carried a request, so one whose first request is still arriving
+// gets a chance to be served.
+const unusedConnGrace = 100 * time.Millisecond
+
 // Options configures a Server.
 type Options struct {
 	Config  *config.Config
@@ -91,6 +96,54 @@ type httpListener struct {
 	name string
 	ln   net.Listener
 	srv  *http.Server
+
+	// unused holds connections a client opened but never sent a request on.
+	// See trackConn.
+	mu     sync.Mutex
+	unused map[net.Conn]struct{}
+}
+
+// trackConn remembers connections that have never carried a request.
+//
+// http.Server.Shutdown refuses to call itself quiescent while any connection
+// sits in StateNew, and only writes such a connection off after five seconds -
+// longer than any shutdown budget here. Clients hand us those connections
+// routinely: Go's http.Transport dials a second connection while a request is
+// waiting for an idle one, and browsers preconnect. The loser of that race is
+// parked in the client's idle pool having never sent a byte, and it is enough
+// on its own to make a graceful shutdown run out its whole timeout and report
+// failure. Tracking them lets shutdown close them itself.
+func (l *httpListener) trackConn(c net.Conn, state http.ConnState) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	switch state {
+	case http.StateNew:
+		if l.unused == nil {
+			l.unused = map[net.Conn]struct{}{}
+		}
+		l.unused[c] = struct{}{}
+	default:
+		// Anything else means the connection either carried a request or is
+		// gone, and Shutdown can account for it on its own.
+		delete(l.unused, c)
+	}
+}
+
+// closeUnusedConns closes every connection that has not sent a request yet.
+// A connection mid-handshake is closed too, which is why callers give it a
+// grace period first: the listener is already closed by then, so anything
+// still arriving lost the race with shutdown regardless.
+func (l *httpListener) closeUnusedConns() {
+	l.mu.Lock()
+	conns := make([]net.Conn, 0, len(l.unused))
+	for c := range l.unused {
+		conns = append(conns, c)
+	}
+	clear(l.unused)
+	l.mu.Unlock()
+	for _, c := range conns {
+		_ = c.Close()
+	}
 }
 
 // New builds a server and binds the core listeners, so Addrs is valid before
@@ -298,6 +351,7 @@ func (s *Server) build() error {
 		l.srv = &http.Server{
 			Handler:           logRequests(s.log.With("listener", l.name), h),
 			ReadHeaderTimeout: 15 * time.Second,
+			ConnState:         l.trackConn,
 			// No WriteTimeout: SSE responses are long-lived by design.
 		}
 	}
@@ -397,6 +451,28 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, timeout)
 	defer cancelShutdown()
+
+	// Give a connection that has not sent a request yet a moment to become a
+	// real one, then close it, so a client's spare pooled connection cannot
+	// hold graceful shutdown open until the timeout. See trackConn.
+	// Listeners are shut down one at a time, so a later one is still accepting
+	// while an earlier one drains: sweep repeatedly rather than once.
+	sweep, stopSweep := context.WithCancel(context.Background())
+	defer stopSweep()
+	go func() {
+		ticker := time.NewTicker(unusedConnGrace)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-sweep.Done():
+				return
+			case <-ticker.C:
+				for _, l := range s.servers {
+					l.closeUnusedConns()
+				}
+			}
+		}
+	}()
 
 	var errs []error
 	for _, l := range s.servers {
