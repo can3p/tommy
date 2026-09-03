@@ -1,16 +1,59 @@
 # `ftp` files provider
 
+## What it is
+
 A real FTP server, backed by the shared virtual filesystem instead of a real
 disk. `STOR`, `RETR`, directory listings, rename and delete all work over a
 genuine control connection with real passive-mode data transfers, so any FTP
 client or library can be pointed at it - `curl`, `lftp`, a language SDK, a
-CI script that has always shipped files this way.
+CI script that has always shipped files this way. Every command it accepts and
+every file it captures is recorded as a `files.*` event alongside whatever
+`sftp`, `tftp` and `nfs` write into the same tree.
+
+## What it's for
+
+This is the provider to reach for when the thing under test already speaks
+FTP: a legacy partner integration that drops a nightly export on an FTP
+server, a CI script built around `curl -T`, or a vendor SDK that only ever
+learned FTP. Point it at tommy instead of standing up a real FTP server (or a
+partner's test account) and you get the same `STOR`/`RETR` exchange with the
+file captured for inspection afterward.
 
 It is built on [`fclairamb/ftpserverlib`](https://github.com/fclairamb/ftpserverlib),
 whose driver contract (`ClientDriver`) is exactly an `afero.Fs`. `fs.go` is the
 thin adapter: it forwards every call straight onto a `plugins/files.Session`
 and never interprets a path itself - `VFS.Resolve` is the plugin's one
 security gate, and going around it would defeat the point.
+
+## How to test it for real
+
+Booted with `TOMMY_NO_UPDATE_CHECK=1 go run . files --ftp-port 2121` (or
+`tommy serve` with the provider enabled), the round trip is upload, download,
+and a byte-for-byte compare - the FTP equivalent matters because
+`ftpserverlib` defaulting to ASCII mode has silently corrupted a download in
+this project's own history:
+
+```bash
+echo 'it works' > ./local.txt
+curl -T ./local.txt ftp://localhost:2121/upload/local.txt --ftp-create-dirs -u any:any
+curl ftp://localhost:2121/upload/local.txt -u any:any -o ./downloaded.txt
+diff ./local.txt ./downloaded.txt && echo "round-trip ok"
+```
+
+And the same file read back through the HTTP side - the tab, the tree API,
+and the event log:
+
+```bash
+curl -s http://localhost:8811/api/v1/files/content/upload/local.txt
+curl -s http://localhost:8811/api/v1/files/tree
+curl -s 'http://localhost:8811/api/v1/events?plugin=files&provider=ftp'
+```
+
+Verified against a live instance on ports 12121 (ftp) / 18921 (ui) so as not
+to collide with anything else running at the time: the upload, the FTP-side
+`RETR` download, and the HTTP-side download all produced byte-identical
+files, and the resulting `files.upload` event carried `Raw.Body` set to the
+`STOR` command and `Raw.Transport` set to `"ftp"`.
 
 ## Try it
 
