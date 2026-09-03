@@ -1,6 +1,6 @@
 # Tommy — Implementation Plan (forward-looking)
 
-Waves 0–7 are built. This document plans what comes next.
+Waves 0–8 are built. This document plans what comes next.
 
 - **What was built and why:** `docs/archive/history.md`
 - **The interfaces as built (authoritative):** `docs/contracts.md`
@@ -36,14 +36,18 @@ wave you expected, look in the history.
 | `hl7` | mllp | done |
 | `snmp` | trap | done |
 | `push` | fcm, apns | done |
+| `as2` | http | done |
 
 Every plugin has a `tommy <plugin>` subcommand, and every provider option worth
 setting has a flag.
 
-Waves 0–6·0 are merged to `main`. Waves 6a, 6b, 6c and 7 are on
-`feat/hl7-and-tftp`, `feat/mllp-and-nfs`, `feat/snmp-traps` and
-`feat/push-plugin`, each branched off the last and all awaiting review. **Start each new wave on its own branch**,
-named for what it builds, so a wave stays a reviewable unit.
+Waves 0–6·0 are merged to `main`. Waves 6a, 6b, 6c, 7 and 8 are on
+`feat/hl7-and-tftp`, `feat/mllp-and-nfs`, `feat/snmp-traps`, `feat/push-plugin`
+and `feat/as2-plugin`, each branched off the last and all awaiting review. That
+stack is now five deep; it is worth merging before it grows again, since a new
+wave branched off the tip inherits every unreviewed diff below it. **Start each
+new wave on its own branch**, named for what it builds, so a wave stays a
+reviewable unit.
 
 ## 2. The scoping rule
 
@@ -66,7 +70,7 @@ async AS2 MDN) — which would need outbound HTTP and a scenario definition form
 
 ## 3. How to run a wave
 
-The pattern that worked for waves 0–7, in short. `docs/lessons.md` has the
+The pattern that worked for waves 0–8, in short. `docs/lessons.md` has the
 reasoning; `CLAUDE.md` has the rules.
 
 1. **Branch first.** One branch per wave, named for what it builds
@@ -97,9 +101,15 @@ well-specified translation against a fixed contract to the cheaper one.
 Bigger, still worth doing, roughly in this order. Each is a self-contained agent
 task once its plugin core exists; none block each other.
 
+**AS2 is built** and is in `docs/archive/history.md`. What it proved for the rest
+of this list: a plugin whose providers need a *generated credential* now has a
+worked pattern — `Deps.ConfigDir`, an identity handed to providers through a
+binder, and generation deferred to first use. Reuse it rather than reinventing
+it, and read the laziness rule in `docs/contracts.md` before writing anything
+that creates a file.
+
 | Candidate | Shape | Notes |
 |---|---|---|
-| **AS2** | own plugin, HTTP | Underrated fit: HTTP POST with S/MIME plus a **synchronous MDN receipt** — decrypt, verify, store the EDI document, sign a receipt back. Mechanical reply, high inspection value, famously miserable to set up for real. Needs certificate handling (self-generate on first run). **Sync MDN only**; async is an outbound callback and out of scope. |
 | **Modbus TCP** | own plugin, TCP | Small protocol, good Go libraries, and it lands on the **state-plus-event pattern** the `files` VFS proved: the register bank is state, writes are events, reads are polls. View is an editable register grid. Note it inverts the usual value — clients mostly *read*, so tommy supplies data rather than capturing it. |
 | **SNMP agent** | extends `plugins/snmp` | Same state-plus-event pattern with an OID tree; pairs with the Wave 6c trap receiver but is a bigger lift. |
 | **ISO 8583** | own plugin, TCP | `moov-io/iso8583` is excellent and bitmap decoding is painful enough that a decoded-field view has real value. Reply with a fixed approval and stop there, or it becomes scenario mocking. |
@@ -121,7 +131,7 @@ Independent of each other and of the protocol work; each is one agent.
 
 | Task | Owns | Notes |
 |---|---|---|
-| **TLS ingress** | `core/server/**`, config | `--tls` with a self-signed certificate generated on first run and written beside the config so it can be trusted once. Print the fingerprint. This is the documented route for non-Go SDKs that will not take a base URL (see `docs/clients.md`). **The seam already exists**: Wave 7 built `newHTTPServer` + `listenerOptions` in `core/server/httpserver.go`, and TLS is a field added there rather than a second construction path. Use `net/http`'s `Server.Protocols` for ALPN, not `golang.org/x/net/http2` — that module's `h2c` package is deprecated and would fail the staticcheck gate. |
+| **TLS ingress** | `core/server/**`, config | `--tls` with a self-signed certificate generated on first run and written beside the config so it can be trusted once. Print the fingerprint. **Wave 8 already built the half you need**: `Deps.ConfigDir` is the directory of the config file (empty for a config built in memory), and `plugins/as2/identity.go` is a worked example of loading-or-generating a key pair with the paths configurable — which they must be, because tommy may run in a cluster that already has its own CA. Generate on **first use, not at startup**: doing it eagerly is what put a private key in the user's own config directory during `make check`. This is the documented route for non-Go SDKs that will not take a base URL (see `docs/clients.md`). **The seam already exists**: Wave 7 built `newHTTPServer` + `listenerOptions` in `core/server/httpserver.go`, and TLS is a field added there rather than a second construction path. Use `net/http`'s `Server.Protocols` for ALPN, not `golang.org/x/net/http2` — that module's `h2c` package is deprecated and would fail the staticcheck gate. |
 | **Persistence** | `core/store/**`, `core/blob/**` | Opt-in `--persist <path>` snapshotting events and blobs. The `Store` and `BlobStore` interfaces were built for this; no plugin should need to change. Keep it dependency-free — files on disk, not SQLite — unless a real need appears. |
 | **Search** | `core/server/api`, `core/server/ui` | Full-text across captured bodies. Currently `Query.Search` is a substring match; if that stops being enough, this is where it goes. |
 | **Upstream: kleiner** | — | Fix `MaybeNotifyAboutNewVersion` in `can3p/kleiner`: it prints the error and falls through to dereference a nil version, panicking a released binary at startup when GitHub is unreachable. Second latent deref on the same path. Affects every project scaffolded from kleiner. |

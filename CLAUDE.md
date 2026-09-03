@@ -6,8 +6,8 @@ Instructions for working in this repository.
 
 A single binary that stands in for services an application talks to but which are
 awkward to run locally — mail providers, SMS gateways, file transfer, chat
-webhooks — and shows you exactly what your code sent. Think mailcatcher, but for
-more than mail.
+webhooks, EDI trading partners — and shows you exactly what your code sent.
+Think mailcatcher, but for more than mail.
 
 It **captures and displays what was sent**, and answers with whatever the
 protocol requires so the client proceeds. It does **not** simulate scenarios,
@@ -85,6 +85,15 @@ them be built in parallel.
     flag. A plugin that can only be configured through a file is half-delivered -
     the single-plugin shortcut is how most people will actually run tommy.
     `cmd/mail.go` is the pattern and the shared helpers already exist.
+11. **Registration may validate, but it may not create.** `RegisterIngress` runs
+    for anything that merely *builds* a server, `plugintest.Conformance`
+    included — so a provider that generates a key or a certificate there
+    generates it during `make check`, in the user's own config directory. Read a
+    configured path eagerly, because a path that does not resolve is a startup
+    complaint; defer *creating* anything to first genuine use. Any such path
+    must also be configurable: tommy may run in a cluster that already has its
+    own CA, and someone running a different plugin must never meet a credential
+    at all. `plugins/as2/identity.go` is the worked example.
 
 ## Security invariants — do not weaken these
 
