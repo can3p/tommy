@@ -443,6 +443,82 @@ end-to-end proof that the one reply this plugin makes actually arrives. A
 non-SNMP datagram is captured with a decode error recorded rather than dropped —
 a fake that silently discards what it cannot parse teaches its user nothing.
 
+## Wave 7 — the `push` plugin · 4 tasks, sequenced
+
+The largest remaining gap against the original brief, and the first wave with a
+real internal ordering rather than a convenient one: the core had to land before
+either provider, and APNs could not exist at all until the ingress spoke HTTP/2.
+
+**Built:** the `push` plugin core (canonical model, API, lock-screen tab),
+cleartext HTTP/2 on the ingress, the FCM provider, and the APNs provider.
+
+**The plan was wrong about FCM targeting, and the live discovery document said
+so.** The addressing union has **four** members, not three: `token` is marked
+*"Deprecated: Use `fid` instead"* and both are still accepted. The core author
+found it; the coordinator re-checked it against
+`https://fcm.googleapis.com/$discovery/rest?version=v1` before two providers were
+built on top. The plan also conflated *"category/collapse key"* as one concept —
+`aps.category` picks action buttons, `apns-collapse-id`/`collapse_key` supersede
+an undelivered message — and treated `apns-topic` as a topic when it is the app's
+bundle ID. All three would have been baked into two providers.
+
+**The plan was also wrong about how to serve HTTP/2, and this one cost nothing
+only because the agent checked.** The plan called for `golang.org/x/net/http2/h2c`
+and a new dependency. That package is marked *"Deprecated: This package is
+deprecated"* in the x/net version **already in the module graph**, its
+`NewHandler` says to set `http.Server.Protocols` instead, and staticcheck is
+enabled here — so it would have failed the lint gate. Go 1.26 serves h2c
+natively. Zero new dependencies, and the `go.mod` ownership constraint the wave
+was sequenced around turned out to be unnecessary.
+
+**The most valuable bug of the wave was found by driving the fake, not reading
+it.** FCM v1 is proto3-backed, and the proto3 JSON mapping accepts both the
+canonical lowerCamelCase name and the original snake_case proto field name. The
+provider, following the discovery document, accepted only camelCase — so a
+request carrying `android.collapse_key`, which real FCM accepts, got a **200 and
+silently lost the field**. For a tool whose entire purpose is showing people what
+they sent, silent loss is the worst failure mode there is, worse than a
+rejection, because nothing tells the user anything went missing. It was found by
+posting both spellings at the running binary and diffing the captures.
+
+Two things that nearly became project fact and did not: the provider author's
+conclusion that the core documented the *deprecated Legacy API* (it did not —
+snake_case is equally valid v1 input), and the fix's first instinct to rewrite
+keys throughout the tree, which would have renamed a caller's own `user_id` data
+key and corrupted the very thing they opened the tab to inspect. The normaliser
+is scoped to known keys and leaves `data`, `headers` and `payload` alone.
+
+**h2c defaults on for the ingress and off for the UI and API.** It is recognised
+by an exact match on the HTTP/2 client preface, which no HTTP/1.1 client ever
+sends, so existing providers were unaffected; default-off would have made every
+APNs user's first experience a connection error. Because h2c is settled from the
+first bytes of a connection — before routing knows which surface a request is for
+— it cannot be a per-path decision: a shared listener speaks it when any surface
+on it asks, which is now logged at startup rather than left to be discovered.
+
+**Refusals worth recording.** FCM declines to fake `404 UNREGISTERED` and
+`403 SENDER_ID_MISMATCH`; APNs declines the errors that need delivery state.
+Both require a token registry or a delivery pipeline tommy does not have, so the
+replies could only be invented — the scenario simulation the charter rules out.
+Applied without being asked, which suggests the boundary in `CLAUDE.md` is
+carrying its weight.
+
+**The APNs agent was stopped mid-task by the user, and its work was cancelled
+rather than resumed.** The implementation was on disk and complete — including
+the `content-available` → `KindSilent` trap the core author had flagged hardest —
+but it had written no tests at all. The coordinator wrote them: table-driven
+fixtures asserting both the canonical message and the exact HTTP response, and a
+real HTTP/2 suite that fails on anything but `ProtoMajor == 2`, which matters
+precisely because the provider deliberately still answers HTTP/1.1. A test that
+only proved HTTP/1.1 worked would have tested nothing about an HTTP/2-only API.
+
+**A lesson about interruption, from three separate kills.** Two agents died to a
+session rate limit inside their first tool calls, and one was stopped by the
+user. In every case the first move was the same and the cheap one: look at what
+actually reached disk, then say so explicitly — resuming an agent that wrote
+nothing sends it hunting for work that does not exist, and resuming one that
+wrote a great deal without saying what is missing gets the gap re-guessed.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project

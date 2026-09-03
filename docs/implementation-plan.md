@@ -1,6 +1,6 @@
 # Tommy — Implementation Plan (forward-looking)
 
-Waves 0–6 are built. This document plans what comes next.
+Waves 0–7 are built. This document plans what comes next.
 
 - **What was built and why:** `docs/archive/history.md`
 - **The interfaces as built (authoritative):** `docs/contracts.md`
@@ -35,14 +35,14 @@ wave you expected, look in the history.
 | `chat` | slack, msteams | done |
 | `hl7` | mllp | done |
 | `snmp` | trap | done |
-| `push` | — | **not started; named in the original brief** |
+| `push` | fcm, apns | done |
 
 Every plugin has a `tommy <plugin>` subcommand, and every provider option worth
 setting has a flag.
 
-Waves 0–6·0 are merged to `main`. Waves 6a, 6b and 6c are on
-`feat/hl7-and-tftp`, `feat/mllp-and-nfs` and `feat/snmp-traps`, each branched off
-the last and all awaiting review. **Start each new wave on its own branch**,
+Waves 0–6·0 are merged to `main`. Waves 6a, 6b, 6c and 7 are on
+`feat/hl7-and-tftp`, `feat/mllp-and-nfs`, `feat/snmp-traps` and
+`feat/push-plugin`, each branched off the last and all awaiting review. **Start each new wave on its own branch**,
 named for what it builds, so a wave stays a reviewable unit.
 
 ## 2. The scoping rule
@@ -66,7 +66,7 @@ async AS2 MDN) — which would need outbound HTTP and a scenario definition form
 
 ## 3. How to run a wave
 
-The pattern that worked for waves 0–6, in short. `docs/lessons.md` has the
+The pattern that worked for waves 0–7, in short. `docs/lessons.md` has the
 reasoning; `CLAUDE.md` has the rules.
 
 1. **Branch first.** One branch per wave, named for what it builds
@@ -89,73 +89,6 @@ reasoning; `CLAUDE.md` has the rules.
 
 Model guidance: contract-defining and subtle-parsing work to the stronger model;
 well-specified translation against a fixed contract to the cheaper one.
-
----
-
-## Wave 7 — the `push` plugin
-
-Named in the original brief and still unbuilt, which makes it the largest gap
-against `docs/plan.md`.
-
-**A hard constraint discovered up front: APNs requires HTTP/2.** Apple dropped the
-binary protocol in 2021; the provider API is `POST /3/device/{deviceToken}` over
-HTTP/2 with an ES256 JWT (or a client certificate). Go's `net/http` server speaks
-HTTP/2 only over TLS (via ALPN) or through an explicit h2c wrapper. The shared
-ingress is plain HTTP/1.1 today, so **APNs cannot mount on it as it stands.**
-
-That gives Wave 7 a real internal ordering, and pulls a piece of Wave 9 forward.
-
-### 7a · one agent
-
-| Task | Owns | Model |
-|---|---|---|
-| **PU1 — push plugin core** | `plugins/push/**` (not `providers/`) | stronger |
-
-- Canonical model covering both ecosystems without flattening them: device token
-  or topic, title/body/subtitle, badge, sound, category/collapse key, priority,
-  TTL, and a verbatim `json.RawMessage` for the platform-specific payload with a
-  format discriminator — the same shape the `chat` plugin uses for cards, which
-  worked well.
-- Distinguish a **notification** (display) from a **data/silent** push, since the
-  difference is most of what people debug.
-- UI: a phone-notification archetype — the lock-screen shape, with the raw payload
-  in an inspector. Fourth distinct view; lean on the component library.
-
-### 7b · two agents in parallel
-
-| Task | Owns | `go.mod` | Model |
-|---|---|---|---|
-| **P-fcm** | `plugins/push/providers/fcm/**` | probably not | cheaper |
-| **H2C — HTTP/2 on the ingress** | `core/server/ingress/**` + config | **yes** — `x/net/http2` | stronger |
-
-**P-fcm.** Firebase Cloud Messaging HTTP v1: `POST /v1/projects/{project}/messages:send`
-with an OAuth2 bearer. Plain HTTP/1.1-compatible JSON, so it mounts on the ingress
-today. Accept any bearer, record it. Handle the `message` envelope with its
-`token`/`topic`/`condition` targeting and the `android`/`apns`/`webpush` override
-blocks. Return FCM's real success (`{"name":"projects/.../messages/..."}`) and
-error shapes. Verify against live documentation.
-
-**H2C.** Enable HTTP/2 on the ingress listener via `golang.org/x/net/http2/h2c`,
-so an HTTP/2 client can reach it without TLS, and make it configurable. This is
-narrow, self-contained core work and does not touch any plugin. It also unblocks
-the optional `--tls` mode in Wave 9, which should reuse the same server
-construction.
-
-### 7c · one agent, after 7b
-
-| Task | Owns | Model |
-|---|---|---|
-| **P-apns** | `plugins/push/providers/apns/**` | stronger |
-
-`POST /3/device/{deviceToken}` over HTTP/2, with the `apns-topic`,
-`apns-push-type`, `apns-priority`, `apns-expiration`, `apns-collapse-id` and
-`apns-id` headers — the headers carry most of the meaning here, so record them
-all. Parse but never verify the ES256 JWT in `authorization`; record its claims
-(`iss`, `iid`, `kid`) as metadata, since a wrong key id is a common real-world
-mistake and seeing it is the point. Success is `200` with an `apns-id` header and
-an empty body; errors are `{"reason":"BadDeviceToken"}` with the right status.
-Test with `sideshow/apns2` if it can be pointed at a custom host, otherwise a
-hand-driven HTTP/2 client.
 
 ---
 
@@ -188,7 +121,7 @@ Independent of each other and of the protocol work; each is one agent.
 
 | Task | Owns | Notes |
 |---|---|---|
-| **TLS ingress** | `core/server/**`, config | `--tls` with a self-signed certificate generated on first run and written beside the config so it can be trusted once. Print the fingerprint. This is the documented route for non-Go SDKs that will not take a base URL (see `docs/clients.md`); it reuses the Wave 7b server construction. |
+| **TLS ingress** | `core/server/**`, config | `--tls` with a self-signed certificate generated on first run and written beside the config so it can be trusted once. Print the fingerprint. This is the documented route for non-Go SDKs that will not take a base URL (see `docs/clients.md`). **The seam already exists**: Wave 7 built `newHTTPServer` + `listenerOptions` in `core/server/httpserver.go`, and TLS is a field added there rather than a second construction path. Use `net/http`'s `Server.Protocols` for ALPN, not `golang.org/x/net/http2` — that module's `h2c` package is deprecated and would fail the staticcheck gate. |
 | **Persistence** | `core/store/**`, `core/blob/**` | Opt-in `--persist <path>` snapshotting events and blobs. The `Store` and `BlobStore` interfaces were built for this; no plugin should need to change. Keep it dependency-free — files on disk, not SQLite — unless a real need appears. |
 | **Search** | `core/server/api`, `core/server/ui` | Full-text across captured bodies. Currently `Query.Search` is a substring match; if that stops being enough, this is where it goes. |
 | **Upstream: kleiner** | — | Fix `MaybeNotifyAboutNewVersion` in `can3p/kleiner`: it prints the error and falls through to dereference a nil version, panicking a released binary at startup when GitHub is unreachable. Second latent deref on the same path. Affects every project scaffolded from kleiner. |
@@ -209,6 +142,9 @@ Independent of each other and of the protocol work; each is one agent.
   version, trap OID and varbind count, and the detail pane renders each varbind's
   OID, type and value. A table would read better if anyone spends real time in
   that tab; nothing is blocked on it.
+- **The `push` tab has had no polish pass**, like `files` and `chat` before it.
+  The lock-screen archetype works and distinguishes a silent push honestly, but
+  it has not been looked at with fresh eyes.
 - `event.DecodePayload[T]` in core. `sms`, `chat` and `hl7` each carry a
   near-identical pointer/value/JSON-round-trip payload decoder, ~25 lines apiece.
   A convenience rather than a gap, reported by the third plugin to write one.

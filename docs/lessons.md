@@ -134,6 +134,29 @@ exported marshal/unmarshal functions underneath it were exactly right. The same
 question is worth asking of any library whose top-level helper assumes it owns the
 process.
 
+**Silent acceptance is the worst failure a capture tool has.** A fake that
+answers 200 and quietly drops a field it did not recognise is worse than one that
+rejects the request, because the user has no signal at all — they see a success
+and an incomplete capture, and conclude their own code is at fault. This surfaced
+as an FCM provider that took only the camelCase spelling of a proto3 field while
+the real API accepts both, and it was found by posting both forms at the running
+binary and diffing the captures, not by reading the code.
+
+**A vendor's canonical spelling is not always its only accepted one.** Google's
+discovery documents list lowerCamelCase because that is the canonical *output*
+name; proto3's JSON mapping requires parsers to accept the original snake_case
+field name too. Reading one and inferring the other is rejected is an easy and
+expensive mistake — and the follow-on temptation, normalising key names
+everywhere, will corrupt caller-owned data blocks. Normalise the keys you know;
+never touch the ones that belong to the user.
+
+**A deprecation in a dependency you already have can delete a planned task.**
+Wave 7 was sequenced around one agent owning `go.mod` to add
+`golang.org/x/net/http2/h2c`; the package turned out to be deprecated in the
+version already present, with the standard library having absorbed the feature.
+Checking what is already in the module graph, and whether the ecosystem has moved
+on, is worth doing before planning a wave around a dependency.
+
 ## On the runtime
 
 **A graceful shutdown must close connections that never asked for anything.**
@@ -200,6 +223,15 @@ to the stronger model; well-specified translation against a fixed contract (thre
 of the four vendor providers, CI config, UI polish) went to the cheaper one and
 came back with equal rigour — the Sonnet agents verified action versions against
 GitHub's API and downloaded a real GoReleaser to validate a migration.
+
+**When an agent is interrupted, the first move is always to read the disk.**
+Three kills across two waves — two rate limits, one stop by the user — and the
+handling was identical each time: look at what actually landed, then tell the
+agent explicitly what is and is not there. An agent resumed with nothing on disk
+will hunt for partial work that does not exist; one resumed after writing a lot
+will re-guess what is missing. And when an agent cannot be resumed at all, its
+unfinished half is ordinary work — the APNs implementation was complete and
+untested, so the tests got written by hand rather than by spawning a replacement.
 
 **Interruptions are cheap if the work is on disk — but check whether it is.**
 Machine sleep killed five agent runs in one wave; a session rate limit killed two
