@@ -379,3 +379,14 @@ is worth it for the same reason.
   easy to forget: the provider's own tests all pass while `tommy providers
   <plugin>/<provider>` still reports no such provider, because nothing ships it.
   A plugin's own `Description()` usually needs updating in the same breath.
+- A provider that adds a dependency to the root module must re-tidy
+  `test/integration` in the same commit. That module `replace`s the root one, so
+  the new package becomes a transitive requirement it has to record, and without
+  it CI's integration leg fails on a missing `go.sum` entry while every other
+  leg stays green. Four consecutive waves shipped this bug — tftp, nfs, snmp and
+  as2 — because it is invisible from the root module and each was fixed by
+  accident in a later wave rather than caught in its own.
+- `go build` in `test/integration` does not prove that module compiles. The
+  tests reach the providers through `plugins/all` from a `_test.go` file, so a
+  missing requirement only surfaces under `go test -tags integration ./...`.
+  That is the command to run when verifying it, and the one CI runs.
