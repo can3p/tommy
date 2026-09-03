@@ -5,6 +5,8 @@ package all
 
 import (
 	"github.com/can3p/tommy/core/plugin"
+	"github.com/can3p/tommy/plugins/as2"
+	as2http "github.com/can3p/tommy/plugins/as2/providers/http"
 	"github.com/can3p/tommy/plugins/chat"
 	"github.com/can3p/tommy/plugins/chat/providers/msteams"
 	"github.com/can3p/tommy/plugins/chat/providers/slack"
@@ -59,6 +61,9 @@ func Plugins() []plugin.Plugin {
 		push.New(
 			fcm.New(),
 			apns.New(),
+		),
+		as2.New(
+			as2http.New(),
 		),
 	}
 }
