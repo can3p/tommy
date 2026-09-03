@@ -33,6 +33,13 @@ enter tommy's `go.mod`. It is not covered by the root `./...`:
 cd test/integration && go test -tags integration ./...
 ```
 
+It `replace`s the root module, so **any wave that adds a dependency to the root
+`go.mod` must `go mod tidy` this module in the same commit** — the new package
+becomes a transitive requirement here too, and CI's integration leg is the only
+one that notices. Verify with `go test`, never `go build`: the tests reach the
+providers through `plugins/all` from a `_test.go` file, so `go build` never
+compiles the import that fails.
+
 ## Where things are
 
 | Path | What |
