@@ -1,22 +1,81 @@
 # push
 
+## What it is
+
 Captures the push notifications your backend sends instead of handing them to
 Apple or Google, and shows each one the way a phone would: a lock-screen card
-with the title, subtitle and body, next to the payload exactly as it was posted.
+with the title, subtitle and body, next to the payload exactly as it was
+posted. Two providers ship: `fcm` for Firebase Cloud Messaging's HTTP v1 send
+API, and `apns` for Apple's HTTP/2 provider API. Both land in the same
+`push.Message` model but are kept apart rather than pretended to be one thing
+— a device token and a topic are not the same kind of address, and the tab
+says which one a given push used.
 
-The reason this tab exists rather than the generic event view is one question:
-**does this push display anything at all?** An APNs push with `content-available`
-and no alert, and an FCM message with only a `data` block, both show the user
-nothing, and working that out from a JSON dump is most of what silent-push
-debugging is. The tab answers it in one word, styles a silent card so it cannot
-be mistaken for a notification, and says in a sentence what the device does.
+## What it's for
 
-**There are no endpoints yet.** The `fcm` provider is the next task and `apns`
-the one after it (APNs needs HTTP/2 on the ingress, which is separate core
-work). Until they land the plugin has a model, an API and a tab, and pushes get
-in only by being put in the store directly. That is also why `push` is not in
-`plugins/all/all.go`: `plugintest` rejects a plugin with no providers, and it is
-right to.
+Your backend claims it sent a silent background push, and the question that
+actually matters is whether it would have shown the user anything — most
+silent-push debugging comes down to exactly that, and it is not answerable
+from a JSON body alone. Or: you want to see the title and body a phone's lock
+screen would render, without a physical device, an Apple developer account,
+or a Firebase project in the loop. Or: a CI test places an order and asserts
+that exactly one notification went to the right device token — no polling an
+emulator, no mocking the SDK, just a request tommy captured and a filter on
+its target. The tab answers "does this push display anything at all?" in one
+word, styles a silent card so it can't be mistaken for a real notification,
+and shows the payload verbatim next to that verdict.
+
+## How to test it for real
+
+Boot it on its own (or add `push` to a `tommy serve` config):
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . push --ui-port 8811 --in-port 8822
+```
+
+Send an FCM notification to a topic:
+
+```bash
+curl -s -X POST http://localhost:8822/v1/projects/my-project/messages:send \
+  -H 'Authorization: Bearer any-oauth-access-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"message":{"topic":"weather","notification":{"title":"Storm warning","body":"Batten down the hatches"}}}'
+```
+
+Send an APNs alert. APNs is HTTP/2 only — Apple retired the binary protocol
+and there is no HTTP/1.1 form — so the client has to speak prior-knowledge
+h2c, which is what `--http2-prior-knowledge` does; the ingress serves
+cleartext HTTP/2 by default:
+
+```bash
+curl -s -i --http2-prior-knowledge -X POST \
+  http://localhost:8822/3/device/00fc13adff785122b4ad28809a3420982341241421348097878e577c991de8f0 \
+  -H 'apns-topic: com.example.MyApp' -H 'apns-push-type: alert' \
+  -d '{"aps":{"alert":{"title":"Game Request","body":"Bob wants to play poker"}}}'
+```
+
+`--http2` alone is not the same thing: without prior knowledge there is no TLS
+to negotiate ALPN over and no `Upgrade: h2c` support (RFC 9113 removed that
+handshake), so the request quietly falls back to plain HTTP/1.1. tommy still
+captures it — the response carries `Tommy-Warning: this request arrived over
+HTTP/1.1; APNs is HTTP/2 only` and the event is tagged accordingly — but a
+real Apple client would never do this, so the capture is flagged rather than
+treated as a normal push.
+
+Read the captures back either through the plugin's own filtered API or the
+generic event feed:
+
+```bash
+curl -s http://localhost:8811/api/v1/push/messages | jq '.[].message.target'
+curl -s 'http://localhost:8811/api/v1/events?plugin=push' | jq length
+```
+
+Or open the tab directly: `http://localhost:8811/ui/push/`.
+
+`plugins/push/providers/fcm/README.md` and `plugins/push/providers/apns/README.md`
+cover each provider's own wire format, error shapes, and what real vendor
+documentation contradicted — including what each one deliberately refuses to
+fake, since neither can be honest about delivery state it does not have.
 
 ## Two ecosystems, neither one's vocabulary
 
@@ -136,28 +195,13 @@ the sender chose, so it is shown **as text** and never as an `<img>` source or a
 either. The hostile-input suite asserts against the parsed document rather than
 grepping the HTML.
 
-## Getting pushes in
+## Getting pushes in during development
 
-Once the providers land:
-
-```bash
-# fcm
-curl -s -X POST {{.IngressURL}}/v1/projects/my-project/messages:send \
-  -H 'Authorization: Bearer any-token' \
-  -d '{"message":{"topic":"weather","notification":{"title":"Storm warning","body":"Batten down"}}}'
-```
-
-```bash
-# apns (needs HTTP/2 on the ingress)
-curl -s --http2-prior-knowledge -X POST \
-  {{.IngressURL}}/3/device/00fc13adff785122b4ad28809a3420982341241421348097878e577c991de8f0 \
-  -H 'apns-topic: com.example.MyApp' -H 'apns-push-type: alert' \
-  -d '{"aps":{"alert":{"title":"Game Request","body":"Bob wants to play poker"}}}'
-```
-
-Until then, the plugin's own tests drive it through a test-only provider in
-`fake_test.go`, which is also the worked example of how the model is meant to be
-filled in from each of the two request shapes.
+See "How to test it for real" above for the two providers' own request
+shapes. The plugin's own unit tests drive it through a test-only provider in
+`fake_test.go`, which is the worked example of how the model is meant to be
+filled in from each of the two request shapes without depending on either
+provider package.
 
 ## What live vendor documentation contradicted
 
