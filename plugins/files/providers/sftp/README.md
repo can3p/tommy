@@ -1,5 +1,7 @@
 # `sftp` files provider
 
+## What it is
+
 A real SFTP server — an SSH transport plus the SFTP subsystem — that accepts
 uploads from any client on its own port and keeps them in the shared virtual
 filesystem instead of anywhere on disk. Every upload, `mkdir`, rename and delete
@@ -12,6 +14,61 @@ layers: `x/crypto/ssh` runs the handshake and answers a `subsystem` request for
 `sftp`, and `pkg/sftp`'s `RequestServer` serves the file operations through a
 `files.Session`. Nothing reaches the host filesystem — the one file this
 provider owns on disk is its SSH host key.
+
+## What it's for
+
+Reach for this one when whatever is under test already carries an SSH client —
+a deployment script that `scp`s a build artifact, a batch job that logs in
+with `sftp` and puts a file, a language library built on
+`golang.org/x/crypto/ssh` or `libssh`. It is the natural fit for anything that
+would otherwise need a real OpenSSH server: no daemon to configure, no
+`sshd_config`, no host system user to create, and no password to manage unless
+you want one pinned (see Authentication below).
+
+The one thing worth knowing before reaching for it: by default this provider
+accepts **any** credentials, including none at all, via SSH's `none`
+authentication method. That is what makes `sftp any@host` work with no
+password prompt straight out of a cold start — but it also means credentials
+are only recorded (`Event.Meta.auth`) when a client actually offers them,
+which only happens automatically once you pin `username` or `password` and
+force the client to authenticate for real.
+
+## How to test it for real
+
+Booted with `TOMMY_NO_UPDATE_CHECK=1 go run . files --sftp-port 2222` (or
+`tommy serve` with the provider enabled), a real OpenSSH client drives the
+whole round trip with no password prompt:
+
+```bash
+echo 'it works' > ./local.txt
+sftp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -b - any@localhost <<'EOF'
+put ./local.txt /upload/local.txt
+get /upload/local.txt ./downloaded.txt
+ls -l /upload
+EOF
+diff ./local.txt ./downloaded.txt && echo "round-trip ok"
+```
+
+`scp` (OpenSSH 9 speaks SFTP under the hood) works the same way:
+
+```bash
+scp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ./local.txt any@localhost:/scp.txt
+```
+
+And the same files read back over HTTP:
+
+```bash
+curl -s http://localhost:8811/api/v1/files/tree
+curl -s http://localhost:8811/api/v1/files/content/upload/local.txt
+```
+
+Verified against a live instance on ports 12222 (sftp) / 18921 (ui) so as not
+to collide with anything else running at the time: `put`/`get` and `scp` both
+round-tripped byte-for-byte, `mkdir` and login both went through with no
+password prompt (confirming the default `NoClientAuth` behaviour above), and
+the HTTP API served the same bytes back. The uploaded file showed up in the
+same tree from every provider — an SFTP `put` and an FTP `STOR` against this
+plugin land in one shared filesystem, not two.
 
 ## Try it
 
@@ -187,7 +244,7 @@ never cut off) and `max_auth_tries`.
 - `handlers.go` — the four `pkg/sftp` handlers over a `files.Session`.
 - `hostkey.go` — generating, persisting and loading the host key.
 
-## How to test
+## Automated tests
 
 ```bash
 go test ./plugins/files/providers/sftp/...

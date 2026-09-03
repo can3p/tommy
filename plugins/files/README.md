@@ -1,15 +1,78 @@
 # files
 
-Accepts the files your application uploads over FTP or SFTP instead of shipping
-them anywhere, and keeps them in a virtual filesystem you can browse, download
-from and assert against. Every upload, mkdir, delete and rename is also recorded
-as an event, so **the tree shows what is there now and the log shows how it got
-that way**.
+## What it is
 
-The plugin is named for what it holds rather than for one protocol. SFTP is an
-SSH subsystem, not FTP-with-TLS, and FTPS is a third thing again; `ftp`, `sftp`
-and later `ftps` are sibling providers over one shared filesystem, exactly the
-way Mailjet and SendGrid are siblings inside `mail`.
+Tommy's stand-in for the far end of any file-transfer protocol: the FTP drop a
+partner gives you, the SFTP server a deployment script pushes to, the TFTP
+server a device firmware pusher talks to, the NFS export a backup job mounts.
+Instead of standing up the real thing, `files` accepts what is sent over
+`ftp`, `sftp`, `tftp` or `nfs` and keeps it in a virtual filesystem you can
+browse, download from and assert against. Every upload, mkdir, delete and
+rename is also recorded as an event, so **the tree shows what is there now and
+the log shows how it got that way**.
+
+The plugin is named for what it holds rather than for one protocol — `ftp`,
+`sftp`, `tftp` and `nfs` are sibling providers over one shared filesystem,
+exactly the way Mailjet and SendGrid are siblings inside `mail`.
+
+## What it's for
+
+The situations that keep coming up are all "my application writes files
+somewhere over a protocol I do not want to stand up for real":
+
+- Your app exports a nightly CSV to a partner's FTP drop, and you want to see
+  what it actually wrote without getting a partner test account.
+- A bank-statement importer uploads a file over SFTP as part of a batch job,
+  and a CI test needs to assert the right filename went up and the bytes come
+  back byte-for-byte.
+- A firmware pusher or provisioning tool talks TFTP to a device, and you want
+  to confirm it sent the right image before touching real hardware.
+- Something under test expects a **mounted filesystem**, not a client library —
+  the specific misery of spinning up a Dockerized Samba or NFS server just to
+  exercise one upload path. Point it at tommy's NFS export instead.
+
+Which provider to reach for is mostly decided by what your client already
+speaks, not by picking the "best" protocol:
+
+- **`ftp`** — legacy partner drops, anything scripted with `curl -T` or `lftp`,
+  or an SDK that only knows FTP.
+- **`sftp`** — anything that already carries an SSH client: real OpenSSH
+  `sftp`/`scp`, or a language library built on `libssh`/`golang.org/x/crypto/ssh`.
+- **`tftp`** — network-device and PXE-style flows. It is UDP with no
+  authentication at all, by design of the protocol, not a tommy shortcut.
+- **`nfs`** — when the thing under test mounts a filesystem rather than
+  speaking a transfer protocol to a client library.
+
+## How to test it for real
+
+```bash
+TOMMY_NO_UPDATE_CHECK=1 go run . files
+# then open http://localhost:8811/ui/files/
+TOMMY_NO_UPDATE_CHECK=1 go run . providers files   # descriptions, endpoints and snippets for this build
+```
+
+A full round trip through one provider (`ftp` here — see each provider's own
+README for `sftp`, `tftp` and `nfs`):
+
+```bash
+echo 'it works' > ./local.txt
+curl -T ./local.txt ftp://localhost:2121/upload/local.txt --ftp-create-dirs -u any:any
+curl -s http://localhost:8811/api/v1/files/content/upload/local.txt -o ./downloaded.txt
+diff ./local.txt ./downloaded.txt && echo "round-trip ok"
+```
+
+See the result the same file lands three ways — the tab, the tree API, and the
+event log:
+
+```bash
+open http://localhost:8811/ui/files/
+curl -s http://localhost:8811/api/v1/files/tree
+curl -s 'http://localhost:8811/api/v1/events?plugin=files'
+```
+
+This is verified end to end (upload, download, diff, tree, events) in the
+`ftp`, `sftp` and `tftp` provider READMEs, executed against a live instance on
+non-default ports so as not to collide with anything else already running.
 
 ## Two stores, two lifetimes
 
@@ -134,23 +197,7 @@ percent-encoded in Go first. `TestUIEscapesHostileFilenames` uploads a file
 called `<img src=x onerror=alert(1)>.txt` and asserts it never reaches the page
 as markup.
 
-## How to test
-
-The FTP and SFTP providers land next, and their runnable snippets appear here
-and in the tab as soon as one is enabled. From a cold start:
-
-```bash
-tommy serve                  # then open http://localhost:8811/ui/files/
-tommy providers files        # descriptions, endpoints and snippets for this build
-curl -s http://localhost:8811/api/v1/files/tree
-```
-
-Once the FTP provider is enabled, this is the shape of it:
-
-```bash
-curl -T ./local.txt ftp://localhost:2121/upload/local.txt --ftp-create-dirs -u any:any
-curl -s http://localhost:8811/api/v1/files/content/upload/local.txt
-```
+## Automated tests
 
 The package's own tests drive a test-only fake provider that both accepts an
 upload over the ingress and writes into the VFS directly:

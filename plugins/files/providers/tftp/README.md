@@ -1,5 +1,7 @@
 # `tftp` files provider
 
+## What it is
+
 A real TFTP server (RFC 1350), backed by the shared virtual filesystem instead
 of a real disk. RRQ (download) and WRQ (upload) both work over genuine UDP
 against any TFTP client - `curl`, the BSD `tftp` command, a PXE boot ROM,
@@ -15,21 +17,67 @@ through. `handlers.go` is the thin adapter: it opens or creates the name on a
 is the plugin's one security gate, and going around it would defeat the
 point.
 
+## What it's for
+
+Reach for this one for network-device and PXE-style flows: firmware pushers,
+provisioning tools and boot ROMs that speak TFTP and nothing else, where you
+want to confirm the exact bytes and filename sent before ever touching real
+hardware. It is also the simplest provider in this plugin to script against,
+since `curl` speaks TFTP natively.
+
+The protocol itself has no login step at all - there is nothing to accept or
+pin the way `ftp`'s `USER`/`PASS` or `sftp`'s key/password auth do, by design
+of RFC 1350, not a gap in this provider. The only identity a TFTP client ever
+offers is its UDP peer address, and that is what every event records.
+
+## How to test it for real
+
+Booted with `TOMMY_NO_UPDATE_CHECK=1 go run . files --tftp-port 6969` (or
+`tommy serve` with the provider enabled). One caveat worth stating plainly:
+**address the server by `127.0.0.1`, not `localhost`.** On a machine where
+`localhost` resolves to `::1` first, `curl`'s TFTP client tries UDP over IPv6
+to a port nothing listens on and hangs until it times out - this is a client
+DNS-resolution behavior, not a bug in the provider, but it is exactly the kind
+of thing that wastes an afternoon if undocumented.
+
+```bash
+echo 'it works' > ./local.txt
+curl -sS -T ./local.txt tftp://127.0.0.1:6969/upload/local.txt
+curl -sS tftp://127.0.0.1:6969/upload/local.txt -o ./downloaded.txt
+diff ./local.txt ./downloaded.txt && echo "round-trip ok"
+```
+
+And the same file read back over HTTP:
+
+```bash
+curl -s http://127.0.0.1:8811/api/v1/files/tree
+curl -s http://127.0.0.1:8811/api/v1/files/content/upload/local.txt
+```
+
+Verified against a live instance on ports 16969 (tftp) / 18921 (ui) so as not
+to collide with anything else running at the time: both `curl` commands above
+round-tripped byte-for-byte only once addressed by `127.0.0.1`, and the
+resulting event carried `Meta.tsize_declared`, `Raw.Transport = "udp"` and the
+client's UDP peer address, exactly as this document already claimed.
+
 ## Try it
 
 ```bash
 echo 'it works' > ./local.txt
-curl -sS -T ./local.txt tftp://localhost:6969/upload/local.txt
-curl -sS tftp://localhost:6969/upload/local.txt -o ./downloaded.txt
+curl -sS -T ./local.txt tftp://127.0.0.1:6969/upload/local.txt
+curl -sS tftp://127.0.0.1:6969/upload/local.txt -o ./downloaded.txt
 diff ./local.txt ./downloaded.txt && echo "round-trip ok"
 ```
 
 ```bash
-curl -s http://localhost:8811/api/v1/files/tree
-curl -s http://localhost:8811/api/v1/files/content/upload/local.txt
+curl -s http://127.0.0.1:8811/api/v1/files/tree
+curl -s http://127.0.0.1:8811/api/v1/files/content/upload/local.txt
 ```
 
-Both are `Snippets()` entries rendered against the live `SnippetCtx`, so
+The address is deliberately `127.0.0.1`, not `localhost`: on a machine where
+`localhost` resolves to `::1` first, `curl`'s TFTP client tries UDP over IPv6
+to a port nothing listens on and hangs. Both snippets above are `Snippets()`
+entries rendered against the live `SnippetCtx`, so
 `tommy providers files/tftp` prints them with the port this instance actually
 bound - `6969` above is only the fallback for when nothing is running.
 

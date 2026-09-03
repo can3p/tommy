@@ -1,5 +1,7 @@
 # `nfs` files provider
 
+## What it is
+
 A real NFSv3 server (RFC 1813), backed by the shared virtual filesystem
 instead of a real disk. An operating system can `mount` it, and a file copied
 into the mount point is the same tree `ftp`, `sftp` and `tftp` write into -
@@ -12,6 +14,85 @@ filesystem rather than the `afero.Fs` the FTP provider adapts to. `fs.go` is
 the translation layer and does the same job `providers/ftp/fs.go` does: every
 method forwards onto a `plugins/files.Session` and none of them interprets a
 path, because `VFS.Resolve` is the plugin's one security gate.
+
+## What it's for
+
+Reach for this one, not `ftp`/`sftp`/`tftp`, when the thing under test
+**mounts a filesystem** rather than speaking a transfer protocol through a
+client library - a backup job, a data pipeline that reads/writes through
+ordinary file I/O, anything whose interface to the outside world is `open()`
+and `write()`, not an FTP or SSH client. The alternative is standing up a real
+NFS server or a Dockerized Samba box just to give that one process something
+to mount, which is exactly the setup cost this provider exists to remove.
+
+Two things are worth knowing before you reach for it. First, mounting an NFS
+share needs root on every operating system - there is no way around this, it
+is how NFS mounts work. Second, NFS has no open/close on the wire, so one
+logical upload shows up in the event log as a `CREATE` followed by one
+`files.upload` per `WRITE` chunk the client chose to send, not one tidy event
+per file - deliberate (see "What lands in the event log" below), but a reader
+staring at a noisy tab deserves to know why before they assume something is
+wrong.
+
+## How to test it for real
+
+Booted with `TOMMY_NO_UPDATE_CHECK=1 go run . files --nfs-port 2049` (or
+`tommy serve` with the provider enabled). **Mounting needs root**, and this
+was written in a sandbox with no passwordless `sudo`, so the actual `mount`
+commands below were not executed as part of this pass - they are carried over
+from the existing documentation, unverified by this wave. A Linux or macOS
+reader with root should be able to run them as written:
+
+```bash
+# Linux
+sudo mkdir -p /mnt/tommy
+sudo mount -t nfs -o nfsvers=3,tcp,port=2049,mountport=2049,nolock,noacl 127.0.0.1:/ /mnt/tommy
+echo 'it works' | sudo tee /mnt/tommy/hello.txt
+sudo umount /mnt/tommy
+```
+
+```bash
+# macOS
+sudo mkdir -p /Volumes/tommy
+sudo mount -t nfs -o vers=3,tcp,port=2049,mountport=2049,nolocks 127.0.0.1:/ /Volumes/tommy
+```
+
+What this pass **did** verify, without root, is that the single port actually
+answers both RPC programs a mount needs, dispatched by program number the way
+"Mounting: the part you have to know" below describes. A raw ONC RPC v2 NULL
+call (RFC 5531) against a live instance on port 12049 got a clean
+`SUCCESS`/`accept_stat=0` from both:
+
+```
+prog=100005 vers=3 (MOUNT): reply_stat=0 accept_stat=0
+prog=100003 vers=3 (NFS):   reply_stat=0 accept_stat=0
+```
+
+That confirms the listener and the program dispatch are live and correct; it
+does not exercise `LOOKUP`/`READ`/`WRITE` or the VFS behind them, which is
+what an actual `mount` would. `showmount`, which ships on both Linux and
+macOS, cannot substitute for this because it goes through rpcbind on port 111
+to find `mountd` - exactly the lookup this provider does not answer (see
+below) - so it has no way to be pointed at a non-standard port.
+
+For a test that cannot have root at all, [libnfs](https://github.com/sahlberg/libnfs)'s
+`nfs-cp`/`nfs-ls` are a userspace client and need none - carried over from the
+existing documentation and not installed in this sandbox, so not executed
+here either:
+
+```bash
+echo 'it works' > ./local.txt
+nfs-cp ./local.txt 'nfs://127.0.0.1/tommy?version=3&nfsport=2049&mountport=2049'
+nfs-ls -l 'nfs://127.0.0.1/tommy?version=3&nfsport=2049&mountport=2049'
+```
+
+Once something has written into the mount, the result reads back the same way
+every other provider's does:
+
+```bash
+curl -s http://127.0.0.1:8811/api/v1/files/tree
+curl -s http://127.0.0.1:8811/api/v1/files/content/hello.txt
+```
 
 ## Mounting: the part you have to know
 
