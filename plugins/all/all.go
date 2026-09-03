@@ -21,6 +21,7 @@ import (
 	"github.com/can3p/tommy/plugins/mail/providers/sendgrid"
 	"github.com/can3p/tommy/plugins/mail/providers/smtp"
 	"github.com/can3p/tommy/plugins/push"
+	"github.com/can3p/tommy/plugins/push/providers/apns"
 	"github.com/can3p/tommy/plugins/push/providers/fcm"
 	"github.com/can3p/tommy/plugins/sms"
 	"github.com/can3p/tommy/plugins/sms/providers/twilio"
@@ -57,6 +58,7 @@ func Plugins() []plugin.Plugin {
 		),
 		push.New(
 			fcm.New(),
+			apns.New(),
 		),
 	}
 }

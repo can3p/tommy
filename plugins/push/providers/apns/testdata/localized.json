@@ -1,0 +1,9 @@
+{
+  "aps": {
+    "alert": {
+      "title-loc-key": "GAME_PLAY_REQUEST_TITLE",
+      "loc-key": "GAME_PLAY_REQUEST_FORMAT",
+      "loc-args": ["Jenna", "Frank"]
+    }
+  }
+}

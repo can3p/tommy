@@ -314,3 +314,18 @@ enabled = true
 enabled = true
 # bearer_token = "any-token"   # pin the token; a mismatch then gets FCM's real
                                # 401 UNAUTHENTICATED envelope. CLI: --fcm-bearer-token
+
+[plugins.push.providers.apns]
+# Apple's push provider API: POST /3/device/{deviceToken}. APNs is HTTP/2 only
+# - Apple retired the binary protocol in 2021 - so this provider needs the
+# ingress's cleartext HTTP/2, which is on by default ([ingress] h2c above). A
+# client that reaches it over HTTP/1.1 is still captured, and told.
+#
+# The ES256 provider token is parsed but never verified - tommy has no signing
+# key and could not - and its iss/kid claims are recorded, because a wrong key
+# id is exactly the mistake you point a catcher at.
+enabled = true
+# topic  = "com.example.MyApp"  # pin the apns-topic (the app's bundle ID); anything
+                                # else gets APNs' real 400/TopicDisallowed. CLI: --apns-topic
+# key_id = "8YL3G3RRX7"         # pin the key id expected in the token's kid header;
+                                # a mismatch gets 403/InvalidProviderToken. CLI: --apns-key-id
