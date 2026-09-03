@@ -629,6 +629,78 @@ dead agent had left a comment claiming its snippets were "run against a live
 tommy before being committed", which was not yet true. An unverified claim in a
 comment outlives the session that wrote it.
 
+## Wave 8·1 — the documentation catch-up · 5 tasks, parallel
+
+A catch-up wave in the shape of wave 6·0, which found that driving the config
+from the command line was how you discovered it had never been implemented.
+This one asked the equivalent question of the documentation, and the answer was
+the same: the coverage looked complete and the useful half was missing.
+
+**Built:** user-facing documentation for all 23 plugins and providers, a
+`README.md` for APNs which had none, `docs/catalogue.md` as an index, and
+`CLAUDE.md` rule 12 plus a step in the wave ritual so this does not rot again.
+
+**The gap was audience, not volume.** Every component except one already had a
+README, several of them long. But they were written for the next implementer —
+canonical models, internal seams, locking, path resolution — and three plugin
+READMEs had no "how to test" section at all. A reader arriving with "what is
+this and how do I poke it" had to infer the answer from a description of a
+canonical model. The fix was three required sections at the top of each file:
+what it is, what it's for, and how to test it for real. Internals stayed, below.
+They were worth keeping; they were just never the whole job.
+
+**Four documented commands did not work, and every one was found by running
+it.** The AS2 encrypt pipeline stripped one MIME header of three and produced a
+200 with "illegal base64 data at input byte 7". `curl -T file
+tftp://localhost:6969/...` hangs, because curl's TFTP client resolves localhost
+to `::1` and tries UDP over IPv6 where nothing listens — `127.0.0.1` works.
+`jq '.[].security'` against the AS2 readback returns null; the field is at
+`.meta.security`. And the HL7 README told the reader the plugin could not
+receive anything yet.
+
+The TFTP one is the most instructive: the provider's own `Snippets()` template
+already rendered `127.0.0.1` correctly. **The code was right and only the prose
+was wrong, in two files.** A snippet that lives in a template beside its live
+port is rendered against reality on every run and has a reason to stay true; the
+same snippet pasted into a README has none. That is the argument for the rule,
+and for preferring `tommy providers` over any static copy.
+
+**Staleness does not need a wave to set in.** Three READMEs carried "not yet"
+claims that had since become false: HL7's "there is no listener yet, the MLLP
+provider is the next task" (true in wave 6a, wrong from 6b), push's "no
+endpoints yet, not wired into plugins/all/all.go" (wrong since wave 7), and
+AS2's "no provider exists yet" — **written earlier in the very same session**,
+by the task that built the core before the task that built the provider. A
+document can be obsolete by the end of the wave that wrote it, which is why the
+ritual now checks the documentation of everything a wave touched at the end
+rather than trusting what each task wrote as it went.
+
+**A real regression, found by convergence.** Two agents independently reported
+that the nested `test/integration` module no longer built: wave 8 added
+`smallstep/pkcs7` to the root module, and that module depends on the root one,
+so its `go.sum` went stale and *every* vendor-SDK test stopped compiling. It was
+invisible to `make check` by design — `test/integration` is deliberately a
+separate module so vendor SDKs stay out of tommy's `go.mod`, which also means
+`./...` never reaches it. **Adding a dependency to the root module is a
+two-module change**, and the second half is silent. Two independent reports on
+the same wall remains this project's most reliable signal that something is
+genuinely wrong.
+
+**Parallelism needed port assignments, not just file ownership.** Five agents
+running concurrently would each have booted servers on the same defaults, so
+each was given an exclusive port range and told which well-known ports were
+forbidden. No collisions, where previous waves lost real debugging time to a
+stray server on 1025 or 2121. Exclusive *file* ownership is necessary and was
+not sufficient once tasks started running the binary rather than only testing it.
+
+**Documented honestly rather than plausibly.** NFS mounting needs root on every
+OS and none was available, so those commands are marked unverified while what
+*could* be checked was: a raw ONC RPC NULL call proving both MOUNT (100005) and
+NFS (100003) answer on the single port, which is the actual claim that section
+makes. One agent also wrote "could not be verified" caveats about the broken
+integration module, which became stale the moment the module was fixed and had
+to be rewritten — a caveat is a fact with a shelf life.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project

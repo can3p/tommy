@@ -229,7 +229,56 @@ toolchain (`GOTOOLCHAIN=go1.27.1 go test`) and squeezing the scheduler with
 `GOMAXPROCS=1`, which turned a CI-only flake into a local one that failed every
 third run. Both are cheap; reach for them before calling something flaky.
 
+## On documentation
+
+**Ask who the reader is, not whether the file exists.** Every component but one
+had a README, several of them long — and they were written for the next
+implementer. Canonical models, internal seams, locking. Three plugins had no
+"how to test" section at all. Coverage looked complete because the wrong
+question was being asked of it. The three sections now required by `CLAUDE.md`
+rule 12 — what it is, what it's for, how to test it for real — exist because the
+middle one was never written down anywhere and the last one was optional.
+
+**A snippet rendered from a template stays true; a snippet pasted into prose
+does not.** The TFTP README told readers to use `tftp://localhost`, which hangs
+— curl resolves localhost to `::1` and tries UDP over IPv6, where nothing
+listens. The provider's own `Snippets()` already rendered `127.0.0.1` correctly,
+because it is a template evaluated against the live configuration on every run.
+The code was right and only the prose was wrong. Prefer the generated
+discovery surface over any static copy of it, and treat a hand-written command
+in a document as something that must be executed to be believed. Four of them
+in this repo were not, and none of the four worked.
+
+**Staleness does not need a wave to set in.** Three "not yet" claims had become
+false, and the worst was written *in the same session* that falsified it: the
+AS2 core's README said no provider existed, written by the task that built the
+core before the task that built the provider. A document can be obsolete by the
+end of the wave that produced it. Check the documentation of everything a wave
+touched at the end, rather than trusting what each task wrote as it went.
+
+**A caveat is a fact with a shelf life.** An agent honestly documented "this
+command could not be verified, the module does not build" — accurate when
+written, wrong within the hour, and now a false statement in a shipped
+document. When a task reports a blocker and the blocker gets fixed, the prose
+about it is part of the fix.
+
 ## On orchestrating agents
+
+**Exclusive file ownership stops being sufficient once tasks run the binary.**
+Five documentation agents in parallel would each have booted tommy on the same
+default ports. Disjoint directories prevented every write conflict and would
+have prevented none of the port collisions, so each agent was given an
+exclusive port range and an explicit list of well-known ports never to bind.
+Whenever concurrent tasks *execute* rather than only edit, the shared resource
+to divide up is the machine, not just the tree.
+
+**A dependency added to one module can break another one the gate never
+builds.** `test/integration` is deliberately a separate module so vendor SDKs
+stay out of tommy's `go.mod` — which also means `./...` does not reach it and
+`make check` never compiles it. Adding `smallstep/pkcs7` to the root module for
+the AS2 plugin left that module's `go.sum` stale and every vendor-SDK test
+stopped building, silently, for a whole wave. Adding a dependency is a
+two-module change here; run the nested suite by hand after touching `go.mod`.
 
 **Exclusive file ownership is what makes parallelism safe.** Every wave ran
 multiple agents concurrently with no merge conflicts, because each owned a
