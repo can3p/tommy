@@ -1,0 +1,6 @@
+{
+  "aps": {
+    "alert": "A plain string alert",
+    "sound": {"critical": 1, "name": "siren.aiff", "volume": 1.0}
+  }
+}

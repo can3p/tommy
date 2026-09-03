@@ -1,0 +1,14 @@
+{
+  "aps": {
+    "alert": {
+      "title": "Game Request",
+      "subtitle": "Five Card Draw",
+      "body": "Bob wants to play poker"
+    },
+    "badge": 9,
+    "sound": "chime.aiff",
+    "category": "GAME_INVITATION",
+    "thread-id": "poker-42"
+  },
+  "gameID": "12345678"
+}
