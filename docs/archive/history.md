@@ -519,6 +519,116 @@ actually reached disk, then say so explicitly — resuming an agent that wrote
 nothing sends it hunting for work that does not exist, and resuming one that
 wrote a great deal without saying what is missing gets the gap re-guessed.
 
+## Wave 8 — the `as2` plugin · 3 tasks, sequenced
+
+The first wave whose subject was a *standard* rather than a vendor, and the
+first to need a credential of its own. AS2 is RFC 4130: a trading partner POSTs
+an S/MIME message carrying an EDI document and blocks on a synchronous MDN
+receipt. It fits the charter because everything in that receipt is derivable
+from the request, and it is worth having because there is no Go AS2
+implementation at all and standing one up for real is famously miserable.
+
+**Built:** `Deps.ConfigDir` in core, the `as2` plugin core (canonical model,
+byte-exact MIME, three-rule MIC, MDN construction, certificate identity, API and
+tab), the `as2/http` provider, and the `tommy as2` shortcut.
+
+**Two specifications contradict each other, and the fix was to keep both
+answers.** RFC 4130 §7.3.1 says the MIC of a plain unsigned message is computed
+"without the MIME or any other RFC 2822 headers"; RFC 5402 §4.3 says "including
+all MIME header fields and any applied Content-Transfer-Encoding". Verbatim from
+both, and mutually exclusive. 4130 is Standards Track and 5402 an Informational
+Independent Submission, so 4130 wins — but the losing digest is kept on the
+model as `AlternateMICs`, because the person reading it is chasing a mismatch
+with a partner and needs both numbers rather than our verdict about which is
+right. Resolving a spec conflict by discarding the loser's *data* would have
+thrown away the only thing that makes the disagreement diagnosable.
+
+**The MIC has three coverage rules and compression adds a fourth trap.** For a
+signed message the MIC covers what was actually signed — which, under
+compress-then-sign, is the *compressed* bytes. Decompressing first yields a
+digest every real partner rejects while every round-trip test against our own
+code passes. RFC 5402 also permits compression inside *or* outside the
+signature, never both, and requires receivers to handle both placements.
+
+**OpenSSL was the independent implementation, and it contradicted the plan
+three times.** It writes mixed line endings — bare LF for outer headers and
+multipart delimiters, CRLF for part headers and bodies — so a strict RFC 2046
+splitter finds *zero* parts in a message OpenSSL has just produced. It writes
+`micalg="sha-256"` with a hyphen, which RFC 4130's own grammar has no room for.
+And Homebrew's build has no zlib, so `cms -compress` simply fails and the
+compression fixtures had to be assembled from `asn1parse -genconf` over a Python
+zlib stream. Separately: the line break *before* a boundary delimiter belongs to
+the delimiter, which is worth a byte-exact test because including it makes every
+MIC one or two bytes too long.
+
+**The worst defect was ours, and it was about *when* code runs, not what it
+does.** `Identity.Configure` generated a key pair and wrote it to disk, and it
+is called from `RegisterIngress` — which runs for anything that merely *builds*
+a server. `plugintest.Conformance` builds a server, so a plain `make check` left
+a real private key in the user's own config directory. It survived review
+because the provider's own tests happened to sandbox `HOME`; the containment was
+in the test rather than in the code. Generation now happens on first genuine use
+— an arriving message, a partner fetching the certificate, the tab showing a
+fingerprint — while reading explicitly configured files stays eager, because a
+path that does not resolve is a startup complaint. **The general rule, now in
+`docs/contracts.md`: registration may validate, but it may not create.**
+
+**Checking for a side effect means knowing the platform's path.** The first
+check for stray files looked in `~/.config/tommy` and found nothing, which
+proved nothing: `os.UserConfigDir()` on macOS is `~/Library/Application
+Support`. The key pair was sitting there the whole time.
+
+**A tool's own output format is not necessarily the protocol's.** In AS2 the
+`Content-Type` and `Content-Transfer-Encoding` are HTTP headers, so the body is
+bare base64 with no MIME block. `openssl cms -encrypt -outform SMIME` writes
+three headers above its body, and the obvious way to remove them — `tail -n +2`
+— strips only `MIME-Version` and leaves two behind. Tommy answers 200 with
+`processed/Error: unexpected-processing-error` and "illegal base64 data at input
+byte 7", which looks enough like success to waste an afternoon. The plugin
+core's README shipped with exactly that broken pipeline and was corrected only
+because the provider author *ran* it. A snippet nobody executed is a guess.
+
+**The RFC declined to let us gatekeep.** §6.2: "There is no required response to
+a client request containing invalid or unknown AS2-From or AS2-To header
+values." So the `as2_to` pin is not a rejection pin — a mismatch is captured,
+answered with a normal MDN, and flagged on the event, which is the opposite of
+the usual "pin implies reject" instinct and is recorded in the flag's own help
+text so nobody later "fixes" it into a 403. §7.4.4 likewise reserves `failed`
+for being unable to produce an MDN at all, so an undecryptable message is
+`processed/Error: decryption-failed`, not a failure.
+
+**The identity design came from a stated requirement, not from the protocol.**
+Certificate paths must be configurable because tommy may run in a container in a
+cluster that already has its own CA, and someone running only the `mail` plugin
+must never meet a certificate at all. The second half fell out of the core's own
+shape: a plugin's `RegisterAPI` is handed an empty `Config` — only providers get
+a `ProviderConfig` — so the identity is created unconfigured by the plugin and
+configured by a provider through an `IdentityBinder`, mirroring
+`files.VFSBinder`. A disabled provider therefore cannot cause a certificate to
+exist.
+
+**Deliberate non-implementations.** Asynchronous MDNs
+(`Receipt-Delivery-Option`) are an outbound callback and outside the charter:
+recorded, flagged as an issue, answered synchronously — never silently ignored.
+Encrypted private keys, because there is no terminal to prompt on; the error
+names the `openssl pkey` one-liner instead.
+
+**Reported, not patched — three core gaps.** A provider cannot contribute an
+issue to a message, so §6.2's "MAY return an MDN with an explanation" is
+unreachable from provider code. Route paths cannot depend on config, because
+`Endpoints()` takes no `Deps`, while real AS2 partners do configure each other's
+URLs. And `PluginConfig` has no free-form options bag, so plugin-level settings
+have no home — worked around by the binder rather than by growing the core.
+
+**An agent died to a session rate limit mid-task, for the third time in three
+waves.** The handling was the same and cost one round trip: read the disk first,
+then tell it exactly what survived and what did not. Here the provider was
+complete and the test file held a harness with no test functions at all, so the
+resume message said precisely that. It also caught something worth naming — the
+dead agent had left a comment claiming its snippets were "run against a live
+tommy before being committed", which was not yet true. An unverified claim in a
+comment outlives the session that wrote it.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project

@@ -79,6 +79,26 @@ message carrying coded issues. The consumer is an `ACK` deciding between `AA`,
 thrown away the half that makes the decision possible. Where a parser sits
 upstream of a protocol reply, the error type is part of the protocol design.
 
+**Registration may validate, but it may not create.** A provider's
+`RegisterIngress` runs for anything that merely *builds* a server — every
+conformance test included — so anything that generates a credential there
+generates it during `make check`. The AS2 identity did exactly that and left a
+real private key in the user's own config directory. Split the two halves:
+reading a configured path is eager, because a path that does not resolve is a
+startup complaint the operator wants immediately; *creating* anything waits for
+first genuine use. The same split will apply to any future feature that mints a
+key, a certificate or a file.
+
+**A generated default has to be overridable, and its cost has to fall only on
+the people who enabled it.** Auto-generating a self-signed certificate is a fine
+default, but the path to an existing one must be configurable, because tommy may
+run in a container inside a cluster that already has its own CA and an operator
+needs it to fit the surrounding PKI. And someone running only the `mail` plugin
+must never encounter a certificate at all. The core's own shape enforced the
+second half here: only providers receive a `ProviderConfig`, so a
+plugin-level credential has to be configured *by* a provider, and a disabled
+provider therefore cannot cause one to exist.
+
 ## On the protocols
 
 **Verify wire formats against live vendor documentation, never from memory.**
@@ -149,6 +169,34 @@ field name too. Reading one and inferring the other is rejected is an easy and
 expensive mistake — and the follow-on temptation, normalising key names
 everywhere, will corrupt caller-owned data blocks. Normalise the keys you know;
 never touch the ones that belong to the user.
+
+**Two specifications can contradict each other, and the answer is not to pick
+one and discard the other's data.** RFC 4130 and RFC 5402 give incompatible
+rules for the same MIC — "without the MIME headers" versus "including all MIME
+header fields" — and both are quoted verbatim from the documents. Standards
+Track beats Informational, so one wins; but the losing digest is computed anyway
+and kept beside the winner, because the person reading it is chasing a mismatch
+with a trading partner and needs both numbers rather than our verdict. Where a
+conflict is genuinely unresolvable, surfacing both readings is more useful than
+adjudicating.
+
+**A tool's own output format is not necessarily the protocol's.** `openssl cms
+-encrypt -outform SMIME` writes MIME headers above its body; in AS2 those belong
+in the HTTP request, so the body must be bare base64. The obvious fix —
+stripping the first line — removes one header of three and leaves a body that
+fails to decode, answered with a 200 that looks close enough to success to waste
+an afternoon. Ask for the raw form (`-outform DER`) and encode it yourself
+rather than editing a tool's framing off the top.
+
+**The reference implementation you test against has quirks of its own, and they
+are load-bearing.** OpenSSL writes *mixed* line endings — bare LF for outer
+headers and multipart delimiters, CRLF for part headers and bodies — so a
+strictly correct RFC 2046 splitter finds zero parts in a message OpenSSL just
+produced. It also writes `micalg="sha-256"`, a spelling the RFC's grammar has no
+room for, and Homebrew's build ships without zlib so `cms -compress` fails
+outright. Budget for the independent implementation being non-conforming in
+small ways; that is not a reason to stop using it, it is most of why it is worth
+using.
 
 **A deprecation in a dependency you already have can delete a planned task.**
 Wave 7 was sequenced around one agent owning `go.mod` to add
@@ -269,6 +317,15 @@ is worth it for the same reason.
   the age and command line of what holds it (`lsof -nP -iTCP -sTCP:LISTEN`,
   then `ps -o lstart,command -p <pid>`). It is often a previous session's own
   stray server, not a real mail catcher.
+- `os.UserConfigDir()` is `~/Library/Application Support` on macOS, not
+  `~/.config`. Checking the wrong one and finding nothing proves nothing — it is
+  how a stray private key went unnoticed for several steps in Wave 8.
+- A snippet nobody has executed is a guess. Wave 8's plugin README shipped a
+  cold-start command that could not work, and it was caught only because the
+  next agent ran it rather than read it.
+- An unverified claim in a code comment outlives the session that wrote it. An
+  agent killed mid-task left a comment saying its snippets had been "run against
+  a live tommy"; the testing phase had not happened yet.
 - Wiring a new provider into `plugins/all/all.go` is the coordinator's job and is
   easy to forget: the provider's own tests all pass while `tommy providers
   <plugin>/<provider>` still reports no such provider, because nothing ships it.

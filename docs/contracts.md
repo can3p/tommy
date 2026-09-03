@@ -233,12 +233,13 @@ func (c SnippetCtx) Port(plugin, provider string) string
 func (c *SnippetCtx) SetAddr(plugin, provider, addr string)
 
 type Deps struct {
-    Store  store.Store
-    Blobs  blob.BlobStore
-    Config ProviderConfig // = config.ProviderConfig
-    Logger *slog.Logger
-    Now    func() time.Time
-    NewID  func() string
+    Store     store.Store
+    Blobs     blob.BlobStore
+    Config    ProviderConfig // = config.ProviderConfig
+    Logger    *slog.Logger
+    Now       func() time.Time
+    NewID     func() string
+    ConfigDir string // dir of the config file, "" when built in memory
 }
 func (d Deps) Normalize() Deps                       // fills Now/NewID/Logger
 func (d Deps) WithConfig(pc ProviderConfig) Deps
@@ -248,6 +249,22 @@ func (d Deps) Append(ctx context.Context, e *event.Event) error // stamp + store
 
 Templates rendered with `missingkey=error`, so a typo in a snippet is a failure
 rather than a blank.
+
+**`ConfigDir` is the directory the config file was read from**, and is empty for
+every CLI shortcut, every test, and `tommy serve` with no `-c`. It exists for
+the one thing a `ProviderConfig` setting cannot express: where to keep something
+a provider *generates* and then wants back on the next run - the AS2 identity, and
+Wave 9's `--tls` certificate. "Beside the config" is the only location a user
+finds without being told, and a provider cannot work it out for itself, since
+`Deps` carries a `ProviderConfig` rather than the `*config.Config` that knows.
+Prefer it, and fall back to `os.UserConfigDir` when it is empty.
+
+**Anything a provider generates must be generated on first use, not in
+`RegisterIngress`.** Registration runs for anything that merely *builds* a
+server, `plugintest.Conformance` included - so generating eagerly put a real
+private key in the user's own config directory during `make check`. Validate
+configured paths eagerly, because a path that does not resolve is a startup
+complaint; create nothing until something actually needs it.
 
 ### Registry
 
