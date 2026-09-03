@@ -89,6 +89,30 @@ send. Document each divergence rather than letting it be silent.
 skipped because events are immutable and threads are derived — they could only
 have answered `ok` while nothing changed. Two correct routes beat four shaky ones.
 
+## On the runtime
+
+**A graceful shutdown must close connections that never asked for anything.**
+`http.Server.Shutdown` will not call itself quiescent while any connection is in
+`StateNew`, and only writes one off after five seconds — longer than any
+shutdown budget tommy sets. Clients hand over such connections as a matter of
+course: Go's `http.Transport` dials a spare while a request waits for an idle
+connection, and browsers preconnect. The loser is parked in a pool having sent
+no bytes, and one of them was enough to make every shutdown burn its whole
+timeout and report failure. The server now tracks connections that have not
+carried a request and closes them itself, after a short grace so one whose
+first request is still arriving still gets served.
+
+**A Go-version matrix in CI earns its cost the first time it disagrees.** That
+shutdown weakness was two waves old and silent. It surfaced as `--- FAIL:
+TestDeleteEvents … shutdown: ui: context deadline exceeded` on Go 1.27 while the
+oldstable job stayed green — a client-side change in how eagerly connections are
+dialled, exposing a server-side bug that had always been there. When one matrix
+leg fails and another passes, the difference between the legs is the lead, and
+the bug is usually still yours. Reproducing it meant fetching the exact
+toolchain (`GOTOOLCHAIN=go1.27.1 go test`) and squeezing the scheduler with
+`GOMAXPROCS=1`, which turned a CI-only flake into a local one that failed every
+third run. Both are cheap; reach for them before calling something flaky.
+
 ## On orchestrating agents
 
 **Exclusive file ownership is what makes parallelism safe.** Every wave ran
@@ -153,6 +177,8 @@ is worth it for the same reason.
 - A cobra command with no subcommands and no `Args` validator accepts any
   positional argument and ignores it, so `tommy mail help` runs the command
   rather than printing help. `cobra.NoArgs` on every leaf command.
+- `http.Server.ConnState` is the only way to see a connection that has not sent
+  a request yet; nothing else in the API exposes one.
 - Before blaming a port collision on "something else on this machine", check
   the age and command line of what holds it (`lsof -nP -iTCP -sTCP:LISTEN`,
   then `ps -o lstart,command -p <pid>`). It is often a previous session's own
