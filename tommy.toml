@@ -9,7 +9,8 @@
 # exact same bootstrap (core/server) - nothing below is TOML-only, and every
 # setting here has a CLI equivalent on `tommy serve` or one of the
 # single-plugin shortcuts (`tommy mail`, `tommy sms`, `tommy files`,
-# `tommy chat`). A handful of provider tuning knobs - noted where they appear
+# `tommy chat`, `tommy hl7`, `tommy snmp`, `tommy push`, `tommy as2`). A
+# handful of provider tuning knobs - noted where they appear
 # below - are deliberately file-only; everything else has a flag. See
 # docs/contracts.md ("core/config") for the full field reference and
 # docs/implementation-plan.md §4 for why the config is shaped this way.
@@ -81,16 +82,18 @@ blob_limit = "256MB"
 # [plugins.<x>.providers.<y>] section is missing, or present with no `enabled`
 # key of its own. true (the default, shown here) means "unmentioned means
 # on". The single-plugin CLI shortcuts (tommy mail, tommy sms, tommy files,
-# tommy chat) build a config with this flipped to false in memory and then
+# tommy chat, tommy hl7, tommy snmp, tommy push, tommy as2) build a config with
+# this flipped to false in memory and then
 # enable only the plugin and providers that were actually asked for - see
 # cmd/mail.go.
 default_enabled = true
 
-# Every HTTP provider below (mailjet, sendgrid, twilio, slack, msteams) shares
-# the one [ingress] listener above and is told apart by path - there is no
-# per-provider listener for an HTTP provider, so none of their sections below
-# has a `port` key. Only smtp, ftp and sftp - real protocol servers, not HTTP
-# APIs - get a listener and a port of their own.
+# Every HTTP provider below (mailjet, sendgrid, twilio, slack, msteams, fcm,
+# apns, and as2's http) shares the one [ingress] listener above and is told
+# apart by path - there is no per-provider listener for an HTTP provider, so
+# none of their sections below has a `port` key. Only the real protocol servers
+# - smtp, ftp, sftp, tftp, nfs, mllp and trap - get a listener and a port of
+# their own.
 
 # -----------------------------------------------------------------------------
 # mail - captures the email your application sends, whether it went out
@@ -329,3 +332,54 @@ enabled = true
                                 # else gets APNs' real 400/TopicDisallowed. CLI: --apns-topic
 # key_id = "8YL3G3RRX7"         # pin the key id expected in the token's kid header;
                                 # a mismatch gets 403/InvalidProviderToken. CLI: --apns-key-id
+
+# -----------------------------------------------------------------------------
+# as2 - captures AS2 (RFC 4130) EDIINT exchanges: signed, encrypted and/or
+# compressed business documents posted over HTTP, unwrapped layer by layer and
+# answered with a real MDN receipt. Shortcut: `tommy as2`.
+# -----------------------------------------------------------------------------
+
+[plugins.as2]
+enabled = true
+
+[plugins.as2.providers.http]
+# The RFC 4130 receiving endpoint: POST /as2 accepts the message, GET
+# /as2/certificate serves tommy's certificate so a partner can encrypt to it.
+# A certificate is generated on first use rather than at startup, so a
+# provider that is switched off never causes one to be minted at all.
+enabled = true
+#
+# Identity - where the certificate this endpoint answers with comes from.
+# Leave all of these unset and tommy generates a self-signed certificate on
+# first use and reuses it from then on.
+# cert_file          = "/path/to/cert.pem"  # a certificate to use instead of generating one - hand
+                                             # tommy an identity the rest of your system already
+                                             # trusts, rather than one nobody knows. CLI: --as2-cert-file
+# key_file           = "/path/to/key.pem"   # its unencrypted PEM private key; both must be given
+                                             # together. An encrypted key has no terminal to prompt
+                                             # on. CLI: --as2-key-file
+# cert_dir           = "/srv/tommy/as2"     # where a generated certificate is written and then
+                                             # reused, so a partner never sees the identity change
+                                             # across restarts. Unset, it goes beside this config
+                                             # file; with no config file, into the OS user config
+                                             # dir - ~/.config/tommy/as2 on Linux, but
+                                             # ~/Library/Application Support/tommy/as2 on macOS.
+                                             # CLI: --as2-cert-dir
+# common_name        = "tommy"              # subject CN of a generated certificate; ignored when
+                                             # cert_file is given. CLI: --as2-common-name
+# in_memory          = false                # generate a key pair and write nothing to disk at all;
+                                             # a partner has to re-import the certificate after every
+                                             # restart. CLI: --as2-in-memory
+#
+# partner_cert_file = "/path/to/partner.pem"  # check inbound signatures against this certificate.
+                                               # Without it a signature is only proven intact, never
+                                               # proven to be from the partner you expect (see
+                                               # plugins/as2/README.md, rule 3). CLI: --as2-partner-cert-file
+#
+# as2_to    = "TOMMY"    # the AS2-To identifier this endpoint answers to; unset accepts anything.
+                          # This is NOT a rejection pin - RFC 4130 §6.2 requires no particular
+                          # response to an unknown AS2-To, so a mismatch is still captured and
+                          # answered with a normal MDN, just flagged on the event
+                          # (as2_to_expected/as2_to_matched) so you see the misconfiguration
+                          # instead of a green light. CLI: --as2-to
+# max_body  = 67108864   # 64MiB, caps one request body. CLI: --as2-max-body

@@ -60,6 +60,7 @@ configuration actually bound — useful before you've sent anything at all.
 | `hl7`   | `mllp` | A real MLLP listener that parses HL7 v2 and answers with a mechanical ACK |
 | `chat`  | `slack`, `msteams` | Slack incoming webhooks + `chat.postMessage`, and both generations of Teams incoming webhook |
 | `snmp`  | `trap` | A real UDP trap receiver: v1/v2c traps and informs, every varbind decoded by its wire type |
+| `as2`   | `http` | RFC 4130 EDIINT over HTTP: unwraps signed/encrypted/compressed messages and answers with a real MDN receipt |
 
 Every plugin and provider describes itself: `Description()`, the endpoints it
 mounts, and at least one runnable snippet, surfaced identically in the UI's
@@ -149,6 +150,26 @@ unconfirmed. Any community string is accepted and recorded, never checked.
 There is no bespoke tab: the generic event view's JSON payload panel already
 shows every varbind, deliberately — see `plugins/snmp/README.md`.
 
+### http (as2) — `POST /as2`, `GET /as2/certificate`
+
+```bash
+curl -s -o tommy.pem http://127.0.0.1:8822/as2/certificate
+
+printf 'ISA*00*          *00*          *ZZ*PARTNER        *ZZ*TOMMY          *260903*1200*U*00401*000000001*0*P*>~SE*1*0001~IEA*1*000000001~' |
+curl -s -D - --data-binary @- \
+  -H 'AS2-From: PARTNER' -H 'AS2-To: TOMMY' -H 'AS2-Version: 1.1' \
+  -H 'Message-ID: <1@partner.example>' \
+  -H 'Content-Type: application/edi-x12' \
+  -H 'Disposition-Notification-To: as2@partner.example' \
+  http://127.0.0.1:8822/as2
+```
+
+Signed, encrypted and compressed messages are unwrapped layer by layer and
+answered synchronously with a real MDN; anything that cannot be opened is
+still captured and reported honestly in the MDN's disposition rather than
+refused. See `plugins/as2/README.md` for a full sign-and-encrypt walkthrough
+with OpenSSL.
+
 ## Configuration: CLI flags or TOML, never two code paths
 
 `tommy serve` runs every plugin and provider compiled into the binary,
@@ -177,10 +198,11 @@ tommy chat  --ui-port 8811 --in-port 8822 --enabled-providers slack
 tommy hl7   --ui-port 8811 --in-port 8822 --mllp-port 2575
 tommy push  --ui-port 8811 --in-port 8822 --enabled-providers fcm
 tommy snmp  --ui-port 8811 --in-port 8822 --trap-port 1162
+tommy as2   --ui-port 8811 --in-port 8822
 ```
 
-`tommy mail`, `tommy sms`, `tommy files`, `tommy chat`, `tommy hl7` and
-`tommy snmp` are shortcuts that build a `Config` with every other plugin
+`tommy mail`, `tommy sms`, `tommy files`, `tommy chat`, `tommy hl7`,
+`tommy snmp` and `tommy as2` are shortcuts that build a `Config` with every other plugin
 switched off in memory, then run through that identical bootstrap — there is
 no second, lighter-weight server. `--enabled-providers` narrows which of that
 plugin's providers run; leave it off and every provider the plugin ships is
@@ -217,6 +239,7 @@ response:
 | `trap` (`tommy snmp`)     | `--trap-port` |
 | `ftp` (`tommy files`)     | `--ftp-port`, `--ftp-passive-host`, `--ftp-passive-ports`, `--ftp-username`, `--ftp-password` |
 | `sftp` (`tommy files`)    | `--sftp-port`, `--sftp-host-key`, `--sftp-authorized-keys`, `--sftp-username`, `--sftp-password` |
+| `http` (`tommy as2`)      | `--as2-cert-file`, `--as2-key-file`, `--as2-partner-cert-file`, `--as2-cert-dir`, `--as2-common-name`, `--as2-in-memory`, `--as2-to`, `--as2-max-body` |
 
 `slack` and `msteams` take no provider-specific flags at all: neither reads
 any option beyond `enabled`. Only smtp, ftp and sftp get a `--<provider>-port`
