@@ -150,8 +150,8 @@ printf 'Content-Type: application/edi-x12\r\n\r\nISA*00*...IEA*1*000000001~' > p
 
 openssl cms -sign -in payload.mime -signer partner.crt -inkey partner.key \
         -md sha256 -binary -outform SMIME |
-openssl cms -encrypt -aes-128-cbc -outform SMIME certificate |
-  tail -n +2 |                       # drop the MIME-Version line openssl adds
+openssl cms -encrypt -aes-128-cbc -outform DER certificate |
+  openssl base64 |                   # see the note below on why not -outform SMIME
   curl -s -D - --data-binary @- \
     -H 'AS2-From: PARTNER' \
     -H 'AS2-To: TOMMY' \
@@ -163,6 +163,16 @@ openssl cms -encrypt -aes-128-cbc -outform SMIME certificate |
     -H 'Disposition-Notification-Options: signed-receipt-protocol=optional,pkcs7-signature; signed-receipt-micalg=optional,sha256,sha1' \
     http://localhost:8822/as2
 ```
+
+**Why `-outform DER | openssl base64` rather than `-outform SMIME`.** In AS2 the
+`Content-Type` and `Content-Transfer-Encoding` are *HTTP* headers, so the request
+body is bare base64 with no MIME header block of its own. `openssl cms -encrypt
+-outform SMIME` writes three headers above its body, and the obvious way to get
+rid of them — piping through `tail -n +2` — removes only `MIME-Version` and
+leaves the other two sitting inside the body. Tommy then answers 200 with
+`processed/Error: unexpected-processing-error` and `illegal base64 data at input
+byte 7`, which looks enough like success to waste an afternoon. Asking for DER
+and base64-ing it has no headers to strip and cannot go wrong this way.
 
 `testdata/generate.sh` builds every fixture in this package the same way and is
 the more complete worked example.
