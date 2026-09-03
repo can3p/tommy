@@ -19,6 +19,19 @@ type Deps struct {
 	Logger *slog.Logger
 	Now    func() time.Time
 	NewID  func() string
+
+	// ConfigDir is the directory the config file was read from, and is empty
+	// when the config was built in memory - which is every CLI shortcut, every
+	// test, and `tommy serve` with no -c. It exists for the one thing a
+	// ProviderConfig setting cannot express: where to keep something a provider
+	// generates and then wants back on the next run, such as a self-signed
+	// certificate. "Beside the config" is the only location a user can be
+	// expected to find without being told, so a provider that needs one should
+	// prefer this and fall back to os.UserConfigDir when it is empty.
+	//
+	// It is a directory rather than the file path because nothing should be
+	// tempted to re-read the config through it.
+	ConfigDir string
 }
 
 // WithConfig returns a copy of d carrying a different provider config section.

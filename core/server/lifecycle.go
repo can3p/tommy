@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -190,11 +191,12 @@ func New(opts Options) (*Server, error) {
 	s.reg = reg
 
 	s.baseDeps = plugin.Deps{
-		Store:  s.store,
-		Blobs:  s.blobs,
-		Logger: s.log,
-		Now:    opts.Now,
-		NewID:  opts.NewID,
+		Store:     s.store,
+		Blobs:     s.blobs,
+		Logger:    s.log,
+		Now:       opts.Now,
+		NewID:     opts.NewID,
+		ConfigDir: configDir(cfg.Source),
 	}.Normalize()
 
 	if err := s.bind(); err != nil {
@@ -571,4 +573,24 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	<-ctx.Done()
 	return s.Shutdown(context.WithoutCancel(ctx))
+}
+
+// configDir is the directory a plugin should keep generated state in, derived
+// from the config file this run was loaded from. It is empty for a config
+// built in memory, which is deliberate: there is no obvious place to put a
+// file when the user never named one, so the decision is left to whoever
+// needs it rather than guessed here.
+func configDir(source string) string {
+	if source == "" {
+		return ""
+	}
+	dir := filepath.Dir(source)
+	if dir == "." {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return dir
+		}
+		return abs
+	}
+	return dir
 }
