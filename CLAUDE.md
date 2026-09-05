@@ -55,6 +55,7 @@ compiles the import that fails.
 | `docs/clients.md` | Pointing official vendor SDKs at tommy. |
 | `docs/catalogue.md` | **Index of every plugin and provider**, what each is for, and a link to its own README. Start here when asking whether tommy covers something. |
 | `docs/openapi.json` | The OpenAPI 3.1 description of the **events API**, with `docs/openapi-<plugin>.json` for each plugin's own. **Generated — never edit them**; run `make openapi`. |
+| `website/` | The generator for the published documentation site — its own Go module, rendering the files above. `make website`. |
 | `core/` | Event, store, blob, plugin contracts, config, server (ui/api/ingress), testutil. |
 | `plugins/` | One directory per content type; providers nested under each. |
 | `plugins/all/all.go` | The single shared wiring file. Every plugin and provider is registered here explicitly. |
@@ -122,7 +123,10 @@ them be built in parallel.
     at all. `plugins/as2/identity.go` is the worked example.
 12. **Ship user-facing documentation, not just implementation notes.** Every
     plugin and every provider carries a `README.md` that opens with these three
-    sections, in this order, before any internals:
+    sections, in this order, before any internals. These files are the site's
+    content — `website/` renders them, and its coverage test fails the build if
+    a plugin or provider has none, so this rule is now enforced rather than
+    merely written down:
 
     - **What it is** — what real service this stands in for, and what it
       captures. One short paragraph.
@@ -153,6 +157,14 @@ them be built in parallel.
     otherwise and names the line. Deliberately described nowhere: the fake
     vendor endpoints (the vendors' specifications, not tommy's) and the
     operational routes `/health` and `/plugins`.
+
+14. **Documentation surfaces render the sources; they never restate them.** The
+    site, the catalogue and any future index exist to present the per-component
+    READMEs and the `docs/` files, not to summarise them. Paraphrase counts as
+    duplication: two copies of a claim drift, and neither is obviously the wrong
+    one. If a fact already lives somewhere, render it or link to it — and prefer
+    a generated source (`tommy providers --json`, the OpenAPI documents) over
+    anything hand-maintained.
 
 ## Security invariants — do not weaken these
 

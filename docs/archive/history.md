@@ -954,6 +954,77 @@ mystery. Fixed by rewriting the commit. **Stage deliberately while agents are
 running** - the rule that subagents run no git commands protects the index from
 them, not from you.
 
+## Wave 12 — the documentation site · 2 agents in parallel
+
+**Built:** a static site generated from the repository, in `website/` (its own Go
+module), published to GitHub Pages by `.github/workflows/pages.yml` and built on
+every pull request by `ci.yml`. Forty pages: the root README, the six documents
+under `docs/`, eight plugin and sixteen provider READMEs, and eight API
+reference pages rendered from the OpenAPI descriptions.
+
+**The constraint that shaped it was "reuse the docs, no duplication".** The site
+holds no prose of its own beyond nav labels and two sentences of framing. The
+landing page is a rendered slice of `README.md` and `docs/catalogue.md` plus
+cards built from `tommy providers --json`; there is deliberately **no catalogue
+page**, because the catalogue *is* the landing page and a second copy would be
+the duplication the wave was told to avoid - links to `docs/catalogue.md`
+resolve to the landing page instead. The rule proved itself immediately: a stale
+sample banner in `README.md` became the most prominent thing on the site, and
+fixing the README fixed the site with no second edit.
+
+**Rendering the documentation is a good way to audit it.** Four stale claims
+surfaced that no test could have caught: the quickstart banner listed four
+plugins and no `resend` (the real one lists eight), the error example for an
+unknown provider omitted `resend`, `README.md` described the implementation plan
+as holding the interfaces when `docs/contracts.md` has held them for several
+waves, and the plan's own wave-12 section said fifteen providers when wave 11
+had made it sixteen. All four were reported by the agent and fixed by the
+coordinator, since they were outside the agent's ownership.
+
+**Link rewriting had to happen in the AST, not the HTML.** Repo-relative links
+arrive at four different depths for the same target, inside GFM tables and
+reference definitions, so the generator resolves them as a goldmark
+`ASTTransformer` with the source path carried in the parser context. Rewriting
+rendered HTML would have silently missed the table and reference links, which is
+most of `docs/catalogue.md`. A link to a file the site does not publish becomes a
+GitHub URL *and* is recorded against a three-item allowlist, so it neither 404s
+nor goes unnoticed.
+
+**The drift gate, as in wave 10:** every plugin and provider `tommy providers
+--json` reports must have a page rendering its own README with rule 12's three
+headings; the landing page must link all of them; all 2455 internal links must
+resolve to a file *and* an anchor the site wrote; and a provider whose README is
+missing fails the build. The agent verified it by breaking it four ways and
+reverting each.
+
+**On running it with agents.** Two in parallel this time, on genuinely disjoint
+paths - the generator in `website/`, the workflow and Makefile in `.github/` and
+the root - with the invocation (`cd website && go run . -out ../site`) fixed by
+the coordinator up front so both could build against it without talking. That
+seam is what made parallelism safe; without it the CI job and the generator
+would have disagreed about their own interface.
+
+**The plumbing agent distrusted its own tooling, correctly.** Fetching the Pages
+actions' READMEs returned stale cached renders naming versions three majors
+behind; it went to the tags API and each `action.yml` instead. A workflow pinned
+from those READMEs would have failed on its first run, in the one place this
+project cannot test locally. It also wrote `if [ -f website/go.mod ]` guards
+around the CI steps because the module did not exist while it worked - correct
+then, wrong once the module landed, since a guard that silently passes when the
+module is gone is the drift the wave exists to catch. The coordinator removed
+them.
+
+**Deliberately not built:** screenshots (they go stale silently, which this
+project keeps meeting in other forms), syntax highlighting (a second dependency
+or a JavaScript bundle for something styling already handles), a search box (an
+index and JavaScript for forty pages), and stale-output pruning (deleting the
+contents of a user-supplied directory is worse than a stale file; CI always
+builds into a fresh checkout).
+
+**Blocked on the owner:** Pages must be switched to the *GitHub Actions* source
+in the repository settings before the first deploy can succeed. Nothing in the
+repository can do that for itself.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project
