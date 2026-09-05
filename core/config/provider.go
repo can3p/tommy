@@ -53,6 +53,21 @@ func (p *ProviderConfig) readKnown() {
 	p.Port = p.Int("port", 0)
 }
 
+// withInheritedBind returns the section with `bind` filled in from the
+// top-level config when the section names none of its own. Called by
+// Config.Provider, which is the one place a provider's section is handed out.
+func (p ProviderConfig) withInheritedBind(bind string) ProviderConfig {
+	if bind == "" {
+		return p
+	}
+	if _, ok := p.values["bind"]; ok {
+		return p
+	}
+	values := p.Values()
+	values["bind"] = bind
+	return NewProviderConfig(values)
+}
+
 // Decode unmarshals the whole section into v, a pointer to a struct with `toml`
 // tags. Unknown keys are ignored, so a provider only declares what it needs.
 func (p ProviderConfig) Decode(v any) error {

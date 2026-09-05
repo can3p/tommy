@@ -280,13 +280,23 @@ func (c *Config) ProviderEnabled(plugin, provider string) bool {
 
 // Provider returns the configuration section of a provider, zero value when
 // the config does not mention it.
+//
+// A section that names no `bind` of its own inherits the top-level Bind, which
+// is what makes `--bind 0.0.0.0` mean what it says. Every listener provider
+// resolves its interface with pc.String("bind", DefaultBind), so until this
+// existed the flag reached the three core listeners and nothing else: a
+// container started with --bind 0.0.0.0 published nine ports and answered on
+// three, because SMTP, FTP, SFTP, TFTP, NFS, MLLP and trap all stayed on
+// loopback. An explicit per-provider `bind` still wins, so a config that
+// deliberately faces one listener at another interface is unaffected.
 func (c *Config) Provider(plugin, provider string) ProviderConfig {
-	if pc, ok := c.Plugins[plugin]; ok {
-		if prov, ok := pc.Providers[provider]; ok {
-			return prov
+	pc := ProviderConfig{}
+	if p, ok := c.Plugins[plugin]; ok {
+		if prov, ok := p.Providers[provider]; ok {
+			pc = prov
 		}
 	}
-	return ProviderConfig{}
+	return pc.withInheritedBind(c.Bind)
 }
 
 // SetProvider stores a provider section, creating the plugin section when

@@ -1,0 +1,32 @@
+# The configuration docker-compose.yml mounts at /etc/tommy/tommy.toml.
+#
+# It is deliberately tiny. A mounted config replaces the image's copy of the
+# repository's tommy.toml, and anything it does not mention keeps tommy's own
+# default - so this file only carries the two settings a container genuinely
+# changes, and stays out of the way of everything else. Narrow tommy to one
+# plugin by editing this file (see docs/docker.md), not by adding flags to the
+# compose command: the command carries --bind 0.0.0.0, and overriding it is how
+# you lose that.
+
+[plugins.files.providers.ftp]
+# FTP's passive mode is the one protocol here that tells the client where to
+# connect next, and a container is exactly where that goes wrong. Two settings
+# make it work, and docker-compose.yml has to agree with both:
+#
+#   passive_ports  the range the server picks a data port from. Without it the
+#                  OS picks any free port, which is not published, so the
+#                  client's data connection is refused. The same range is
+#                  published in docker-compose.yml.
+#   passive_host   the address tommy tells the client to dial back. 127.0.0.1
+#                  is right for a client on the docker host itself, since that
+#                  is where the published ports are. A client anywhere else
+#                  needs the host's own reachable address here instead - it is
+#                  the one value tommy cannot work out for itself.
+passive_host  = "127.0.0.1"
+passive_ports = "50000-50009"
+
+[plugins.files.providers.sftp]
+# Keep the SSH host key on the volume. Without this it is generated under the
+# container's home directory and changes every time the container is recreated,
+# which is what makes an sftp client refuse to connect with a host-key warning.
+host_key_path = "/data/sftp_host_ed25519"

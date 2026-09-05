@@ -2,3 +2,7 @@ dist/
 tommy
 coverage.out
 site/
+
+# Scripts extracted from docs/docker.md by the Docker CI job (and by anyone
+# running that extractor locally); never part of the repository.
+ci-docker/

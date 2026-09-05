@@ -1,0 +1,56 @@
+# tommy in a compose stack: every default listener published, a volume for the
+# things tommy generates, and a mounted configuration.
+#
+#   docker compose up -d
+#   curl -s http://127.0.0.1:8822/v3.1/send -u any:any \
+#     -H 'Content-Type: application/json' \
+#     -d '{"Messages":[{"From":{"Email":"a@example.com"},"To":[{"Email":"b@example.com"}],
+#          "Subject":"Hello","TextPart":"It works."}]}'
+#
+# docs/docker.md is the single source for how to run the image; this file is
+# the honest way to express nine published ports plus a volume plus a config
+# mount, and it is what you paste into a stack of your own.
+
+services:
+  tommy:
+    # Override with TOMMY_IMAGE to test a locally built image:
+    #   TOMMY_IMAGE=tommy:local docker compose up -d
+    image: ${TOMMY_IMAGE:-can3p/tommy:latest}
+    container_name: tommy
+    restart: unless-stopped
+
+    # The image's own command already carries --bind 0.0.0.0, the config path
+    # and the AS2 certificate directory, so there is nothing to repeat here.
+    # Overriding `command` is how you lose --bind 0.0.0.0 and make every
+    # published port answer nothing - narrow tommy through the mounted config
+    # below instead.
+
+    ports:
+      # Every port a default tommy listens on. The list comes from
+      # `tommy providers --json` plus the two core listeners; a test holds it
+      # to that answer, so add a listener provider and this file has to follow.
+      - "8811:8811"           # ui + api
+      - "8822:8822"           # ingress: every fake vendor HTTP API
+      - "1025:1025"           # mail/smtp
+      - "2121:2121"           # files/ftp   (control connection)
+      - "50000-50009:50000-50009" # files/ftp: the passive data range pinned in
+                                  # docker/tommy.toml. FTP hands the client an
+                                  # address to dial back, so the range has to be
+                                  # both pinned and published or every transfer
+                                  # hangs on the data connection.
+      - "2222:2222"           # files/sftp
+      - "6969:6969/udp"       # files/tftp
+      - "2049:2049"           # files/nfs
+      - "2575:2575"           # hl7/mllp
+      - "1162:1162/udp"       # snmp/trap
+
+    volumes:
+      # Everything tommy generates rather than captures: the AS2 identity a
+      # partner imports, and the SSH host key an sftp client pins. Captured
+      # events and blobs are in memory by design and are not here.
+      - tommy-data:/data
+      # Read-only on purpose: tommy never writes its configuration.
+      - ./docker/tommy.toml:/etc/tommy/tommy.toml:ro
+
+volumes:
+  tommy-data:
