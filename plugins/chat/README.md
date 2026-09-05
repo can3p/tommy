@@ -197,6 +197,9 @@ posts and immediately fetches sees its own write.
 | `GET /channels` | the derived channel index: message, thread, reply and orphan counts, and the last message |
 | `DELETE /messages` | clears every captured chat message |
 
+Every message carries a `url`: the link to that event's own page in the UI, so
+a client that just posted something can open what it sent.
+
 `?channel=` accepts the provider's channel id, its display name or the derived
 key, because all three appear in API responses.
 

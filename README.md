@@ -45,6 +45,21 @@ Then open `http://127.0.0.1:8811/ui/` to see it in the inbox, or:
 curl -s "http://127.0.0.1:8811/api/v1/events?plugin=mail"
 ```
 
+You do not have to go looking for it, though. **Every response tommy sends
+names what it captured**, so the link is already in your application's log:
+
+```bash
+curl -si http://127.0.0.1:8822/v3.1/send -u any:any \
+  -H 'Content-Type: application/json' -d '{"Messages":[{"From":{"Email":"a@example.com"},
+  "To":[{"Email":"b@example.com"}],"Subject":"Open me","TextPart":"It works."}]}' | grep -i x-tommy
+# X-Tommy-Event-Url: http://127.0.0.1:8811/ui/events/01a07138320d00019f31cb1b
+```
+
+That URL is the mail on a page of its own — the rendered body, the headers, the
+raw request. Every event the API returns carries the same link in its `url`
+field, on `/api/v1/events`, on the SSE stream and on each plugin's own
+read-back API, so a test that just sent something can print where to look at it.
+
 `tommy providers` prints every enabled plugin and provider, its endpoints and
 a ready-to-run snippet for each one, rendered against whatever ports your
 configuration actually bound — useful before you've sent anything at all.
@@ -286,6 +301,9 @@ Everything lives under `/api/v1`, shared by every plugin:
 | `GET /blobs/{id}` | stream an attachment or uploaded file, with range support |
 | `GET /mail/messages`, `/mail/messages/{id}`, `.../html`, `.../text`, `.../raw`, `.../attachments/{idx}` | mail read-back |
 | `GET /sms/messages`, `/sms/messages/{id}`, `.../media/{idx}` | sms read-back |
+
+Every event in those responses carries a `url` naming its own page,
+`GET /ui/events/{id}` — one event, rendered by the plugin that captured it.
 
 `tommy providers [plugin[/provider]] [--json]` prints the same information
 `GET /api/v1/plugins` returns, for scripting or a quick look before you've

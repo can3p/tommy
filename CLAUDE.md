@@ -73,10 +73,17 @@ them be built in parallel.
    never reject unless config pins an expected value. A fake that 401s is useless.
 2. **Respond with the vendor's real response shape** — status, headers, body — so
    official SDKs work unmodified. Verify against **live vendor documentation**,
-   never from memory. This has caught real errors repeatedly.
+   never from memory. This has caught real errors repeatedly. The one exception
+   is `X-Tommy-Event-URL`, which the *ingress* adds to every response naming the
+   page of what it captured; SDKs ignore unknown response headers, and no
+   provider writes it — see rule 4.
 3. **One request may produce several events.** Mailjet `Messages[]`, SendGrid
    `personalizations[]` both fan out. One event per delivered message.
-4. **Always populate `Raw`** with the untouched request.
+4. **Always populate `Raw`** with the untouched request, and **append with the
+   request's own context** (`d.Append(r.Context(), ev)`) — besides cancellation,
+   that is how the new event's id reaches the collector behind
+   `X-Tommy-Event-URL`. Appending with a context of your own still captures; the
+   caller just gets no link back.
 5. **Read-back endpoints serve from the store**, so an SDK that writes then fetches
    sees its own write.
 6. **Ship a `Description()` and at least one working `Snippet()`.** Snippets are Go

@@ -177,6 +177,9 @@ Mounted at `/api/v1/push/`.
 | `DELETE /messages` | clear |
 | `DELETE /messages/{id}` | delete one |
 
+Every message carries a `url`: the link to that event's own page in the UI, so
+a client that just posted something can open what it sent.
+
 Push-specific filters: `displays=true|false`, `kind`, `target_kind`, `target`
 (substring), `app`, `push_type`, `priority` (level or raw), `data_key`. Paging is
 applied after them, so a `limit` never counts messages the filter excluded.
