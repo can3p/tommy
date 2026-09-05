@@ -1,0 +1,175 @@
+/* The palette, type scale and light/dark handling are lifted from tommy's own
+   UI (core/server/ui/static/app.css) so the site and the product look like one
+   thing. */
+:root {
+  --bg: #fbfbfa;
+  --panel: #ffffff;
+  --ink: #1d1f21;
+  --muted: #6b7280;
+  --line: #e4e4e7;
+  --accent: #2f6f4f;
+  --accent-soft: #e6f2ec;
+  --warn: #b45309;
+  --error: #b91c1c;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c; --panel: #1d2025; --ink: #e6e6e6; --muted: #9aa1ab;
+    --line: #2c3037; --accent: #7dc4a0; --accent-soft: #1f2f28;
+    --warn: #e0a458; --error: #ef6b6b;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--sans); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre, .mono { font-family: var(--mono); font-size: 13px; }
+:not(pre) > code {
+  background: var(--accent-soft); border-radius: 4px; padding: 1px 5px;
+  overflow-wrap: anywhere;
+}
+.muted { color: var(--muted); }
+
+/* topbar ---------------------------------------------------------------- */
+.topbar {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding: 10px 18px; background: var(--panel);
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10;
+}
+.brand { font-weight: 600; color: var(--ink); font-size: 17px; }
+.brand:hover { text-decoration: none; }
+.topbar nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.topbar nav a { padding: 4px 10px; border-radius: 6px; color: var(--ink); border: 1px solid transparent; }
+.topbar nav a:hover { background: var(--accent-soft); text-decoration: none; }
+.topbar .spacer { flex: 1; }
+
+/* layout ---------------------------------------------------------------- */
+.layout {
+  display: grid; grid-template-columns: 232px minmax(0, 1fr);
+  gap: 28px; max-width: 1180px; margin: 0 auto; padding: 20px 18px 64px;
+  align-items: start;
+}
+.sidebar { position: sticky; top: 62px; max-height: calc(100vh - 80px); overflow-y: auto; font-size: 14px; }
+.sidebar > summary { display: none; }
+.sidebar h2 {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin: 16px 0 6px; font-weight: 600;
+}
+.sidebar ul { list-style: none; margin: 0; padding: 0; }
+.sidebar li a {
+  display: block; padding: 3px 8px; border-radius: 6px; color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.sidebar li a:hover { background: var(--accent-soft); text-decoration: none; }
+.sidebar li a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.sidebar ul ul { margin-left: 10px; border-left: 1px solid var(--line); padding-left: 4px; }
+.sidebar ul ul a { color: var(--muted); font-size: 13.5px; }
+
+main { min-width: 0; max-width: 62rem; }
+.doc { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px 26px; }
+.doc > :first-child { margin-top: 0; }
+h1 { font-size: 27px; line-height: 1.2; margin: 0 0 14px; }
+h2 { font-size: 20px; margin: 30px 0 10px; padding-top: 4px; }
+h3 { font-size: 16px; margin: 22px 0 8px; }
+h4 { font-size: 15px; margin: 18px 0 6px; }
+p, ul, ol { margin: 0 0 12px; }
+blockquote { margin: 0 0 12px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 26px 0; }
+
+pre {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 11px 13px; overflow-x: auto; margin: 0 0 14px;
+}
+pre code { background: none; padding: 0; }
+
+table { border-collapse: collapse; width: 100%; margin: 0 0 14px; display: block; overflow-x: auto; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+
+.source-note { color: var(--muted); font-size: 12.5px; margin: 0 0 18px; }
+.toc { border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; margin: 0 0 20px; background: var(--bg); }
+.toc > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.toc ul { list-style: none; margin: 8px 0 4px; padding: 0; columns: 2; column-gap: 24px; }
+.toc li { break-inside: avoid; padding: 2px 0; }
+
+.footer { max-width: 1180px; margin: 0 auto; padding: 0 18px 40px; color: var(--muted); font-size: 12.5px; }
+
+/* landing --------------------------------------------------------------- */
+.hero { max-width: 1180px; margin: 0 auto; padding: 44px 18px 10px; }
+.hero h1 { font-size: 40px; letter-spacing: -.01em; }
+.hero .lede { font-size: 17px; }
+.hero .lede p { margin-bottom: 12px; }
+.cta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+.cta a {
+  padding: 7px 14px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--ink);
+}
+.cta a:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.cta a.primary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.landing { max-width: 1180px; margin: 0 auto; padding: 0 18px 64px; }
+.landing section { margin-top: 40px; }
+.landing section > h2 { font-size: 22px; margin-top: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 22px; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.card h3 { margin: 0 0 6px; font-size: 16px; display: flex; align-items: baseline; gap: 8px; }
+.card h3 .title { color: var(--muted); font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: .05em; }
+.card p { margin: 0 0 10px; }
+.card .stands-for { margin: 0 0 10px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12.5px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--muted); white-space: nowrap;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.chip .listener { color: var(--accent); }
+
+/* api reference --------------------------------------------------------- */
+.op { border: 1px solid var(--line); border-radius: 10px; margin: 0 0 14px; background: var(--panel); overflow: hidden; }
+.op-head { padding: 9px 13px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.op-body { padding: 4px 13px 12px; border-top: 1px solid var(--line); }
+.op-body h4 { margin-top: 12px; }
+.method {
+  font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  border: 1px solid var(--accent); color: var(--accent); background: var(--accent-soft);
+  border-radius: 6px; padding: 1px 7px;
+}
+.method.delete { border-color: var(--error); color: var(--error); background: none; }
+.op .path { font-family: var(--mono); font-size: 13.5px; overflow-wrap: anywhere; }
+.op .summary { color: var(--muted); font-size: 13px; flex-basis: 100%; }
+.schema { border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin: 0 0 12px; background: var(--panel); }
+.schema h3 { margin: 0 0 8px; font-family: var(--mono); font-size: 14px; }
+.req { color: var(--warn); font-size: 12px; }
+.servers { list-style: none; padding: 0; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 14px; padding-top: 14px; }
+  .sidebar {
+    position: static; max-height: none; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px;
+  }
+  .sidebar > summary { display: list-item; cursor: pointer; font-weight: 600; }
+  .sidebar[open] > summary { margin-bottom: 6px; }
+  .hero { padding-top: 26px; }
+  .hero h1 { font-size: 32px; }
+  .doc { padding: 16px 15px; }
+  .toc ul { columns: 1; }
+}
+@media (min-width: 861px) {
+  /* The sidebar is a <details> so it can collapse on a phone; on a wide
+     screen it is always open, whatever the element's own state. */
+  .sidebar > :not(summary) { display: block !important; }
+}
+
+dl.providers { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; align-items: baseline; }
+dl.providers dt { font-family: var(--mono); font-size: 13px; }
+dl.providers dd { margin: 0; color: var(--muted); font-size: 13.5px; }
+dl.providers dd p { margin: 0; }
+@media (max-width: 520px) {
+  dl.providers { grid-template-columns: minmax(0, 1fr); gap: 0 0; }
+  dl.providers dd { margin: 0 0 8px; }
+}

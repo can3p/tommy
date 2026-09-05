@@ -269,6 +269,29 @@ third run. Both are cheap; reach for them before calling something flaky.
 
 ## On documentation
 
+**Rendering the documentation is a good way to audit it.** Building a site out of
+the repository's own files surfaced four stale claims in an afternoon that no
+test could have caught: a sample banner listing half the plugins, an error
+message quoting a provider list that had gained a member, a pointer to the wrong
+document for the interfaces, and a count that a previous wave had made wrong.
+Prose rots silently because nothing executes it; putting it somewhere prominent
+is the cheapest executor available.
+
+**A documentation surface should render the sources, never restate them.** The
+site's landing page is a rendered slice of `README.md` and `docs/catalogue.md`
+plus cards from `tommy providers --json`, and there is no catalogue page at all
+because the catalogue *is* that landing page. The test of whether this was done
+right is direct: fixing a stale line in `README.md` fixed the site, with no
+second edit and no chance of the two disagreeing. Paraphrase would have failed
+that test as surely as copying.
+
+**Fix the seam between parallel agents before dispatching them.** Two agents
+built this wave at once - the generator, and the CI workflow that runs it -
+which was only safe because the invocation they share (`cd website && go run .
+-out ../site`) was decided up front and written into both briefs. Disjoint
+directories keep agents from overwriting each other; a fixed interface keeps
+them from building two halves that do not meet.
+
 **Generate a description from the types, and check the generated copy into the
 repository.** Hand-written schemas rot in the one way nothing catches: a field
 added to a response struct is simply missing from the document, and no test can
@@ -441,6 +464,10 @@ is worth it for the same reason.
 
 ## Small things worth remembering
 
+- A tool that fetches a page can hand you a stale cached render. GitHub's Pages
+  actions were reported three majors behind their real versions; the tags API
+  and the action's own `action.yml` were right. When a version number will only
+  be tested in production, check it against something authoritative.
 - `kill`ing a `go run` leaves the built binary running and still holding the
   port. It cost an afternoon's worth of confusion twice now: once as "my change
   did not take effect" and once as an unrelated package failing with
