@@ -15,8 +15,9 @@ Three SDKs, three different amounts of cooperation:
 
 Reading the captures back is a different job from sending them, and it has its
 own description: `GET /api/v1/openapi.json`, or `docs/openapi.json` in this
-repository, is a generated OpenAPI 3.1 document of tommy's own API — enough to
-generate a client for the read-back side in whatever language your tests are in.
+repository, is a generated OpenAPI 3.1 document of the events API — enough to
+generate a client, in whatever language your tests are in, that lists what was
+captured, fetches one in full, or follows the live stream.
 
 Whichever way you point an SDK at tommy, **the response it gets back names what
 tommy captured**: `X-Tommy-Event-URL` carries the link to the event's own page,

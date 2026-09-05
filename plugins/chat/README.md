@@ -190,9 +190,6 @@ written by the application under test and is untrusted.
 Mounted under `/api/v1/chat`; every route reads from the store, so a client that
 posts and immediately fetches sees its own write.
 
-These routes, their filters and their response schemas are also in the machine-readable
-description at `GET /api/v1/openapi.json` (checked in as `docs/openapi.json`).
-
 | Route | Notes |
 |---|---|
 | `GET /messages` | newest first. `?provider=&search=&since=&limit=&offset=` plus the chat-specific `?channel=&author=&thread=&format=&bot=&replies=` |

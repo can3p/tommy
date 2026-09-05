@@ -36,18 +36,6 @@ type Plugin interface {
 	RegisterAPI(mux Mux, d Deps) // mounted under /api/v1/<name>/
 	RegisterUI(mux Mux, d Deps)  // mounted under /ui/<name>/
 	Templates() fs.FS            // embedded templates for the tab; nil is fine
-
-	// APIEndpoints documents every route RegisterAPI mounts, paths relative to
-	// /api/v1/<name>. It is to a plugin's API what Endpoints() is to a
-	// provider's ingress routes, and it is checked the same way: a mounted
-	// route that is not declared, or a declared route that is not mounted,
-	// fails plugintest.Conformance.
-	//
-	// It exists because the OpenAPI description is generated from it. The
-	// routes could be read off the mux on their own, but the prose could not,
-	// and a description kept in one core file drifts the moment somebody adds
-	// a route without opening that file.
-	APIEndpoints() []Endpoint
 }
 
 // Provider imitates one vendor API or protocol.
@@ -94,48 +82,6 @@ type Endpoint struct {
 	Method      string `json:"method"`
 	Path        string `json:"path"`
 	Description string `json:"description"`
-
-	// Query documents the query parameters the route accepts. Optional, and
-	// never exhaustive by contract - an undeclared parameter is not rejected.
-	Query []Param `json:"-"`
-
-	// Response is a zero value of what the route returns, and is what the
-	// OpenAPI schema is generated from. Leave it nil for a route whose body is
-	// not JSON, or whose shape is the vendor's rather than tommy's.
-	Response any `json:"-"`
-
-	// Produces is the response media type when it is not application/json.
-	Produces string `json:"-"`
-
-	// Status is the success status when it is not 200.
-	Status int `json:"-"`
-}
-
-// Param documents one query parameter.
-//
-// These three fields are deliberately all there is: this describes tommy's own
-// read-back API, where every filter is an optional string, an integer or a
-// flag. Anything richer belongs in Description.
-type Param struct {
-	Name        string
-	Description string
-	// Type is "string" (the default), "integer" or "boolean".
-	Type string
-}
-
-// CoreListParams are the filters every listing route inherits from
-// api.ParseQuery. A plugin's list endpoint declares these plus its own, rather
-// than restating them, so the six of them cannot drift apart across eight
-// plugins.
-func CoreListParams() []Param {
-	return []Param{
-		{Name: "provider", Description: "Only events captured by this provider."},
-		{Name: "type", Description: "Only events of this type, such as mail.message."},
-		{Name: "search", Description: "Case-insensitive substring over the summary and type."},
-		{Name: "since", Description: "RFC3339 timestamp, a duration such as 5m, or unix milliseconds."},
-		{Name: "limit", Description: "Maximum number of entries to return.", Type: "integer"},
-		{Name: "offset", Description: "How many entries to skip.", Type: "integer"},
-	}
 }
 
 // ProviderConfig is the per-provider config section handed to a provider in

@@ -40,9 +40,9 @@ type API struct {
 	opts Options
 	mux  *http.ServeMux
 
-	// routes is every route mounted under /api/v1, core and plugin alike.
-	// Plugins register through a recording mux so the server knows what they
-	// mounted, which is what the OpenAPI description is checked against.
+	// routes is every route the core itself mounts, which is what the OpenAPI
+	// description is checked against. A plugin's own routes are not here: they
+	// are the plugin's surface, and the description covers the events API.
 	routes []string
 }
 
@@ -78,14 +78,11 @@ func New(opts Options) (*API, error) {
 
 	if opts.Registry != nil {
 		for _, p := range opts.Registry.Plugins() {
-			sub := plugin.NewRecordingMux()
+			sub := http.NewServeMux()
 			d := opts.Deps.Normalize()
 			d.Logger = d.Logger.With("plugin", p.Name())
 			p.RegisterAPI(sub, d)
 			prefix := "/" + p.Name()
-			for _, pat := range sub.Patterns() {
-				a.routes = append(a.routes, qualify(prefix, pat))
-			}
 			mounted := a.withOrigin(http.StripPrefix(prefix, sub))
 			a.mux.Handle(prefix+"/", mounted)
 			a.mux.Handle(prefix+"/{$}", mounted)
@@ -101,20 +98,10 @@ func (a *API) handle(pattern string, h http.HandlerFunc) {
 	a.mux.HandleFunc(pattern, h)
 }
 
-// Routes returns every route mounted under /api/v1, as "METHOD /path" with the
-// plugin prefix already applied. It is what the OpenAPI drift test compares
-// the description against: a route nobody declared is a route no client can
-// discover.
+// Routes returns the core routes mounted under /api/v1, as "METHOD /path". It
+// is what the OpenAPI drift test compares the description against: a described
+// route that is not mounted is a promise the server does not keep.
 func (a *API) Routes() []string { return append([]string(nil), a.routes...) }
-
-// qualify turns a plugin's own pattern into the path it is reachable at.
-func qualify(prefix, pattern string) string {
-	method, path := "GET", strings.TrimSpace(pattern)
-	if m, rest, ok := strings.Cut(path, " "); ok {
-		method, path = m, strings.TrimSpace(rest)
-	}
-	return method + " " + prefix + path
-}
 
 // Handler returns the API handler, expecting to be mounted at Prefix.
 func (a *API) Handler() http.Handler { return a.mux }

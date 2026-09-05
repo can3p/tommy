@@ -7,7 +7,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/can3p/tommy/core/plugin"
 	"github.com/can3p/tommy/core/server/ui"
 )
 
@@ -16,32 +15,35 @@ import (
 // the checked-in document on every release for no change anyone can act on.
 const APIVersion = "v1"
 
-// specDescription is the top of the document, and the place to say what it does
-// not cover.
-const specDescription = `Tommy captures what an application sent to the services it talks to - mail
-providers, SMS gateways, file transfer, chat webhooks, EDI partners - and this
-is the API for reading it back.
+// specDescription is the top of the document, and the place to say what it
+// does not cover.
+const specDescription = `The events API: everything an application under test needs to read back what it
+sent.
 
-Every captured message is an event. The generic routes below serve all of them;
-each plugin adds routes that serve its own content type in a shape that suits
-it, and both are described here.
+Tommy stands in for the services an application talks to - mail providers, SMS
+gateways, file transfer, chat webhooks, EDI partners - and records every message
+it receives as an event. These routes list those events, fetch one in full,
+stream them as they arrive, delete them, and download the bytes any of them
+carried. Every event names the page that renders it, so a test can print a link
+to what it just sent.
 
-This describes tommy's own API only. The fake vendor endpoints - Mailjet's
-send API, Twilio's, Slack's - live on a separate ingress listener and are
-deliberately absent: they are those vendors' specifications, not tommy's, and a
-partial copy of somebody else's API is worse than none. Run ` + "`tommy providers`" + `
-for those, or read each provider's own documentation.
+Two things are deliberately absent. The fake vendor endpoints - Mailjet's send
+API, Twilio's, Slack's - are those vendors' specifications rather than tommy's,
+and a partial copy of somebody else's API is worse than none; run ` + "`tommy providers`" + `
+for those. And each plugin's own read-back routes (` + "`/api/v1/mail/messages`" + ` and its
+kin) are a convenience on top of these, shaped by the content type rather than
+by a contract worth generating a client from; each plugin's README documents its
+own.
 
-This document is generated from the running server's route table and the
-plugins' own endpoint declarations. It cannot describe a route that does not
-exist, and CI fails if the checked-in copy stops matching the code.`
+This document is generated from the server's route table. It cannot describe a
+route that does not exist, and CI fails if the checked-in copy stops matching
+the code.`
 
 // Spec is an OpenAPI 3.1 document.
 type Spec struct {
 	OpenAPI string       `json:"openapi"`
 	Info    SpecInfo     `json:"info"`
 	Servers []SpecServer `json:"servers,omitempty"`
-	Tags    []SpecTag    `json:"tags,omitempty"`
 	// Security is an empty list on purpose, and it is not an oversight: this
 	// API has no authentication, deliberately, because tommy is a local
 	// development tool holding data an application under test sent to itself.
@@ -65,12 +67,6 @@ type SpecServer struct {
 	Description string `json:"description,omitempty"`
 }
 
-// SpecTag groups operations in a rendered document.
-type SpecTag struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-}
-
 // SpecComponents holds the reusable schemas.
 type SpecComponents struct {
 	Schemas map[string]*Schema `json:"schemas,omitempty"`
@@ -89,7 +85,6 @@ type PathItem struct {
 type Operation struct {
 	OperationID string              `json:"operationId,omitempty"`
 	Summary     string              `json:"summary,omitempty"`
-	Tags        []string            `json:"tags,omitempty"`
 	Parameters  []SpecParameter     `json:"parameters,omitempty"`
 	Responses   map[string]Response `json:"responses"`
 }
@@ -116,49 +111,86 @@ type MediaType struct {
 
 // SpecOptions configures a generated description.
 type SpecOptions struct {
-	// Registry supplies the plugin routes. Nil describes the core alone.
-	Registry *plugin.Registry
 	// ServerURL is what paths are relative to. The checked-in document uses
 	// the relative "/api/v1"; a running server names itself, so a reader can
 	// paste a request straight out of the rendered page.
 	ServerURL string
 }
 
-// coreEndpoints are the routes the core mounts itself. They are declared here,
-// beside the handlers, for the same reason a plugin declares its own: a route
-// and its description drift the moment they live in different files.
-func coreEndpoints() []plugin.Endpoint {
-	eventFilters := append(plugin.CoreListParams(),
-		plugin.Param{Name: "plugin", Description: "Only events from this plugin, such as mail."},
-		plugin.Param{Name: "include_raw", Description: "Include the raw request body, which listings omit because it can be megabytes.", Type: "boolean"},
-	)
-	return []plugin.Endpoint{
-		{Method: "GET", Path: "/health", Description: "Liveness, uptime, the enabled plugins and how many events are held.",
-			Response: HealthInfo{}},
-		{Method: "GET", Path: "/plugins", Description: "Every plugin and provider, with its endpoints and its snippets rendered against the ports this instance actually bound.",
-			Response: []plugin.PluginInfo{}},
-		{Method: "GET", Path: "/openapi.json", Description: "This document, generated from the running server's own routes and describing only the plugins this instance enabled.",
-			Produces: "application/json"},
+// endpoint documents one route of the events API. It is local to this package
+// on purpose: plugin.Endpoint is the *discovery* surface a provider advertises,
+// and this is the input to a generated document. Sharing one struct between the
+// two would put schema and response-code fields on a type that half its users
+// have no use for.
+type endpoint struct {
+	Method      string
+	Path        string
+	Description string
+	// Query documents the query parameters. Never exhaustive by contract: an
+	// undeclared parameter is ignored, not rejected.
+	Query []param
+	// Response is a zero value of the JSON body; the schema is generated from
+	// its type. Nil for a route whose body is not JSON.
+	Response any
+	// Produces is the media type when it is not application/json.
+	Produces string
+	// Status is the success status when it is not 200.
+	Status int
+}
 
-		{Method: "GET", Path: "/events", Description: "Every captured event, newest first, whatever plugin captured it.",
-			Query: eventFilters, Response: []ui.EventJSON{}},
+// param is one query parameter. Three fields is all this API needs: every
+// filter is an optional string, an integer or a flag.
+type param struct {
+	Name        string
+	Description string
+	// Type is "string" (the default), "integer" or "boolean".
+	Type string
+}
+
+// listParams are the filters both listing routes share, declared once so the
+// two cannot drift apart.
+func listParams() []param {
+	return []param{
+		{Name: "plugin", Description: "Only events from this plugin, such as mail."},
+		{Name: "provider", Description: "Only events captured by this provider, such as mailjet."},
+		{Name: "type", Description: "Only events of this type, such as mail.message."},
+		{Name: "search", Description: "Case-insensitive substring over the summary and type."},
+		{Name: "since", Description: "RFC3339 timestamp, a duration such as 5m, or unix milliseconds."},
+		{Name: "limit", Description: "Maximum number of events to return.", Type: "integer"},
+		{Name: "offset", Description: "How many events to skip.", Type: "integer"},
+	}
+}
+
+// eventEndpoints is the whole document: the event surface and the blobs its
+// events point at.
+//
+// Nothing else is here, and that is the scope decision this file exists to
+// record. /health, /plugins and this document's own route are operational
+// details of one server rather than a contract to program against, and a
+// plugin's read-back routes are shaped by its content type - the events API is
+// the one surface every consumer of tommy uses, whatever it is capturing.
+func eventEndpoints() []endpoint {
+	return []endpoint{
+		{Method: "GET", Path: "/events", Description: "Every captured event, newest first, whatever plugin captured it. Raw request bodies are omitted unless asked for: they can be megabytes each.",
+			Query: append(listParams(),
+				param{Name: "include_raw", Description: "Include each event's raw request body.", Type: "boolean"}),
+			Response: []ui.EventJSON{}},
 		{Method: "GET", Path: "/events/{id}", Description: "One event in full, raw request body included.",
 			Response: ui.EventJSON{}},
-		{Method: "GET", Path: "/events/stream", Description: "The same events as they arrive, as Server-Sent Events. Each event produces a JSON frame carrying the event without its raw body, and a frame named after the event type carrying just the id.",
-			Query: eventFilters, Produces: "text/event-stream"},
-		{Method: "DELETE", Path: "/events", Description: "Clear captured events, all of them or one plugin's.",
-			Query:  []plugin.Param{{Name: "plugin", Description: "Clear only this plugin's events."}},
+		{Method: "GET", Path: "/events/stream", Description: "The same events as they arrive, as Server-Sent Events. Each event produces a JSON frame carrying the event without its raw body, and a frame named after the event type carrying just the id, so an htmx page can trigger on it.",
+			Query: listParams(), Produces: "text/event-stream"},
+		{Method: "DELETE", Path: "/events", Description: "Clear captured events, all of them or one plugin's. Stored payloads deliberately survive, so a link to one already handed out keeps working.",
+			Query:  []param{{Name: "plugin", Description: "Clear only this plugin's events."}},
 			Status: http.StatusNoContent},
 		{Method: "DELETE", Path: "/events/{id}", Description: "Delete one captured event.",
 			Status: http.StatusNoContent},
-
-		{Method: "GET", Path: "/blobs/{id}", Description: "One stored payload - an attachment, an uploaded file - streamed with range support.",
-			Query:    []plugin.Param{{Name: "inline", Description: "Serve with an inline Content-Disposition rather than as a download.", Type: "boolean"}},
+		{Method: "GET", Path: "/blobs/{id}", Description: "The bytes an event carried - a mail attachment, an uploaded file - streamed with range support. Events reference these by the id in their payload rather than inlining them.",
+			Query:    []param{{Name: "inline", Description: "Serve with an inline Content-Disposition rather than as a download.", Type: "boolean"}},
 			Produces: "application/octet-stream"},
 	}
 }
 
-// BuildSpec generates the OpenAPI description.
+// BuildSpec generates the OpenAPI description of the events API.
 func BuildSpec(opts SpecOptions) *Spec {
 	if opts.ServerURL == "" {
 		opts.ServerURL = Prefix
@@ -167,50 +199,28 @@ func BuildSpec(opts SpecOptions) *Spec {
 	spec := &Spec{
 		OpenAPI: "3.1.0",
 		Info: SpecInfo{
-			Title:       "tommy",
+			Title:       "tommy events API",
 			Version:     APIVersion,
 			Description: specDescription,
 		},
 		Servers:  []SpecServer{{URL: opts.ServerURL, Description: "This tommy's API."}},
 		Security: []map[string][]string{},
-		Tags:     []SpecTag{{Name: "core", Description: "Events, blobs, discovery: everything that is not one plugin's own."}},
 		Paths:    map[string]PathItem{},
 	}
-
-	for _, e := range coreEndpoints() {
-		spec.add("", e, b)
+	for _, e := range eventEndpoints() {
+		spec.add(e, b)
 	}
-
-	if opts.Registry != nil {
-		for _, p := range opts.Registry.Plugins() {
-			endpoints := p.APIEndpoints()
-			if len(endpoints) == 0 {
-				continue
-			}
-			spec.Tags = append(spec.Tags, SpecTag{Name: p.Name(), Description: p.Description()})
-			for _, e := range endpoints {
-				spec.add(p.Name(), e, b)
-			}
-		}
-	}
-
 	spec.Components = SpecComponents{Schemas: b.Components()}
 	return spec
 }
 
-// add mounts one endpoint on the document. plugin is "" for a core route.
-func (s *Spec) add(pluginName string, e plugin.Endpoint, b *schemaBuilder) {
+// add mounts one endpoint on the document.
+func (s *Spec) add(e endpoint, b *schemaBuilder) {
 	path := specPath(e.Path)
-	tag := "core"
-	if pluginName != "" {
-		path = "/" + pluginName + path
-		tag = pluginName
-	}
 
 	op := &Operation{
 		OperationID: operationID(e.Method, path),
 		Summary:     e.Description,
-		Tags:        []string{tag},
 		Responses:   map[string]Response{},
 	}
 	for _, name := range pathParams(path) {
@@ -389,10 +399,7 @@ func (s *Spec) JSON() ([]byte, error) {
 // openapi serves the description of this running server, including only the
 // plugins this instance actually enabled.
 func (a *API) openapi(w http.ResponseWriter, r *http.Request) {
-	spec := BuildSpec(SpecOptions{
-		Registry:  a.opts.Registry,
-		ServerURL: a.serverURL(r),
-	})
+	spec := BuildSpec(SpecOptions{ServerURL: a.serverURL(r)})
 	body, err := spec.JSON()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
