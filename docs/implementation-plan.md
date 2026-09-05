@@ -56,6 +56,10 @@ and fifteen providers, each capturing one more thing. Waves 9–12 build the
 only wave 11 adds a provider. The protocol backlog is still there, renumbered,
 behind them.
 
+**Wave 9 is built** and is on `feat/event-page`: every event has a page at
+`/ui/events/{id}`, every API representation of an event carries its `url`, and
+an ingress response names what it captured in `X-Tommy-Event-URL`.
+
 ## 2. The scoping rule
 
 It does most of the sorting, so it comes first.
@@ -101,27 +105,30 @@ reasoning; `CLAUDE.md` has the rules.
 Model guidance: contract-defining and subtle-parsing work to the stronger model;
 well-specified translation against a fixed contract to the cheaper one.
 
-## 4. The order of the next four waves
+## 4. The order of the remaining surface waves
 
-Waves 9–12 are the surface work. They are nearly independent, and the couplings
-that do exist are worth knowing before anything is scheduled:
+Waves 10–12 are what is left of the surface work; **wave 9 is built** and is in
+`docs/archive/history.md`. The couplings that remain:
 
-- **Wave 9 before wave 10.** Wave 9 adds a field to the event representation.
-  Writing the OpenAPI description first would mean describing a surface that is
-  about to change, and the first thing the new drift gate caught would be its
-  own author.
 - **Wave 10 before wave 12.** The website renders the API reference from the
   spec. Without it, wave 12 either omits the API or hand-writes it, and
   hand-writing it is the thing wave 10 exists to prevent.
-- **Wave 11 is independent** of all three and can run in parallel on its own
-  branch. It touches `plugins/mail/**`, `cmd/mail.go`, `plugins/all/all.go` and
-  `test/integration/**` — none of which waves 9, 10 and 12 own — with one
-  exception to watch: wave 10 may add an `APIEndpoints()` method to the `Plugin`
-  interface, which touches `plugins/mail/plugin.go`. A provider does not
-  implement `Plugin`, so the collision is a rebase at worst.
+- **Wave 10 now has more surface to describe than it did.** Wave 9 added a
+  `url` field to every event the API returns and to both SSE streams, a
+  `url` on every plugin's read-back resource, and the ingress response header
+  `X-Tommy-Event-URL`. The first two belong in the spec; the header does not,
+  since it rides on the fake vendor endpoints the spec deliberately excludes —
+  say so rather than leaving a reader to wonder.
+- **Wave 11 is independent** of both and can run in parallel on its own branch.
+  It touches `plugins/mail/**`, `cmd/mail.go`, `plugins/all/all.go` and
+  `test/integration/**` — with one exception to watch: wave 10 may add an
+  `APIEndpoints()` method to the `Plugin` interface, which touches
+  `plugins/mail/plugin.go`. A provider does not implement `Plugin`, so the
+  collision is a rebase at worst. Note that a new provider now gets the event
+  link for free: it is the ingress that adds the header, not the provider.
 - **Nothing here blocks waves 13 and 14**, and nothing there blocks these. If a
   protocol is wanted sooner than the surface work, take it; the ordering above
-  is internal to waves 9–12.
+  is internal to waves 10–12.
 
 Each of these waves also has a *keep it true* half — a generated artifact plus a
 test that fails when it stops matching the code. That half is the deliverable,
@@ -129,126 +136,6 @@ not the polish: a spec or a website that is updated by remembering to update it
 is one that is wrong within two waves. Where a wave adds such a gate, it also
 adds the `CLAUDE.md` rule that names it, because the rule is what survives into
 the next session.
-
----
-
-## Wave 9 — the event page and the link that reaches it
-
-**Goal.** Every captured event gets a page of its own at a stable URL, and every
-API representation of an event carries that URL. The motivating case is the
-smallest one: an application sends a mail through the fake vendor API during
-local development, and the developer wants to *open the mail* — not the inbox,
-not a filtered list, the mail — without hunting for it.
-
-Today the pieces are nearly there and none of them join up. `/ui/events/{id}`
-and `/ui/mail/messages/{id}` already exist, but they answer a browser with the
-whole tab and the row merely selected (`eventview.go`, `detail`), which is a
-deep link into a list rather than a page for one thing. The API never mentions
-a URL at all, so nothing an SDK or a script gets back leads anywhere.
-
-### Tasks
-
-| Task | Owns | Must not touch |
-|---|---|---|
-| **1. The standalone page** | `core/server/ui/**` | `core/server/api/**`, plugin dirs |
-| **2. The link in the API** | `core/server/api/**`, `core/server/sse/**` | `core/server/ui/**` |
-| **3. The link in plugin APIs** | `plugins/*/api.go` | core |
-| **4. The link on the way out** (optional, see below) | `core/server/ingress/**`, `core/plugin/deps.go` | providers |
-
-Tasks 1 and 2 are one agent each and can run in parallel: they meet only at the
-URL shape, which is fixed below before either starts. Task 3 follows task 2,
-because it consumes the helper task 2 writes. Task 4 is independent of all
-three and is the one to drop if the wave is running long.
-
-### 1. The standalone page
-
-`GET /ui/events/{id}` becomes the canonical page for one event, whatever plugin
-produced it. Requirements:
-
-- **The htmx fragment behaviour is preserved.** `ui.IsPartial` already
-  distinguishes an `HX-Request` from a browser navigation; the fragment path
-  stays exactly as it is, so in-tab selection is untouched.
-- **The full-page branch stops rendering the list.** It renders the event: the
-  header (plugin, provider, type, received-at, summary), the body, the
-  attachments and blob links, a *back to the `<plugin>` tab* link, and
-  previous/next within the same plugin so an inbox can be walked from the page.
-- **A plugin's own view is used when it has one.** A mail event must show the
-  rendered message, not a JSON dump. Recommended mechanism: the core handler
-  dispatches an **in-process sub-request** to the plugin's existing fragment
-  route (`/ui/<plugin>/events/{id}` with `HX-Request: true`) through the mounted
-  UI handler and embeds the result. That route already exists for every plugin —
-  claimed by the plugin, or filled in by the generic view — so this adds no
-  interface and no per-plugin work. The alternative, an `hx-get` div that loads
-  the fragment client-side, was rejected: a pasted link should render without
-  JavaScript.
-- **An event whose plugin is disabled or unknown still renders**, through the
-  generic inspector.
-- The security invariants are unchanged and are the reason this is core work:
-  an HTML mail body is still served from its own API route under the restrictive
-  CSP and framed sandboxed, and everything else is still interpolated as a plain
-  string.
-
-### 2. The link in the API
-
-`GET /api/v1/events`, `GET /api/v1/events/{id}` and the SSE stream each gain a
-`url` field on every event.
-
-Three decisions worth making once, in this order of consequence:
-
-- **The field does not go on `event.Event`.** Events are immutable and stored;
-  a URL baked into a stored event would be a UI concern in the store contract
-  and would be wrong the moment a port moves. Add it in an API-level envelope
-  that embeds `*event.Event` — `encoding/json` inlines the embedded fields, so
-  the wire shape gains exactly one key.
-- **The URL is absolute.** The caller is usually talking to the *ingress*, on a
-  different port from the UI, so a relative path is not something it can turn
-  into a link. Build it from `SnippetCtx().UIURL`, which `api.Options` already
-  carries and which knows the configured host and UI port
-  (`core/server/lifecycle.go:533` builds the same thing for the startup banner).
-  Fall back to the request's `Host` when the configured host is empty.
-- **One helper, used everywhere.** Export it from core (`ui.EventURL`, or
-  `api.EventURL` if it reads better) so tasks 3 and 4 and any future plugin
-  produce identical links.
-
-### 3. The link in plugin APIs
-
-`GET /api/v1/mail/messages` is what a developer polling for "did my mail
-arrive" actually calls, so a `url` there is the one that serves the motivating
-case. Every plugin API route that returns event-shaped items gets the same
-field from the same helper. Mail is the one that matters; do the rest for
-consistency, and say in each README that it is there.
-
-### 4. The link on the way out (optional)
-
-The zero-call version of the use case: the response to the send itself carries
-`X-Tommy-Event-URL`, so an application's own logs contain a clickable link with
-nothing added to the application. Vendor SDKs ignore unknown response headers,
-so this does not violate the "respond with the vendor's real response shape"
-rule, but it *is* a deliberate deviation and must be recorded as one.
-
-Mechanism, so this does not become an edit to fifteen providers: ingress
-middleware puts a collector in the request context; `Deps.Append` already takes
-a `context.Context` and can record the id it just assigned into that collector;
-the middleware wraps the `ResponseWriter` and sets the header before the first
-write. Providers that pass `r.Context()` to `Append` need no change, and a
-spot-check of `mailjet`, `sendgrid` and `msteams` says every HTTP provider does
-(each opens its handler with `ctx := r.Context()`) — confirm the remaining ones
-before building on it.
-
-Listener providers have no HTTP response to carry a header, so for SMTP, FTP,
-MLLP and friends the equivalent is a log line at info level naming the URL. A
-one-line "captured, see <url>" per event is a plausible default for a local
-development tool and an annoyance in CI; if it is not obviously right, leave it
-out and say so.
-
-### Done when
-
-Everything in `CLAUDE.md` → *Finishing a wave*, plus specifically: the
-`docs/contracts.md` section on the API surface names the `url` field and where
-it comes from; `README.md`'s quickstart shows the link (it is the most
-persuasive thing on that page); and any plugin whose UI or API changed has its
-own README corrected. If task 4 lands, `CLAUDE.md`'s rule 2 gains a sentence
-naming `X-Tommy-Event-URL` as the one header tommy adds that no vendor sends.
 
 ---
 
@@ -527,6 +414,20 @@ Independent of each other and of the protocol work; each is one agent.
 | **Upstream: kleiner** | — | Fix `MaybeNotifyAboutNewVersion` in `can3p/kleiner`: it prints the error and falls through to dereference a nil version, panicking a released binary at startup when GitHub is unreachable. Second latent deref on the same path. Affects every project scaffolded from kleiner. |
 
 ## Backlog — small, unblocked, good first tasks
+
+- **Listener providers hand out no event link.** Wave 9 answers every *ingress*
+  response with `X-Tommy-Event-URL`, but SMTP, FTP, SFTP, TFTP, NFS, MLLP and
+  the trap receiver have no response that can carry a header. The equivalent
+  would be a log line naming the URL of each captured event — genuinely useful
+  in local development, noise in CI, and it needs the UI origin plumbed into
+  `Deps`, which nothing else wants. Deliberately not built rather than guessed
+  at; if it is wanted, make it a flag rather than a default.
+- **The event page renders the plugin fragment on every request.** It dispatches
+  an in-process sub-request to `/ui/<plugin>/events/{id}`. That is cheap today
+  because every such route reads one event from the store, and it is a
+  requirement on plugin authors now written into `docs/contracts.md`: keep the
+  fragment route side-effect free. If a plugin ever needs something expensive
+  there, the page is where it will show.
 
 - **NFS event granularity.** One logical upload over NFS is a CREATE plus one
   `files.upload` per WRITE chunk, because NFS has no open/close on the wire and

@@ -160,6 +160,11 @@ sends and immediately fetches sees its own write.
 | `GET /messages/{id}/attachments/{idx}` | streams the blob with the right `Content-Type` and `Content-Disposition`; range requests supported; `?inline=1` / `?download=1` |
 | `DELETE /messages` | clears every captured message; attachment blobs deliberately survive |
 
+Every message carries a `url`: the link to that mail's own page. It is the
+answer to the question this plugin exists for — the application sends a password
+reset in local development, prints the link from the response header or from
+`GET /api/v1/mail/messages`, and the developer opens the mail itself.
+
 ## UI
 
 `/ui/mail/` is a three-pane inbox: the message list, a header table, and the

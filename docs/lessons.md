@@ -207,6 +207,34 @@ on, is worth doing before planning a wave around a dependency.
 
 ## On the runtime
 
+**A route two clients disagree about is better than two routes.** `/ui/events/{id}`
+serves htmx a fragment and a browser a page, off one registration, because htmx
+announces itself with `HX-Request`. The alternative — a second URL for the page —
+would have meant every link in the product choosing between them, and every
+plugin's list rows choosing again. One canonical URL per thing is worth some
+branching inside the handler.
+
+**Before adding an interface to a plugin contract, check whether the plugin
+already answers the question over HTTP.** The event page needs each plugin's own
+rendering of an event, which looked like an optional `EventRenderer` on
+`Plugin`: eight implementations, and awkward because the renderer needs the
+`Deps` a plugin only sees inside `RegisterUI`. But every plugin already serves
+that rendering as an htmx fragment, so the page dispatches an in-process request
+to the mounted handler and embeds the result. No interface, no plugin changes,
+and a plugin that answers with nothing degrades to the generic view. The cost is
+one small `http.ResponseWriter` recorder — `net/http/httptest` is a testing
+package and has no business in a shipped binary — and a standing requirement
+that the fragment route stay side-effect free.
+
+**A cross-cutting field is cheaper to add through the request context than
+through `Deps`.** Plugin API handlers needed the server's UI origin, which
+`Deps` does not carry and cannot: `Deps` holds a `ProviderConfig`, and the
+addresses are not known until listeners bind. Middleware puts the value in the
+request context and an exported helper reads it, degrading to a sensible default
+when it is absent — which is also what makes a handler mounted on a bare mux in
+a test still work. The UI had already used the same trick for its `Shell`.
+
+
 **A graceful shutdown must close connections that never asked for anything.**
 `http.Server.Shutdown` will not call itself quiescent while any connection is in
 `StateNew`, and only writes one off after five seconds — longer than any
@@ -346,6 +374,13 @@ because file writes had already landed. Checkpoint-committing a wave in progress
 is worth it for the same reason.
 
 ## Small things worth remembering
+
+- `kill`ing a `go run` leaves the built binary running and still holding the
+  port. It cost an afternoon's worth of confusion twice now: once as "my change
+  did not take effect" and once as an unrelated package failing with
+  `bind: address already in use` on a *client* source port. Build to a temporary
+  path and run that, or kill by port (`lsof -ti tcp:PORT | xargs kill`), and
+  check the process is gone before concluding anything about a test.
 
 - A `net/http.ServeMux` wildcard must occupy a whole path segment. `{Sid}.json`
   panics at registration; capture the segment and trim the suffix.
