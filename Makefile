@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt run check openapi
+.PHONY: build test lint fmt run check openapi website
 
 build: ## Build the tommy binary
 	go build -o tommy .
@@ -21,6 +21,9 @@ openapi: ## Regenerate the checked-in OpenAPI descriptions: the events API and e
 		echo "TOMMY_NO_UPDATE_CHECK=1 go run . openapi $$p > docs/openapi-$$p.json"; \
 		TOMMY_NO_UPDATE_CHECK=1 go run . openapi $$p > docs/openapi-$$p.json; \
 	done
+
+website: ## Build the static site into ./site
+	cd website && go run . -out ../site
 
 check: ## Run everything CI runs
 	@unformatted="$$(gofmt -l .)"; \
