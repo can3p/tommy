@@ -153,6 +153,9 @@ is greedy rather than a division: 153 `€` characters are 306 septets but need
 
 Mounted under `/api/v1/sms/`.
 
+These routes, their filters and their response schemas are also in the machine-readable
+description at `GET /api/v1/openapi.json` (checked in as `docs/openapi.json`).
+
 | Route | Notes |
 |---|---|
 | `GET /messages` | newest first; `search`, `provider`, `type`, `since`, `limit`, `offset`, plus `to`, `from`, `status`, `direction`, `encoding`, `mms` |

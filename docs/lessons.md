@@ -259,6 +259,31 @@ third run. Both are cheap; reach for them before calling something flaky.
 
 ## On documentation
 
+**Generate a description from the types, and check the generated copy into the
+repository.** Hand-written schemas rot in the one way nothing catches: a field
+added to a response struct is simply missing from the document, and no test can
+assert about prose nobody wrote. Reflection over the response types costs about
+150 lines and removes the failure mode entirely. The checked-in copy is then a
+build product — which is exactly the arrangement that goes stale, so a test
+regenerates it and fails with the command that fixes it.
+
+**A generated document is not a valid document until a real validator says so.**
+Running `npx @redocly/cli lint` over the generated OpenAPI file found two errors
+that reading the specification had not: `{path...}` is Go's wildcard syntax and
+not OpenAPI's, so several routes described a parameter no client would bind, and
+an API with no authentication has to declare an empty `security` or a reader
+assumes a scheme was forgotten. Both were invisible to every test in the repo,
+because the tests knew only what the generator knew. Warnings that would need an
+invented response to silence were left standing instead.
+
+**Extend a rule before inventing a second one.** The plugin API needed exactly
+what rule 7 already said about provider ingress routes — declared and mounted
+must match — so it became the same rule applied to a second surface rather than
+a new concept. It found three real defects in the first run, one of which was a
+core helper (`Pattern.Key()` drops the method) being right for the ingress and
+wrong here.
+
+
 **Ask who the reader is, not whether the file exists.** Every component but one
 had a README, several of them long — and they were written for the next
 implementer. Canonical models, internal seams, locking. Three plugins had no

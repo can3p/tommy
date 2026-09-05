@@ -169,6 +169,9 @@ every field.
 
 Mounted at `/api/v1/push/`.
 
+These routes, their filters and their response schemas are also in the machine-readable
+description at `GET /api/v1/openapi.json` (checked in as `docs/openapi.json`).
+
 | Route | Notes |
 |---|---|
 | `GET /messages` | the core's `?plugin=…&search=…&since=…&limit=&offset=` plus the filters below |
