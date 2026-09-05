@@ -891,6 +891,69 @@ status bar, and a per-plugin link would need the how-to-test panel to learn the
 API base or the shell to learn which plugins have a document. Neither is hard;
 it is in the backlog rather than half-wired.
 
+## Wave 11 — the Resend provider · 2 agents, sequenced
+
+**Built:** `plugins/mail/providers/resend`, a fake for api.resend.com -
+`POST /emails`, `POST /emails/batch`, `GET /emails/{id}` served from the store -
+with CLI flags, a `tommy.toml` block, a README whose commands were run, four
+integration tests driving the official Go SDK, and a `docs/clients.md` section.
+
+**Reading the vendor's SDK beat reading the vendor's reference, three times
+over.** The REST documentation says attachment `content` is base64. The official
+Go SDK's `Attachment.MarshalJSON` sends a **JSON array of integers** instead, so
+a base64-only fake would have failed silently against the client most likely to
+be pointed at tommy. The provider accepts three spellings - base64, an int
+array, and the `{"type":"Buffer","data":[…]}` an unconverted Node `Buffer`
+produces. Two more of the same kind: `created_at` is not RFC 3339 but a
+Postgres-style `"2026-04-03 22:13:42.674981+00"`, and the error body shape
+`{name, message, statusCode}` appears **nowhere** in Resend's error reference -
+it was recovered from the Node SDK's own response fixtures, along with the
+verbatim messages. Rule 2 says verify against live documentation; this wave
+sharpens it to *live sources*, of which the vendor's own client is often the
+most honest.
+
+**The recipient union is real and asymmetric.** `to`, `cc`, `bcc` and
+`reply_to` are each a string or an array, and `resend-go` genuinely sends arrays
+for the first three and a bare string for the fourth **in the same request**,
+then reads `reply_to` back as an array. One integration test exercises exactly
+that shape, because it is the thing most likely to break and the reason the
+provider carries a custom decoder.
+
+**Ids are mapped, not indexed.** Resend addresses an email by UUID; tommy's
+event ids are 24 hex characters. The provider lays the event id into the free
+nibbles of a v4 UUID behind a fixed marker, so every id it mints is a
+syntactically valid v4 UUID, a foreign UUID fails to decode into `404`, and a
+malformed one is `422` - which is the distinction the real API draws. Same
+technique as twilio's `sidFor`/`idFromSid`, no second index.
+
+**`last_event` defaults to `"delivered"`,** which is a scenario-shaped decision
+made deliberately: tommy simulates no lifecycle, and `"sent"` would leave a
+client polling for a terminal state spinning forever. A fixed terminal answer is
+the mechanical reply that lets the client proceed, and it is configurable.
+
+**Deliberately absent, all documented:** `path` attachments are never fetched
+(tommy makes no outbound requests, so the URL is recorded and nothing is
+stored), `Idempotency-Key` never deduplicates, nothing is scheduled, templates
+render nothing, and the batch `errors[]` array is never populated - it only
+appears under permissive validation and reports per-entry state (unverified
+domain, suppression, quota) that tommy does not keep.
+
+**On running it with agents.** Two, sequenced rather than parallel: the provider
+first, then the integration test that depends on it, the second on the cheaper
+model since it was well-specified work against a contract that already existed.
+Both reported accurately. The coordinator verified rather than trusted - the
+attachment claim was checked against the SDK source, the provider was driven by
+hand with an SDK-shaped payload, a README snippet and the documented Go program
+were both run verbatim - and found nothing wrong.
+
+**The one thing that did go wrong was the coordinator's.** Committing with
+`git add -A` while an agent was still working swept that agent's in-flight
+`test/integration/go.mod` edit into an unrelated documentation commit, where it
+appeared as an unexplained indirect dependency; the agent duly reported it as a
+mystery. Fixed by rewriting the commit. **Stage deliberately while agents are
+running** - the rule that subagents run no git commands protects the index from
+them, not from you.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project
