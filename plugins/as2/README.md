@@ -193,6 +193,9 @@ Under `/api/v1/as2/`:
 | `GET /identity` | Which certificate is in use, from where, and its fingerprint. |
 | `DELETE /messages`, `DELETE /messages/{id}` | Clear. |
 
+Every message carries a `url`: the link to that event's own page in the UI, so
+a client that just posted something can open what it sent.
+
 The tab is at `/ui/as2/`.
 
 ## Trying it

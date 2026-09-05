@@ -244,11 +244,23 @@ type Deps struct {
 func (d Deps) Normalize() Deps                       // fills Now/NewID/Logger
 func (d Deps) WithConfig(pc ProviderConfig) Deps
 func (d Deps) WithLogger(args ...any) Deps
-func (d Deps) Append(ctx context.Context, e *event.Event) error // stamp + store
+func (d Deps) Append(ctx context.Context, e *event.Event) error // stamp + store + collect
+
+// The collector behind that last step. Nothing in a provider touches it.
+type EventCollector struct{ ... }
+func NewEventCollector() *EventCollector
+func (c *EventCollector) IDs() []event.ID
+func WithEventCollector(ctx context.Context, c *EventCollector) context.Context
+func EventCollectorFrom(ctx context.Context) *EventCollector
 ```
 
 Templates rendered with `missingkey=error`, so a typo in a snippet is a failure
 rather than a blank.
+
+**Pass the request's own context to `Append`.** Besides cancellation, it is how
+the id reaches the collector the ingress put there, and therefore how the
+response gets its `X-Tommy-Event-URL`. A provider that appends with a context of
+its own still works; its caller just gets no link.
 
 **`ConfigDir` is the directory the config file was read from**, and is empty for
 every CLI shortcut, every test, and `tommy serve` with no `-c`. It exists for
@@ -404,7 +416,9 @@ it from the command line and found nothing listening.
 ## `core/server/ingress`
 
 ```go
-func New(logger *slog.Logger) *Ingress
+func New(logger *slog.Logger, opts ...Option) *Ingress
+func WithEventURL(f func(event.ID) string) Option
+const LinkHeader = "X-Tommy-Event-URL"
 func (i *Ingress) For(plugin, provider string) plugin.Mux
 func (i *Ingress) Mount(reg *plugin.Registry, base plugin.Deps) error
 func (i *Ingress) Err() error
@@ -431,6 +445,19 @@ Unmatched ingress requests get a 404 whose body lists every enabled provider,
 its endpoints and a pointer to `tommy providers` — text, or JSON for a JSON
 client.
 
+**Every provider response carries `X-Tommy-Event-URL`**, once per event that
+request produced, naming the page of what was captured. It is the one header
+tommy sends that no vendor does, and it is deliberate: an application's own log
+then contains the link with nothing added to the application, and SDKs ignore
+response headers they do not know. **No provider implements it.** Middleware
+puts a `plugin.EventCollector` in the request context, `Deps.Append` records the
+id it assigned, and the wrapper stamps the header before the first write — so a
+provider gets this for free precisely as long as it passes `r.Context()` to
+`Append`, which is how they are all written. `WithEventURL` takes a function
+rather than a base URL because listener ports are not known when the ingress is
+built. Without it — every test that constructs an ingress of its own — handlers
+are left untouched.
+
 ## `core/server/api` — `/api/v1`
 
 | Route | Notes |
@@ -449,13 +476,43 @@ client.
 minutes"), or unix milliseconds. **Listings omit `Raw.Body`** — they can be
 megabytes each; pass `include_raw=1` or fetch the single event.
 
+**Every event the API returns carries a `url`**: the absolute link to its own
+page, on `/events`, `/events/{id}` and both SSE streams. It is not a field of
+`event.Event` — events are immutable and stored, and a URL on one would put a UI
+concern in the store contract and be wrong the moment a port moved — but of an
+envelope that embeds the event, so the wire shape gains exactly one key:
+
+```go
+// core/server/ui
+func EventURL(origin string, id event.ID) string // origin "" ⇒ site-relative
+func Origin(uiURL string, r *http.Request) string
+type EventJSON struct { *event.Event; URL string `json:"url,omitempty"` }
+func WithURL(e *event.Event, origin string) EventJSON
+func WithURLs(events []*event.Event, origin string) []EventJSON
+
+// core/server/api — for a plugin's own read-back handlers
+func EventURL(r *http.Request, id event.ID) string
+```
+
+The link is **absolute**, built from the configured UI URL rather than the
+request host, because the caller is usually talking to the ingress — on a port
+with no UI on it. `api.EventURL` reads an origin the core puts in the request
+context when it mounts a plugin's API, because a plugin handler has no other way
+to learn it: `Deps` carries a `ProviderConfig`, not the server's addresses. It
+degrades to a site-relative path outside the server, so a handler mounted on a
+bare mux in a test still returns something usable.
+
+**A plugin API that returns event-shaped resources must carry the same `url`
+field**, built from `api.EventURL`. All six that have one do.
+
 ### SSE frame format
 
 Each event produces two frames:
 
 ```
 id: <event id>
-data: {"id":"…","plugin":"mail",…}     ← default "message" frame, full JSON, no Raw.Body
+data: {"id":"…","plugin":"mail",…,"url":"http://…/ui/events/…"}
+                                        ← default "message" frame, no Raw.Body
 
 event: mail.message
 data: <event id>                        ← named frame, for hx-trigger="sse:mail.message"
@@ -463,6 +520,10 @@ data: <event id>                        ← named frame, for hx-trigger="sse:mai
 
 Plus `: ping` every 25s. Any plain `EventSource` gets everything through
 `onmessage`; htmx triggers on the type-named frame.
+
+`sse.Options.Envelope func(*event.Event) any` replaces the JSON payload of the
+data frame; it is how the `url` gets there. Core needs no envelope of its own,
+and the `sse` package does not know what the wrapper is.
 
 ## `core/server/ui` — `/ui`
 
@@ -478,12 +539,25 @@ claim falls back to the generic event view**, probed route by route:
 |---|---|
 | `GET /{$}` | the generic page |
 | `GET /list` | the list fragment |
-| `GET /events/{id}` | the detail fragment (full page on a deep link) |
+| `GET /events/{id}` | the detail fragment |
 | `DELETE /events` | clear, returning the list fragment |
 
 So a new protocol plugin is useful on day one with zero UI code, and a bespoke
 tab is an upgrade rather than a prerequisite. `/ui/` itself is the cross-plugin
 overview.
+
+**`GET /ui/events/{id}` is one event's own page**, whatever plugin captured it:
+the canonical link, and what every `url` in the API points at. htmx asking the
+same URL still gets the detail fragment, so selecting a row inside a tab is
+unchanged and only a browser navigation renders a page.
+
+The page shows **the owning plugin's own detail** by dispatching an in-process
+request to that plugin's `/ui/<plugin>/events/{id}` fragment route with
+`HX-Request: true`, and embedding the result. A plugin therefore needs to
+implement nothing: the route it already serves — or the generic one filled in
+for it — is what renders. A plugin that answers with an error or nothing falls
+back to the generic inspector. **Keep that fragment route free of side effects
+and cheap**, because the page calls it on every render.
 
 For a plugin handler:
 

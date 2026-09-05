@@ -13,6 +13,12 @@ Three SDKs, three different amounts of cooperation:
 | **sendgrid-go** (`github.com/sendgrid/sendgrid-go`) | First class, via a different entry point | Build the request with `sendgrid.GetRequest(key, endpoint, host)` instead of `sendgrid.NewSendClient(key)`, which hardcodes the real host |
 | **twilio-go** (`github.com/twilio/twilio-go`) | **None** | There is no field, flag or env var that lets `api.twilio.com` become anything else. Inject a custom `*http.Client` instead, via [`clienthelp`](../clienthelp) |
 
+Whichever way you point an SDK at tommy, **the response it gets back names what
+tommy captured**: `X-Tommy-Event-URL` carries the link to the event's own page,
+once per event the request produced. Most SDKs hide response headers, but a
+`*http.Client` wrapper or a proxy log will show them, and the same link is the
+`url` field of everything `/api/v1/events` and the plugin read-back APIs return.
+
 `clienthelp` is tommy's own package for the twilio-go case and anything like
 it: an SDK that accepts a custom `*http.Client` but refuses a custom base URL.
 It is pure standard library — importing it never pulls a vendor SDK into your

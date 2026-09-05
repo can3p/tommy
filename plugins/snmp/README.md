@@ -137,7 +137,8 @@ or sms. So this plugin mounts nothing of its own under `/api/v1/snmp/` or
 `/ui/snmp/`; it gets the generic cross-plugin surfaces for free:
 
 - `GET /api/v1/events?plugin=snmp` lists every captured trap; `GET
-  /api/v1/events/{id}` returns one in full, `Payload` included.
+  /api/v1/events/{id}` returns one in full, `Payload` included. Both carry a
+  `url` naming the trap's own page at `/ui/events/{id}`.
 - `/ui/snmp/` is the generic event view: a filterable list, and a detail pane
   whose payload panel is a collapsible JSON inspector - which already reads as
   the varbind table this plugin's roadmap entry asks for, since `Trap`'s JSON
