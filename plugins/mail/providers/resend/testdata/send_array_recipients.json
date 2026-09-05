@@ -1,0 +1,9 @@
+{
+  "from": "Acme <alice@example.com>",
+  "to": ["bob@example.com", "Bobby <bobby@example.com>"],
+  "cc": ["carol@example.com"],
+  "bcc": ["dave@example.com", "erin@example.com"],
+  "reply_to": ["support@example.com", "help@example.com"],
+  "subject": "Everything is an array",
+  "text": "several addresses per field"
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "from": "Acme <alice@example.com>",
+    "to": "bob@example.com",
+    "subject": "First",
+    "text": "one"
+  },
+  {
+    "from": "Acme <alice@example.com>",
+    "to": ["carol@example.com", "dave@example.com"],
+    "cc": "erin@example.com",
+    "subject": "Second",
+    "html": "<p>two</p>"
+  }
+]

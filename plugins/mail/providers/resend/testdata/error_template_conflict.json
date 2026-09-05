@@ -1,0 +1,7 @@
+{
+  "from": "alice@example.com",
+  "to": "bob@example.com",
+  "subject": "Template and html",
+  "html": "<p>hi</p>",
+  "template": {"id": "welcome", "variables": {"CTA": "Sign up now"}}
+}

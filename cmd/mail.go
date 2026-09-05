@@ -20,6 +20,7 @@ import (
 	"github.com/can3p/tommy/generated/buildinfo"
 	"github.com/can3p/tommy/plugins/mail"
 	"github.com/can3p/tommy/plugins/mail/providers/mailjet"
+	"github.com/can3p/tommy/plugins/mail/providers/resend"
 	"github.com/can3p/tommy/plugins/mail/providers/sendgrid"
 	"github.com/can3p/tommy/plugins/mail/providers/smtp"
 	"github.com/spf13/cobra"
@@ -309,22 +310,45 @@ func registerSendgridOptionFlags(cmd *cobra.Command, f *sendgridOptionFlags) {
 	fl.StringVar(&f.apiKey, "sendgrid-api-key", "", "pin the bearer token the sendgrid provider accepts; a mismatch then gets SendGrid's real 401")
 }
 
+// resendOptionFlags are the resend provider's own CLI flags - the counterpart
+// of [plugins.mail.providers.resend] in tommy.toml. api_key is the same
+// error-path knob mailjet and sendgrid expose (a mismatch gets Resend's real
+// 401), and last_event decides what GET /emails/{id} reports for an email's
+// delivery state: tommy simulates no lifecycle and answers "delivered" so a
+// client polling for delivery proceeds, but a test that wants to read some
+// other state back needs to be able to say so. No port flag, for the same
+// reason mailjet and sendgrid have none: every HTTP provider shares the one
+// ingress listener and is told apart by path.
+type resendOptionFlags struct {
+	apiKey    string
+	lastEvent string
+}
+
+var mailResendFlags resendOptionFlags
+
+func registerResendOptionFlags(cmd *cobra.Command, f *resendOptionFlags) {
+	fl := cmd.Flags()
+	fl.StringVar(&f.apiKey, "resend-api-key", "", "pin the bearer token the resend provider accepts; a mismatch then gets Resend's real 401")
+	fl.StringVar(&f.lastEvent, "resend-last-event", resend.DefaultLastEvent,
+		"what GET /emails/{id} reports in last_event (sent, delivered, bounced, ...)")
+}
+
 // mailProviders returns fresh instances of every mail provider this binary
 // ships. Kept in sync with plugins/all/all.go by hand - there being only one
 // wiring list to update per new provider is the tradeoff of I1 owning the
 // shortcut instead of every provider registering itself.
 func mailProviders() []plugin.Provider {
-	return []plugin.Provider{mailjet.New(), sendgrid.New(), smtp.New()}
+	return []plugin.Provider{mailjet.New(), resend.New(), sendgrid.New(), smtp.New()}
 }
 
 var mailCmd = &cobra.Command{
 	Use:   "mail",
-	Short: "Run only the mail plugin: mailjet, sendgrid and smtp",
+	Short: "Run only the mail plugin: mailjet, resend, sendgrid and smtp",
 	Long: `Run tommy with just the mail plugin enabled - a shortcut for tommy serve
 with every other plugin switched off, for a test suite that only needs to
 catch email.
 
-  tommy mail --ui-port 8811 --in-port 8822 --enabled-providers mailjet,sendgrid
+  tommy mail --ui-port 8811 --in-port 8822 --enabled-providers mailjet,resend
 
 builds the same Config struct tommy serve --config would build from a TOML
 file whose [plugins] section mentions only mail, and runs it through the
@@ -341,6 +365,8 @@ binary ships is enabled.`,
 		opts.set(mailjet.ProviderName, "mailjet-api-key", "api_key", mailMailjetFlags.apiKey)
 		opts.set(mailjet.ProviderName, "mailjet-secret-key", "secret_key", mailMailjetFlags.secretKey)
 		opts.set(sendgrid.ProviderName, "sendgrid-api-key", "api_key", mailSendgridFlags.apiKey)
+		opts.set(resend.ProviderName, "resend-api-key", "api_key", mailResendFlags.apiKey)
+		opts.set(resend.ProviderName, "resend-last-event", "last_event", mailResendFlags.lastEvent)
 		return runSinglePlugin(cmd, mail.PluginName, func() plugin.Plugin {
 			return mail.New(mailProviders()...)
 		}, providerNames(providers), mailFlags, opts.options)
@@ -352,5 +378,6 @@ func init() {
 	registerSMTPOptionFlags(mailCmd, &mailSMTPFlags)
 	registerMailjetOptionFlags(mailCmd, &mailMailjetFlags)
 	registerSendgridOptionFlags(mailCmd, &mailSendgridFlags)
+	registerResendOptionFlags(mailCmd, &mailResendFlags)
 	rootCmd.AddCommand(mailCmd)
 }
