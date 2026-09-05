@@ -243,6 +243,10 @@ type messageDetail struct {
 // Subject is the displayed title.
 func (d messageDetail) Subject() string { return d.Msg.Subject }
 
+// PageURL is this message's own page: the link to paste into a bug report, or
+// to open from the line an application logged when it sent the mail.
+func (d messageDetail) PageURL() string { return ui.EventURL("", event.ID(d.ID)) }
+
 // Headers reports whether the sender attached any headers of its own.
 func (d messageDetail) Headers() bool { return len(d.Msg.Headers) > 0 }
 

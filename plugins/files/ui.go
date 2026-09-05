@@ -250,7 +250,7 @@ func (h *uiHandler) view(r *http.Request) (tabView, error) {
 			Provider: e.Provider,
 			Text:     op.Snippet(),
 			At:       e.ReceivedAt,
-			EventURL: UIPrefix + "/events/" + string(e.ID),
+			EventURL: coreui.EventURL("", e.ID),
 		})
 	}
 	return v, nil

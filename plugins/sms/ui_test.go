@@ -164,9 +164,9 @@ func TestUIThreadBubbles(t *testing.T) {
 		t.Errorf("UCS-2 badge title = %q, want an explanation", title)
 	}
 
-	// Every message links to its raw request.
-	if href, ok := bubbles.Eq(0).Find("a.sms-raw-link").Attr("href"); !ok || !strings.HasPrefix(href, "/ui/sms/events/") {
-		t.Errorf("raw link = %q, want /ui/sms/events/<id>", href)
+	// Every message links to the page of the event behind it.
+	if href, ok := bubbles.Eq(0).Find("a.sms-raw-link").Attr("href"); !ok || !strings.HasPrefix(href, "/ui/events/") {
+		t.Errorf("raw link = %q, want /ui/events/<id>", href)
 	}
 }
 

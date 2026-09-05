@@ -226,10 +226,10 @@ func TestUIActivityList(t *testing.T) {
 		t.Errorf("second activity row = %q", got)
 	}
 	raw, ok := rows.Eq(0).Find("a.files-raw").Attr("href")
-	if !ok || !strings.HasPrefix(raw, "/ui/files/events/") {
-		t.Errorf("raw link = %q", raw)
+	if !ok || !strings.HasPrefix(raw, "/ui/events/") {
+		t.Errorf("raw link = %q, want the event's own page", raw)
 	}
-	// That link lands on the core's generic event inspector.
+	// That link lands on the event's own page.
 	if status, _ := h.GetBody(h.UI(strings.TrimPrefix(raw, "/ui/"))); status != 200 {
 		t.Errorf("the raw link is broken: status %d", status)
 	}

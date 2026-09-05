@@ -261,7 +261,7 @@ func (h *uiHandler) threadView(c *Conversation) threadView {
 	for _, item := range c.Items {
 		bv := bubbleView{
 			ID:       string(item.Event.ID),
-			EventURL: UIBase + "/events/" + string(item.Event.ID),
+			EventURL: coreui.EventURL("", item.Event.ID),
 			At:       item.Event.ReceivedAt,
 			Outbound: item.Message.Direction != Inbound,
 			Body:     item.Message.Body,

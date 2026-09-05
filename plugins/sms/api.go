@@ -43,8 +43,11 @@ type MessageEnvelope struct {
 	Provider   string         `json:"provider"`
 	Type       string         `json:"type"`
 	Meta       map[string]any `json:"meta,omitempty"`
-	Media      []MediaRef     `json:"media,omitempty"`
-	Message    *Message       `json:"message"`
+	// URL is this message's own page in the UI: the link to open, or to print
+	// in a log line, once something has been sent.
+	URL     string     `json:"url,omitempty"`
+	Media   []MediaRef `json:"media,omitempty"`
+	Message *Message   `json:"message"`
 }
 
 // NewMessageEnvelope builds the API view of a captured message. base is the URL
@@ -177,7 +180,9 @@ func (h *apiHandler) list(w http.ResponseWriter, r *http.Request) {
 		if !f.match(c.Message) {
 			continue
 		}
-		out = append(out, NewMessageEnvelope(h.base, c))
+		v := NewMessageEnvelope(h.base, c)
+		v.URL = coreapi.EventURL(r, c.Event.ID)
+		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, page(out, limit, offset))
 }
@@ -200,7 +205,9 @@ func (h *apiHandler) get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, NewMessageEnvelope(h.base, c))
+	v := NewMessageEnvelope(h.base, c)
+	v.URL = coreapi.EventURL(r, c.Event.ID)
+	writeJSON(w, http.StatusOK, v)
 }
 
 // captured resolves the {id} path value into a captured sms message, writing
