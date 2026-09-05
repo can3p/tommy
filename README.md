@@ -299,11 +299,20 @@ Everything lives under `/api/v1`, shared by every plugin:
 | `DELETE /events` | `?plugin=` to scope the clear, otherwise clears everything |
 | `DELETE /events/{id}` | remove one event |
 | `GET /blobs/{id}` | stream an attachment or uploaded file, with range support |
+| `GET /openapi.json` | this server's own OpenAPI 3.1 description, generated from its routes |
 | `GET /mail/messages`, `/mail/messages/{id}`, `.../html`, `.../text`, `.../raw`, `.../attachments/{idx}` | mail read-back |
 | `GET /sms/messages`, `/sms/messages/{id}`, `.../media/{idx}` | sms read-back |
 
 Every event in those responses carries a `url` naming its own page,
 `GET /ui/events/{id}` — one event, rendered by the plugin that captured it.
+
+The whole surface is described in OpenAPI 3.1, generated from the server's own
+route table rather than written by hand: [`docs/openapi.json`](./docs/openapi.json)
+for the version this repository ships, or `GET /api/v1/openapi.json` from a
+running tommy for the plugins that instance enabled. `tommy openapi` prints it,
+`make openapi` regenerates the checked-in copy, and a test fails if the two ever
+disagree. The fake vendor endpoints are deliberately not in it — those are the
+vendors' specifications, not tommy's; `tommy providers` covers them.
 
 `tommy providers [plugin[/provider]] [--json]` prints the same information
 `GET /api/v1/plugins` returns, for scripting or a quick look before you've
