@@ -1,0 +1,12 @@
+{
+  "from": "alice@example.com",
+  "to": "bob@example.com",
+  "subject": "Three ways to attach",
+  "html": "<p>see <img src=\"cid:logo\"></p>",
+  "attachments": [
+    {"content": "SGVsbG8=", "filename": "base64.txt", "content_type": "text/plain"},
+    {"content": {"type": "Buffer", "data": [72, 105]}, "filename": "buffer.txt"},
+    {"content": "R0lG", "filename": "logo.gif", "content_type": "image/gif", "content_id": "logo"},
+    {"path": "https://example.com/invoice.pdf", "filename": "invoice.pdf", "content_type": "application/pdf"}
+  ]
+}

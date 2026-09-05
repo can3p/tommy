@@ -1,0 +1,1 @@
+{"from": "alice@example.com", "to": ["bob@example.com", "not an address"], "subject": "Bad recipient", "text": "hi"}

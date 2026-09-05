@@ -39,6 +39,7 @@ plugin's model. Providers never import each other.
 | Provider | Reach for it when | Docs |
 |---|---|---|
 | `mail/mailjet` | Your code calls Mailjet's SDK or posts to its v3.1 endpoint. | [`mailjet`](../plugins/mail/providers/mailjet/README.md) |
+| `mail/resend` | Your code sends through Resend's SDK or posts to `api.resend.com`. Send, batch and read-back. | [`resend`](../plugins/mail/providers/resend/README.md) |
 | `mail/sendgrid` | Your code sends through SendGrid's SDK or v3 Mail Send. | [`sendgrid`](../plugins/mail/providers/sendgrid/README.md) |
 | `mail/smtp` | Your code speaks SMTP directly rather than a vendor HTTP API. A real mail server on its own port. | [`smtp`](../plugins/mail/providers/smtp/README.md) |
 | `sms/twilio` | Whatever normally calls `api.twilio.com` can be pointed elsewhere. | [`twilio`](../plugins/sms/providers/twilio/README.md) |

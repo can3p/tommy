@@ -68,7 +68,7 @@ configuration actually bound — useful before you've sent anything at all.
 
 | Plugin | Providers | What it fakes |
 |---|---|---|
-| `mail`  | `mailjet`, `sendgrid`, `smtp` | The vendor HTTP send APIs, plus a real SMTP listener |
+| `mail`  | `mailjet`, `sendgrid`, `resend`, `smtp` | The vendor HTTP send APIs, plus a real SMTP listener |
 | `sms`   | `twilio` | The Programmable Messaging REST API (create, list, fetch) |
 | `files` | `ftp`, `sftp`, `tftp`, `nfs` | Real FTP, SFTP, TFTP and NFSv3 servers, backed by one shared virtual filesystem |
 | `push`  | `fcm`, `apns` | Firebase Cloud Messaging's HTTP v1 send API and Apple's HTTP/2 provider API, shown as lock-screen cards |

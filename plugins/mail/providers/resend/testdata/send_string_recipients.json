@@ -1,0 +1,9 @@
+{
+  "from": "alice@example.com",
+  "to": "bob@example.com",
+  "cc": "carol@example.com",
+  "bcc": "dave@example.com",
+  "reply_to": "Support <support@example.com>",
+  "subject": "Everything is a bare string",
+  "text": "one address per field"
+}

@@ -1,0 +1,17 @@
+{
+  "from": "Acme <alice@example.com>",
+  "to": ["bob@example.com"],
+  "cc": ["carol@example.com"],
+  "bcc": ["dave@example.com"],
+  "reply_to": "support@example.com",
+  "subject": "What resend-go puts on the wire",
+  "html": "<p>hi</p>",
+  "text": "hi",
+  "headers": {"X-Entity-Ref-ID": "order-9001"},
+  "attachments": [
+    {"content": [72, 101, 108, 108, 111], "filename": "hello.txt", "content_type": "text/plain"}
+  ],
+  "tags": [{"name": "category", "value": "confirm_email"}],
+  "scheduled_at": "2026-08-05T11:52:01.858Z",
+  "topic_id": "3d5aa1cd-1234-4f00-bc7f-1d0dd3a0e1aa"
+}

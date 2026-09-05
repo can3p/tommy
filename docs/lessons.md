@@ -101,6 +101,16 @@ provider therefore cannot cause one to exist.
 
 ## On the protocols
 
+**A vendor's own SDK is often a better source than its reference.** Resend's
+REST documentation says attachment content is base64; its official Go client
+sends a JSON array of integers, and a fake built from the reference alone would
+have failed silently against the client most likely to be pointed at it. The
+same exercise turned up a `created_at` that is not RFC 3339 but a Postgres-style
+timestamp, and an error body shape documented nowhere at all, recovered from the
+Node SDK's response fixtures. Read the reference for intent and the SDK for the
+wire — and when they disagree, the SDK is what your users will be running.
+
+
 **Verify wire formats against live vendor documentation, never from memory.**
 Every wave that did this found something wrong with the plan: Mailjet issues an id
 per recipient and reports per-message failures inside a 200; Twilio quotes
@@ -338,6 +348,15 @@ document. When a task reports a blocker and the blocker gets fixed, the prose
 about it is part of the fix.
 
 ## On orchestrating agents
+
+**Stage deliberately while an agent is running.** The rule that subagents run no
+git commands keeps *them* out of the index; it does nothing about a coordinator
+typing `git add -A` while an agent is mid-edit. Doing that swept an agent's
+in-flight `go.mod` change into an unrelated documentation commit, where it
+surfaced as an unexplained indirect dependency — and the agent, quite reasonably,
+reported it as a mystery it had not caused. Name the paths you mean, or commit
+between agents rather than during one.
+
 
 **Exclusive file ownership stops being sufficient once tasks run the binary.**
 Five documentation agents in parallel would each have booted tommy on the same

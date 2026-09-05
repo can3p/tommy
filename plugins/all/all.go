@@ -20,6 +20,7 @@ import (
 	"github.com/can3p/tommy/plugins/hl7/providers/mllp"
 	"github.com/can3p/tommy/plugins/mail"
 	"github.com/can3p/tommy/plugins/mail/providers/mailjet"
+	"github.com/can3p/tommy/plugins/mail/providers/resend"
 	"github.com/can3p/tommy/plugins/mail/providers/sendgrid"
 	"github.com/can3p/tommy/plugins/mail/providers/smtp"
 	"github.com/can3p/tommy/plugins/push"
@@ -36,6 +37,7 @@ func Plugins() []plugin.Plugin {
 	return []plugin.Plugin{
 		mail.New(
 			mailjet.New(),
+			resend.New(),
 			sendgrid.New(),
 			smtp.New(),
 		),
