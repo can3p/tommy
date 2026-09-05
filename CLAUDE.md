@@ -76,8 +76,12 @@ them be built in parallel.
 1. **Accept any credentials by default.** Parse and record them into `Event.Meta`;
    never reject unless config pins an expected value. A fake that 401s is useless.
 2. **Respond with the vendor's real response shape** — status, headers, body — so
-   official SDKs work unmodified. Verify against **live vendor documentation**,
-   never from memory. This has caught real errors repeatedly. The one exception
+   official SDKs work unmodified. Verify against **live sources**, never from
+   memory: the vendor's documentation for intent, and **the vendor's own SDK for
+   the wire**, which is what your users actually run. Where they disagree the
+   SDK wins — Resend's reference says attachment content is base64 while its Go
+   client sends an array of integers, and a fake built from the reference alone
+   fails silently against it. The one exception
    is `X-Tommy-Event-URL`, which the *ingress* adds to every response naming the
    page of what it captured; SDKs ignore unknown response headers, and no
    provider writes it — see rule 4.
@@ -230,7 +234,9 @@ independently-ownable chunks. If you continue that way:
 - **Give each agent exclusive file ownership** and name what it must not touch.
   Disjoint directories are what makes parallelism safe.
 - **Subagents must run no git commands.** The coordinator commits, in
-  self-contained chunks, so two agents never race the index.
+  self-contained chunks, so two agents never race the index. That protects the
+  index from them, not from you: **stage paths by name while an agent is
+  running**, or an in-flight edit of theirs lands in a commit of yours.
 - **Only one agent at a time may modify `go.mod`,** and it must add its
   dependencies *with* the code that imports them. Pre-staging dependencies does
   not work: unused requires are dropped by any `go mod tidy`.

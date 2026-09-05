@@ -30,7 +30,7 @@ wave you expected, look in the history.
 
 | Plugin | Providers | State |
 |---|---|---|
-| `mail` | mailjet, sendgrid, smtp | done |
+| `mail` | mailjet, sendgrid, resend, smtp | done |
 | `sms` | twilio | done |
 | `files` | ftp, sftp, tftp, nfs | done |
 | `chat` | slack, msteams | done |
@@ -56,12 +56,13 @@ and fifteen providers, each capturing one more thing. Waves 9–12 build the
 only wave 11 adds a provider. The protocol backlog is still there, renumbered,
 behind them.
 
-**Waves 9, 10 and 10·1 are built**, on `feat/event-page`, `feat/openapi-spec`
-and `feat/plugin-openapi`:
+**Waves 9, 10, 10·1 and 11 are built**, on `feat/event-page`,
+`feat/openapi-spec`, `feat/plugin-openapi` and `feat/resend-provider`:
 every event has a page at `/ui/events/{id}`, every API representation of an
 event carries its `url`, an ingress response names what it captured in
 `X-Tommy-Event-URL`, and the events API and every plugin API have generated
-OpenAPI 3.1 descriptions that CI holds to the code.
+OpenAPI 3.1 descriptions that CI holds to the code, and `mail` has a fourth
+provider.
 
 ## 2. The scoping rule
 
@@ -110,17 +111,13 @@ well-specified translation against a fixed contract to the cheaper one.
 
 ## 4. What is left of the surface work
 
-Waves 11 and 12 are what is left of the surface work; **waves 9 and 10 are
+Wave 12 is what is left of the surface work; **waves 9, 10, 10·1 and 11 are
 built** and are in `docs/archive/history.md`. What they leave behind:
 
 - **Wave 12 has its API reference already.** `docs/openapi.json` and the seven
   `docs/openapi-<plugin>.json` are generated and CI-checked, so the website
   renders them rather than hand-writing anything. One page per document reads
   better than one enormous page, and matches how they are generated.
-- **Wave 11 is nearly unaffected.** A *provider* implements nothing new: the
-  mail plugin already declares the routes a Resend message is read back
-  through. Only a new *plugin* meets `plugin.APIDescriber`, and only if it
-  mounts an API of its own.
 - **Nothing here blocks waves 13 and 14**, and nothing there blocks these. If a
   protocol is wanted sooner than the surface work, take it.
 
@@ -130,75 +127,6 @@ not the polish: a spec or a website that is updated by remembering to update it
 is one that is wrong within two waves. Where a wave adds such a gate, it also
 adds the `CLAUDE.md` rule that names it, because the rule is what survives into
 the next session.
-
----
-
-## Wave 11 — the Resend provider
-
-**Goal.** `plugins/mail/providers/resend`: a fourth mail provider, the same
-shape as `sendgrid`, standing in for `api.resend.com`.
-
-This wave is independent of waves 9, 10 and 12 and can run on its own branch at
-any time. It is the cheapest of the four, and it is a good one to hand to a
-single agent with `plugins/mail/providers/sendgrid` as the worked example.
-
-### What to build
-
-Verify every one of these against **live Resend documentation** before writing
-the response — the shapes below were read once, while planning, and are a
-starting point, not a source:
-
-| Route | Notes |
-|---|---|
-| `POST /emails` | The main one. `200` with `{"id": "<uuid>"}`. |
-| `POST /emails/batch` | Up to 100 messages; `{"data":[{"id":…},…]}`, index-aligned with the request. **One event per message** — rule 3. |
-| `GET /emails/{id}` | Read-back, served **from the store** (rule 5), returning `object`, `id`, `from`, `to`, `cc`, `bcc`, `reply_to`, `subject`, `html`, `text`, `created_at`, `last_event`, `scheduled_at`, `tags`. |
-
-Wire details that need care:
-
-- **Auth is `Authorization: Bearer re_…`.** Record it in `Event.Meta`; accept
-  anything (rule 1).
-- **`to`, `cc`, `bcc` and `reply_to` are each a string *or* an array of
-  strings.** A union decode is the sharp edge of this provider; table-test both
-  forms.
-- **`from` is an RFC 5322 address**, `Name <email@example.com>` or bare. The
-  mail plugin's `Address` parsing already exists — reuse it, do not re-write it.
-- **`Idempotency-Key`** is a request header worth recording in `Meta`. Tommy
-  does not deduplicate: that is state, and state is scenario machinery. Say so
-  in the README.
-- **Attachments** carry either `content` (base64) or `path` (a URL Resend
-  fetches). The base64 form goes to the blob store like every other attachment.
-  **The `path` form must not be fetched** — tommy makes no outbound requests.
-  Record the URL in `Meta`, put nothing in the blob store, and document the
-  refusal in the README next to the other deliberate non-implementations.
-- **`scheduled_at`, `tags`, `topic_id`, `template`** are recorded, never acted
-  on. Scheduling is not simulated.
-- **The error shape** (`statusCode`/`message`/`name`, apparently) must be read
-  from the live error reference before anything returns a 4xx.
-- Resend ids are **UUIDs**, not tommy's 24-hex event ids. `sms/twilio` already
-  solves exactly this — it mints an `SM…`/`MM…` Sid from the event id and maps
-  back on read (`plugins/sms/providers/twilio/twilio.go`, `sidFor`/`idFromSid`).
-  Use a reversible mapping of the same kind rather than a second index.
-
-### Around the provider
-
-- **`plugins/all/all.go`** registration, and `cmd/mail.go` — the provider must be
-  selectable through `--enabled-providers` and any option worth setting needs a
-  flag (rule 10).
-- **`README.md` for the provider** with the three required sections, and
-  commands that were actually run.
-- **`docs/catalogue.md`** gains a row; `docs/clients.md` gains a Resend section.
-  The SDK is `github.com/resend/resend-go/v4` and its `Client.BaseURL` is an
-  exported field, so this is the *easy* kind of SDK: `client := resend.NewClient(key);
-  client.BaseURL, _ = url.Parse("http://localhost:8822")` — verify the exact
-  field and type against the source before writing it down.
-- **An integration test** in `test/integration`, driving the real SDK, alongside
-  the Mailjet and SendGrid ones.
-- **No new dependency in the root `go.mod`.** The provider parses JSON with the
-  standard library, like its siblings. `resend-go` belongs to
-  `test/integration` only — and adding it there still means
-  `cd test/integration && go mod tidy && go test -tags integration ./...` in the
-  same commit.
 
 ---
 
