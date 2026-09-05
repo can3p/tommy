@@ -68,6 +68,17 @@ func (p *Plugin) Providers() []plugin.Provider { return p.providers }
 func (p *Plugin) Templates() fs.FS             { return nil }
 
 // RegisterAPI mounts the plugin's own read-back route under /api/v1/<name>/.
+// APIEndpoints declares the one route RegisterAPI mounts. A plugin double has
+// to satisfy the same contract as a real one, or it stops being a useful
+// double.
+func (p *Plugin) APIEndpoints() []plugin.Endpoint {
+	return []plugin.Endpoint{{
+		Method:      "GET",
+		Path:        "/messages",
+		Description: "Every payload this fake plugin captured, newest first.",
+	}}
+}
+
 func (p *Plugin) RegisterAPI(mux plugin.Mux, d plugin.Deps) {
 	mux.HandleFunc("GET /messages", func(w http.ResponseWriter, r *http.Request) {
 		events, err := d.Store.List(r.Context(), store.Query{Plugin: p.name})

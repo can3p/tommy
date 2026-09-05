@@ -43,6 +43,7 @@ func (p *stubPlugin) Description() string {
 }
 func (p *stubPlugin) Providers() []plugin.Provider        { return p.providers }
 func (p *stubPlugin) RegisterAPI(plugin.Mux, plugin.Deps) {}
+func (p *stubPlugin) APIEndpoints() []plugin.Endpoint     { return nil }
 func (p *stubPlugin) RegisterUI(plugin.Mux, plugin.Deps)  {}
 func (p *stubPlugin) Templates() fs.FS                    { return nil }
 
