@@ -25,9 +25,9 @@ send it":
   an environment check can never leak a test order confirmation to a real
   customer's inbox.
 
-Which of the three providers to reach for depends on how your application talks
-to mail: **mailjet** and **sendgrid** are HTTP APIs, for when your code calls
-those vendors' SDKs or a compatible client library. **smtp** is a real mail
+Which of the four providers to reach for depends on how your application talks
+to mail: **mailjet**, **sendgrid** and **resend** are HTTP APIs, for when your
+code calls those vendors' SDKs or a compatible client library. **smtp** is a real mail
 server on its own port, for anything that speaks SMTP directly — most
 languages' standard mail libraries, mail-sending frameworks that default to
 SMTP, or infrastructure (a mail relay, a `sendmail`-compatible tool) that has no
@@ -46,7 +46,7 @@ your machine:
 TOMMY_NO_UPDATE_CHECK=1 go run . mail --ui-port 18901 --in-port 18902 --smtp-port 11025
 ```
 
-Send one message through each route. Mailjet and SendGrid are HTTP:
+Send one message through each route. Mailjet, SendGrid and Resend are HTTP:
 
 ```bash
 curl -s http://localhost:18902/v3.1/send \
@@ -59,6 +59,11 @@ curl -si http://localhost:18902/v3/mail/send \
   "personalizations": [{"to": [{"email": "bob@example.com"}], "subject": "Hello from sendgrid"}],
   "from": {"email": "alice@example.com"},
   "content": [{"type": "text/plain", "value": "It works."}]}'
+
+curl -s http://localhost:18902/emails \
+  -H 'Authorization: Bearer re_fake_key' -H 'Content-Type: application/json' -d '{
+  "from": "Alice <alice@example.com>", "to": "bob@example.com",
+  "subject": "Hello from resend", "text": "It works."}'
 ```
 
 SMTP is a real conversation — `curl`'s `smtp://` scheme drives one:

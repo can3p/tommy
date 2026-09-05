@@ -116,6 +116,13 @@ enabled = true
 enabled = true
 # api_key = "SG.fake-key"    # pin a token; a mismatch gets SendGrid's real 401. CLI: --sendgrid-api-key
 
+[plugins.mail.providers.resend]
+# Resend's email API: POST /emails, POST /emails/batch, GET /emails/{id}. Any
+# bearer token is accepted and recorded by default.
+enabled = true
+# api_key    = "re_fake_key"  # pin a token; a mismatch gets Resend's real 401. CLI: --resend-api-key
+# last_event = "delivered"    # what a read-back reports; tommy simulates no lifecycle. CLI: --resend-last-event
+
 [plugins.mail.providers.smtp]
 # A real SMTP server on its own port. Point any mail library at it with no
 # further setup - nothing is ever relayed anywhere.
