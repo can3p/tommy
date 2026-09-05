@@ -220,6 +220,28 @@ type AddressableProvider interface {
 
 type Endpoint struct{ Method, Path, Description string }
 
+// Optional, and required of any plugin that mounts API routes: what its own
+// OpenAPI description is generated from. Paths are relative to /api/v1/<name>.
+type APIDescriber interface{ APIEndpoints() []APIEndpoint }
+
+type APIEndpoint struct {
+    Method, Path, Description string
+    Query    []APIParam // query parameters; never exhaustive by contract
+    Response any        // zero value of the JSON body; the schema comes from its type
+    Produces string     // media type when it is not application/json
+    Status   int        // success status when it is not 200
+}
+type APIParam struct{ Name, Description, Type string } // Type: "string" (default), "integer", "boolean"
+
+func CommonListParams() []APIParam // the filters every listing inherits from api.ParseQuery
+
+// A Mux that remembers what was registered on it. The ingress needs it to name
+// both claimants of a colliding route; the API needs it to check a plugin's
+// declarations against what it actually mounted.
+type RecordingMux struct{ ... }
+func NewRecordingMux() *RecordingMux
+func (m *RecordingMux) Patterns() []string // "METHOD /path", sorted
+
 type Snippet struct{ Title, Lang, Code string } // Code is a template over SnippetCtx
 func (s Snippet) Render(ctx SnippetCtx) (string, error)
 
@@ -319,7 +341,10 @@ Fails on: empty or boilerplate descriptions (also on `Endpoint.Description`),
 descriptions under 24 characters, a name that is not URL-safe, zero snippets, a
 snippet without a title or language, a snippet that fails to parse or render, a
 **declared endpoint that is never mounted**, and a **mounted route that is not
-declared**. A `ListenerProvider` with no endpoints is exempt from the route
+declared** — the last two for a provider's ingress routes, and for a plugin's
+API routes against `APIEndpoints()`. A plugin that mounts API routes without
+implementing `APIDescriber` fails too: an undescribed route is one no reader
+knows exists. A `ListenerProvider` with no endpoints is exempt from the route
 checks. **A task is not done until this passes.**
 
 ## `core/config`
@@ -472,6 +497,7 @@ are left untouched.
 | `GET /blobs/{id}` | streams a blob with range support |
 | `GET /openapi.json` | the OpenAPI 3.1 description of the events API |
 | `/api/v1/<plugin>/…` | whatever the plugin mounted in `RegisterAPI` |
+| `GET /<plugin>/openapi.json` | that plugin's own description, mounted by the core |
 
 `since` accepts an RFC3339 timestamp, a duration (`5m` = "in the last five
 minutes"), or unix milliseconds. **Listings omit `Raw.Body`** — they can be
@@ -509,12 +535,20 @@ field**, built from `api.EventURL`. All six that have one do.
 ### The OpenAPI description
 
 ```go
-func BuildSpec(opts SpecOptions) *Spec // ServerURL only
-func (s *Spec) JSON() ([]byte, error)  // indented, trailing newline: the checked-in form
-func (a *API) Routes() []string        // every core route mounted, "METHOD /path"
+func BuildSpec(opts SpecOptions) *Spec             // the events API; ServerURL only
+func BuildPluginSpec(o PluginSpecOptions) *Spec    // one plugin's API, nil if it mounts none
+func (s *Spec) JSON() ([]byte, error)              // indented, trailing newline: the checked-in form
+func (a *API) Routes() []string                    // every mounted route, "METHOD /path"
 ```
 
-**It describes the events API, and only that**: `GET/DELETE /events`,
+**One document per surface.** `docs/openapi.json` is the events API;
+`docs/openapi-<plugin>.json` is that plugin's own read-back API, generated from
+its `APIEndpoints()` and served at `/api/v1/<plugin>/openapi.json` (mounted by
+the core, not by the plugin — it is the same route everywhere, and a plugin that
+had to remember it would eventually forget). A reader asserting about mail wants
+the mail document, not everything tommy mounts.
+
+**The events document describes the events API, and only that**: `GET/DELETE /events`,
 `GET/DELETE /events/{id}`, `GET /events/stream`, `GET /blobs/{id}`. That is the
 surface every consumer of tommy programs against, whatever it is capturing, and
 it is the one worth generating a client from. Out of scope, deliberately and
@@ -523,8 +557,8 @@ stated in the document itself:
 - **the fake vendor endpoints** — Mailjet's, Twilio's, Slack's specifications
   rather than tommy's, and a partial copy of somebody else's API is worse than
   none;
-- **each plugin's read-back routes** (`/api/v1/mail/messages` and its kin) — a
-  convenience shaped by the content type, documented in each plugin's README;
+- **each plugin's read-back routes** (`/api/v1/mail/messages` and its kin) —
+  they have documents of their own;
 - **`/health` and `/plugins`** — operational details of one server rather than a
   contract.
 
@@ -539,10 +573,13 @@ It is **generated**, never edited:
   structs are inlined the way `encoding/json` inlines them, `[]byte` is base64,
   `any` is unconstrained, and named struct types become components qualified by
   package.
-- **The checked-in copy** is `docs/openapi.json`, produced by `make openapi`
-  (which runs `tommy openapi`). A test regenerates it and fails when the file
-  differs, naming the first differing line. **Run `make openapi` and commit the
-  result whenever an events route or a type it serves changes.**
+- **The checked-in copies** are `docs/openapi.json` and
+  `docs/openapi-<plugin>.json`, produced by `make openapi` (which runs
+  `tommy openapi` and `tommy openapi <plugin>`). Tests regenerate them and fail
+  when a file differs, naming the first differing line. **Run `make openapi` and
+  commit the result whenever a described route or a type it serves changes.** A
+  new plugin with an API also needs its name in the Makefile's list and in
+  `plugins/all/openapi_test.go`, and both say so when they fail.
 - `GET /api/v1/openapi.json` serves the same document with this server's own
   absolute URL, so a request can be pasted out of a rendered page and run.
 - `info.version` is the API version (`v1`), not the build version: the latter

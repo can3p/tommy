@@ -1,0 +1,495 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tommy hl7 API",
+    "version": "v1",
+    "description": "Captures the HL7 v2 messages your integration sends instead of handing them to a hospital system, parsing each one with the separators it declared for itself rather than the ones everybody assumes. The HL7 tab shows a message as a segment tree - every field at its own position, every repetition kept apart - next to the bytes exactly as they arrived. The MLLP listener that feeds it comes with the mllp provider.\n\nThese routes read back what tommy captured, in the shape this content type\nwants: filters that only mean something here, and the parts that are bytes\nrather than JSON. They read from the same store as the events API, so a\nclient that sends and immediately fetches sees its own write, and every\nentry carries the id of the event behind it.\n\nThe events API - /api/v1/events, described in its own document - is the\ngeneric view of the same captures, and is the one to use when what you are\nasserting does not depend on the content type. The fake vendor endpoints are\ndescribed nowhere here: they are the vendors' specifications, not tommy's.\n\nThis document is generated from the server's route table. It cannot describe\na route that does not exist, and CI fails if the checked-in copy stops\nmatching the code."
+  },
+  "servers": [
+    {
+      "url": "/api/v1/hl7",
+      "description": "This tommy's hl7 API."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/messages": {
+      "get": {
+        "operationId": "getMessages",
+        "summary": "Every captured HL7 message, newest first.",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only entries captured by this provider, such as mailjet.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only entries of this event type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "message_type",
+            "in": "query",
+            "description": "The whole type (ADT^A01), just the code (ADT) or just the trigger event (A01).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "control_id",
+            "in": "query",
+            "description": "MSH-10, the message control id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sending_application",
+            "in": "query",
+            "description": "MSH-3, the sending application.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "receiving_application",
+            "in": "query",
+            "description": "MSH-5, the receiving application.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "segment",
+            "in": "query",
+            "description": "Only messages carrying this segment, such as PID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/hl7.MessageEnvelope"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMessages",
+        "summary": "Clear every captured HL7 message.",
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/messages/{id}": {
+      "get": {
+        "operationId": "getMessagesById",
+        "summary": "One message: the parsed header and the segment tree.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hl7.MessageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMessagesById",
+        "summary": "Delete one captured message.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messages/{id}/raw": {
+      "get": {
+        "operationId": "getMessagesByIdRaw",
+        "summary": "The bytes exactly as they arrived, served inert as text/plain.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "api.Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "hl7.Component": {
+        "type": "object",
+        "properties": {
+          "subcomponents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "hl7.Field": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "integer"
+          },
+          "repetitions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hl7.Repetition"
+            }
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "position",
+          "value"
+        ]
+      },
+      "hl7.Header": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "control_id": {
+            "type": "string"
+          },
+          "processing_id": {
+            "type": "string"
+          },
+          "receiving_application": {
+            "type": "string"
+          },
+          "receiving_facility": {
+            "type": "string"
+          },
+          "sending_application": {
+            "type": "string"
+          },
+          "sending_facility": {
+            "type": "string"
+          },
+          "structure": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "trigger_event": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "hl7.Issue": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "detail"
+        ]
+      },
+      "hl7.Message": {
+        "type": "object",
+        "properties": {
+          "header": {
+            "$ref": "#/components/schemas/hl7.Header"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hl7.Issue"
+            }
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hl7.Segment"
+            }
+          },
+          "separators": {
+            "$ref": "#/components/schemas/hl7.Separators"
+          }
+        },
+        "required": [
+          "header",
+          "separators"
+        ]
+      },
+      "hl7.MessageEnvelope": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/hl7.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "preview": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "raw_url": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "provider",
+          "raw_url",
+          "received_at",
+          "title",
+          "type"
+        ]
+      },
+      "hl7.Repetition": {
+        "type": "object",
+        "properties": {
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hl7.Component"
+            }
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "hl7.Segment": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hl7.Field"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "occurrence": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "index",
+          "occurrence"
+        ]
+      },
+      "hl7.Separators": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "escape": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "repetition": {
+            "type": "string"
+          },
+          "subcomponent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ]
+      }
+    }
+  }
+}

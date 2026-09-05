@@ -190,6 +190,12 @@ written by the application under test and is untrusted.
 Mounted under `/api/v1/chat`; every route reads from the store, so a client that
 posts and immediately fetches sees its own write.
 
+These routes have their own OpenAPI description, generated from the server's
+route table: `GET /api/v1/chat/openapi.json` from a running tommy, or
+[`docs/openapi-chat.json`](../../docs/openapi-chat.json) in the repository.
+The generic event routes are described separately, in
+[`docs/openapi.json`](../../docs/openapi.json).
+
 | Route | Notes |
 |---|---|
 | `GET /messages` | newest first. `?provider=&search=&since=&limit=&offset=` plus the chat-specific `?channel=&author=&thread=&format=&bot=&replies=` |

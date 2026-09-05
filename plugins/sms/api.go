@@ -96,6 +96,29 @@ type apiHandler struct {
 	base string
 }
 
+// APIEndpoints documents what RegisterAPI mounts, and is what this plugin's
+// own OpenAPI description is generated from.
+func (p *Plugin) APIEndpoints() []plugin.APIEndpoint {
+	list := append(plugin.CommonListParams(),
+		plugin.APIParam{Name: "to", Description: "Substring of the recipient number."},
+		plugin.APIParam{Name: "from", Description: "Substring of the sender number."},
+		plugin.APIParam{Name: "status", Description: "Delivery status the provider reported, such as queued."},
+		plugin.APIParam{Name: "direction", Description: "outbound or inbound."},
+		plugin.APIParam{Name: "encoding", Description: "GSM-7 or UCS-2."},
+		plugin.APIParam{Name: "mms", Description: "Only messages that carry media, or only those that do not.", Type: "boolean"},
+	)
+	return []plugin.APIEndpoint{
+		{Method: "GET", Path: "/messages", Description: "Every captured text message, newest first.",
+			Query: list, Response: []MessageEnvelope{}},
+		{Method: "GET", Path: "/messages/{id}", Description: "One message, with its segment arithmetic and media references.",
+			Response: MessageEnvelope{}},
+		{Method: "GET", Path: "/messages/{id}/media/{idx}", Description: "One MMS attachment, streamed from the blob store with range support.",
+			Produces: "application/octet-stream"},
+		{Method: "DELETE", Path: "/messages", Description: "Clear every captured text message.",
+			Status: http.StatusNoContent},
+	}
+}
+
 func (h *apiHandler) mount(mux plugin.Mux) {
 	if h.base == "" {
 		h.base = APIBase

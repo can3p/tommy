@@ -135,7 +135,94 @@ func CheckPlugin(p plugin.Plugin) []error {
 				prov.Name(), prov.Plugin(), name))
 		}
 	}
+	errs = append(errs, checkAPIEndpoints(p)...)
 	return errs
+}
+
+// checkAPIEndpoints is rule 7 applied to a plugin's own API: a plugin that
+// mounts routes under /api/v1/<name>/ must describe them, every described
+// route must be mounted, and vice versa.
+//
+// The description is generated from these, and served at
+// /api/v1/<name>/openapi.json - so an undeclared route is one no reader knows
+// exists and no generated client can call, and a declaration with no route is a
+// promise the server does not keep.
+func checkAPIEndpoints(p plugin.Plugin) []error {
+	var errs []error
+	name := p.Name()
+
+	rec := plugin.NewRecordingMux()
+	p.RegisterAPI(rec, NewDeps())
+	mounted := map[string]string{} // method + normalized path -> as written
+	for _, pat := range rec.Patterns() {
+		parsed, err := ingress.ParsePattern(pat)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("plugin %q: RegisterAPI mounts %q, which is not a valid route: %w", name, pat, err))
+			continue
+		}
+		mounted[routeKey(parsed)] = parsed.String()
+	}
+
+	describer, ok := p.(plugin.APIDescriber)
+	if !ok {
+		if len(mounted) > 0 {
+			errs = append(errs, fmt.Errorf(
+				"plugin %q mounts %d API route(s) but does not implement plugin.APIDescriber; without APIEndpoints() they appear in no description and nobody can discover them",
+				name, len(mounted)))
+		}
+		// A plugin that mounts nothing owes nothing, which is why the
+		// interface is optional.
+		return errs
+	}
+
+	declared := map[string]bool{}
+	for _, e := range describer.APIEndpoints() {
+		if strings.TrimSpace(e.Path) == "" {
+			errs = append(errs, fmt.Errorf("plugin %q: API endpoint %+v has no Path", name, e))
+			continue
+		}
+		errs = append(errs, checkDescription("plugin "+name+" API endpoint "+e.Path, e.Description)...)
+		parsed, err := ingress.ParsePattern(strings.TrimSpace(e.Method + " " + e.Path))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("plugin %q: API endpoint %q %q is not a valid route: %w", name, e.Method, e.Path, err))
+			continue
+		}
+		if declared[routeKey(parsed)] {
+			errs = append(errs, fmt.Errorf("plugin %q: API endpoint %s is declared twice", name, parsed.String()))
+		}
+		declared[routeKey(parsed)] = true
+		if _, ok := mounted[routeKey(parsed)]; !ok {
+			errs = append(errs, fmt.Errorf("plugin %q declares API endpoint %s but RegisterAPI never mounts it",
+				name, parsed.String()))
+		}
+		for _, q := range e.Query {
+			if strings.TrimSpace(q.Name) == "" {
+				errs = append(errs, fmt.Errorf("plugin %q: endpoint %s has a query parameter with no name", name, parsed.String()))
+			}
+			if strings.TrimSpace(q.Description) == "" {
+				errs = append(errs, fmt.Errorf("plugin %q: endpoint %s: query parameter %q has no description", name, parsed.String(), q.Name))
+			}
+		}
+	}
+
+	for key, written := range mounted {
+		if !declared[key] {
+			errs = append(errs, fmt.Errorf("plugin %q mounts API route %s but does not declare it in APIEndpoints(); it would be missing from the plugin's OpenAPI description",
+				name, written))
+		}
+	}
+	return errs
+}
+
+// routeKey identifies one route for comparison. Pattern.Key() normalizes
+// wildcard names but drops the method, which the ingress does not need and this
+// does: a plugin routinely serves GET and DELETE on one path.
+func routeKey(p ingress.Pattern) string {
+	method := p.Method
+	if method == "" {
+		method = "GET"
+	}
+	return method + " " + p.Key()
 }
 
 // CheckProvider returns everything wrong with a provider's discoverability.

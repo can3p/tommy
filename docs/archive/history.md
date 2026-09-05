@@ -836,6 +836,61 @@ route from the table fails the "described but not mounted" test, and editing the
 checked-in file fails the regeneration test with the line number and the command
 that fixes it.
 
+## Wave 10·1 — a description per plugin API · 1 session
+
+**Built:** an OpenAPI 3.1 description for each plugin's own read-back API -
+`docs/openapi-mail.json` and six siblings - served at
+`/api/v1/<plugin>/openapi.json`, generated from a new optional
+`plugin.APIDescriber`, and held to the code by the same kind of gate as the
+events document.
+
+**This is the other half of the scoping correction, not a reversal of it.**
+Wave 10 first described everything under `/api/v1` in one document and was cut
+back to the events API. The question that came back was the right one: does that
+make the plugin APIs private? They were never private - every route is in its
+plugin's README - but they had no machine-readable description and nothing
+checking the README against the code. The answer was one document per surface
+rather than one document for everything: the events API stays the small document
+every consumer reads, and somebody asserting about mail gets a mail document
+with seven paths instead of thirty-five.
+
+**The interface came back optional this time.** Wave 10's `APIEndpoints()` was a
+member of `Plugin`, so `snmp` - which deliberately mounts no API at all - had to
+implement it to return nothing, and so did every test double. It is now
+`plugin.APIDescriber`, in the same spirit as `AddressableProvider`: a plugin
+that mounts nothing owes nothing, and `plugintest.Conformance` fails a plugin
+that mounts API routes *without* implementing it. That is the check that
+actually matters, and making the interface optional is what let it be stated
+that way.
+
+**`APIEndpoint` is deliberately not `Endpoint`.** `Endpoint` is the discovery
+surface a provider advertises - three fields, because that is all a human
+listing needs. `APIEndpoint` is the input to a generated document and carries a
+response type, filters and a status. Wave 10 put those fields on the shared
+struct, which meant half of them stared at every user of the other half.
+
+**It found a duplicate that predated it.** `as2.Endpoints()` was a second,
+hand-maintained copy of the plugin's API routes, kept so the AS2 provider could
+list them alongside its ingress ones. It is now derived from `APIEndpoints()`,
+minus the DELETE routes, since it is shown to somebody looking for what to read
+rather than what to remove.
+
+**Each document opens with the plugin's own `Description()`** and points at the
+events API as the generic view of the same captures, so a reader who arrived at
+the wrong document is told which one they wanted. A test asserts both, because
+that pointer is exactly the kind of prose that quietly stops being written.
+
+**Verified by breaking it, twice:** mounting an undeclared `sms` route fails
+both the conformance check and the "mounts a route its description does not
+mention" test; editing one summary in a checked-in document fails the
+regeneration test with the file, the line and the command that fixes it. All
+seven documents validate under redocly's recommended ruleset.
+
+**Not built: a link from the UI.** The shell links the events document from the
+status bar, and a per-plugin link would need the how-to-test panel to learn the
+API base or the shell to learn which plugins have a document. Neither is hard;
+it is in the backlog rather than half-wired.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project

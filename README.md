@@ -300,6 +300,7 @@ Everything lives under `/api/v1`, shared by every plugin:
 | `DELETE /events/{id}` | remove one event |
 | `GET /blobs/{id}` | stream an attachment or uploaded file, with range support |
 | `GET /openapi.json` | the OpenAPI 3.1 description of the events API, generated from its routes |
+| `GET /<plugin>/openapi.json` | that plugin's own read-back API, described the same way |
 | `GET /mail/messages`, `/mail/messages/{id}`, `.../html`, `.../text`, `.../raw`, `.../attachments/{idx}` | mail read-back |
 | `GET /sms/messages`, `/sms/messages/{id}`, `.../media/{idx}` | sms read-back |
 
@@ -315,8 +316,13 @@ sent without knowing anything about the vendor it thought it was talking to.
 `tommy openapi` prints it, `make openapi` regenerates the checked-in copy, and a
 test fails if the two ever disagree.
 
-The plugin read-back routes are documented in each plugin's README, and the fake
-vendor endpoints are deliberately described nowhere here — those are the
+Each plugin's read-back API — `/api/v1/mail/messages` and its kin, which filter
+by the things that only make sense for that content type — has a description of
+its own: `docs/openapi-mail.json`, `GET /api/v1/mail/openapi.json`, or
+`tommy openapi mail`. One document per surface, so the events description stays
+the small one everybody reads.
+
+The fake vendor endpoints are deliberately described nowhere — those are the
 vendors' own specifications; `tommy providers` prints what tommy mounts for
 them.
 

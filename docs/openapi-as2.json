@@ -1,0 +1,931 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tommy as2 API",
+    "version": "v1",
+    "description": "Stands in for a trading partner's AS2 endpoint: it accepts the EDIINT messages your integration posts - signed, encrypted, compressed, in any combination - and answers with the MDN receipt the sender is waiting on, so an AS2 client runs unmodified against a fake. The AS2 tab shows each message unwrapped layer by layer, the EDI document that was inside, the computed MIC and exactly what the signature did and did not prove.\n\nThese routes read back what tommy captured, in the shape this content type\nwants: filters that only mean something here, and the parts that are bytes\nrather than JSON. They read from the same store as the events API, so a\nclient that sends and immediately fetches sees its own write, and every\nentry carries the id of the event behind it.\n\nThe events API - /api/v1/events, described in its own document - is the\ngeneric view of the same captures, and is the one to use when what you are\nasserting does not depend on the content type. The fake vendor endpoints are\ndescribed nowhere here: they are the vendors' specifications, not tommy's.\n\nThis document is generated from the server's route table. It cannot describe\na route that does not exist, and CI fails if the checked-in copy stops\nmatching the code."
+  },
+  "servers": [
+    {
+      "url": "/api/v1/as2",
+      "description": "This tommy's as2 API."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/certificate": {
+      "get": {
+        "operationId": "getCertificate",
+        "summary": "Tommy's certificate as PEM, for a trading partner to import.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/x-pem-file": {}
+            }
+          }
+        }
+      }
+    },
+    "/identity": {
+      "get": {
+        "operationId": "getIdentity",
+        "summary": "Which certificate is in use, where it came from, and its fingerprint.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/as2.IdentityInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messages": {
+      "get": {
+        "operationId": "getMessages",
+        "summary": "Every captured AS2 message, newest first.",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only entries captured by this provider, such as mailjet.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only entries of this event type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "The partner's AS2-From identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "The AS2-To identifier the message was addressed to.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "message_id",
+            "in": "query",
+            "description": "The AS2 Message-ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "The business document's format, such as edifact or x12.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "security",
+            "in": "query",
+            "description": "Which layers were used: signed, encrypted, compressed.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "issue",
+            "in": "query",
+            "description": "Only messages tommy recorded a problem with, such as a signature it could not verify.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/as2.MessageEnvelope"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMessages",
+        "summary": "Clear every captured AS2 message.",
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/messages/{id}": {
+      "get": {
+        "operationId": "getMessagesById",
+        "summary": "One message, unwrapped through every layer it arrived in.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/as2.MessageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMessagesById",
+        "summary": "Delete one captured message.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messages/{id}/mdn": {
+      "get": {
+        "operationId": "getMessagesByIdMdn",
+        "summary": "The MDN receipt tommy returned, byte for byte.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messages/{id}/payload": {
+      "get": {
+        "operationId": "getMessagesByIdPayload",
+        "summary": "The business document after every layer was peeled.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messages/{id}/raw": {
+      "get": {
+        "operationId": "getMessagesByIdRaw",
+        "summary": "The request exactly as it arrived, ciphertext included.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "api.Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "as2.CertInfo": {
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "key_algorithm": {
+            "type": "string"
+          },
+          "not_after": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "not_before": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "self_signed": {
+            "type": "boolean"
+          },
+          "serial": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "issuer",
+          "not_after",
+          "not_before",
+          "self_signed",
+          "serial",
+          "subject"
+        ]
+      },
+      "as2.CompressionInfo": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "algorithm_oid": {
+            "type": "string"
+          },
+          "compressed_size": {
+            "type": "integer"
+          },
+          "decompressed": {
+            "type": "boolean"
+          },
+          "decompressed_size": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "placement": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "algorithm_oid",
+          "compressed_size",
+          "decompressed",
+          "placement"
+        ]
+      },
+      "as2.Encryption": {
+        "type": "object",
+        "properties": {
+          "content_algorithm": {
+            "type": "string"
+          },
+          "content_algorithm_oid": {
+            "type": "string"
+          },
+          "decrypted": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "key_algorithm": {
+            "type": "string"
+          },
+          "key_algorithm_oid": {
+            "type": "string"
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/as2.RecipientInfo"
+            }
+          }
+        },
+        "required": [
+          "decrypted"
+        ]
+      },
+      "as2.IdentityInfo": {
+        "type": "object",
+        "properties": {
+          "cert_path": {
+            "type": "string"
+          },
+          "certificate": {
+            "$ref": "#/components/schemas/as2.CertInfo"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "key_path": {
+            "type": "string"
+          },
+          "partner": {
+            "$ref": "#/components/schemas/as2.CertInfo"
+          },
+          "pem": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "ready",
+          "source"
+        ]
+      },
+      "as2.Issue": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "detail",
+          "severity"
+        ]
+      },
+      "as2.Layer": {
+        "type": "object",
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "opened": {
+            "type": "boolean"
+          },
+          "smime_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bytes",
+          "kind",
+          "opened"
+        ]
+      },
+      "as2.MDNRecord": {
+        "type": "object",
+        "properties": {
+          "blob": {
+            "$ref": "#/components/schemas/blob.Ref"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "human_text": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "micalg": {
+            "type": "string"
+          },
+          "received_content_mic": {
+            "type": "string"
+          },
+          "signed": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "disposition",
+          "message_id",
+          "signed",
+          "size",
+          "status"
+        ]
+      },
+      "as2.MIC": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "coverage": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "algorithm",
+          "bytes",
+          "coverage",
+          "digest"
+        ]
+      },
+      "as2.Message": {
+        "type": "object",
+        "properties": {
+          "alternate_mics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/as2.MIC"
+            }
+          },
+          "as2_version": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/as2.Issue"
+            }
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/as2.Layer"
+            }
+          },
+          "mdn": {
+            "$ref": "#/components/schemas/as2.MDNRecord"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "mic": {
+            "$ref": "#/components/schemas/as2.MIC"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/as2.Payload"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/as2.ReceiptRequest"
+          },
+          "security": {
+            "$ref": "#/components/schemas/as2.Security"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "user_agent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "payload",
+          "receipt",
+          "security",
+          "to"
+        ]
+      },
+      "as2.MessageEnvelope": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "mdn_url": {
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/as2.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "payload_url": {
+            "type": "string"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "raw_url": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "provider",
+          "raw_url",
+          "received_at",
+          "title",
+          "type"
+        ]
+      },
+      "as2.Payload": {
+        "type": "object",
+        "properties": {
+          "blob": {
+            "$ref": "#/components/schemas/blob.Ref"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "recovered": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "transfer_encoding": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "size"
+        ]
+      },
+      "as2.ReceiptRequest": {
+        "type": "object",
+        "properties": {
+          "async_url": {
+            "type": "string"
+          },
+          "mic_algs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notify_to": {
+            "type": "string"
+          },
+          "options": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "requested": {
+            "type": "boolean"
+          },
+          "signed_importance": {
+            "type": "string"
+          },
+          "signed_requested": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requested",
+          "signed_requested"
+        ]
+      },
+      "as2.RecipientInfo": {
+        "type": "object",
+        "properties": {
+          "issuer": {
+            "type": "string"
+          },
+          "serial": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "issuer",
+          "serial"
+        ]
+      },
+      "as2.Security": {
+        "type": "object",
+        "properties": {
+          "compressed": {
+            "type": "boolean"
+          },
+          "compression": {
+            "$ref": "#/components/schemas/as2.CompressionInfo"
+          },
+          "encrypted": {
+            "type": "boolean"
+          },
+          "encryption": {
+            "$ref": "#/components/schemas/as2.Encryption"
+          },
+          "signature": {
+            "$ref": "#/components/schemas/as2.Signature"
+          },
+          "signed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "compressed",
+          "encrypted",
+          "signed"
+        ]
+      },
+      "as2.Signature": {
+        "type": "object",
+        "properties": {
+          "chain": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/as2.CertInfo"
+            }
+          },
+          "declared_micalg": {
+            "type": "string"
+          },
+          "digest_algorithm": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "partner_configured": {
+            "type": "boolean"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "signature_algorithm": {
+            "type": "string"
+          },
+          "signer": {
+            "$ref": "#/components/schemas/as2.CertInfo"
+          },
+          "signer_matched": {
+            "type": "boolean"
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "partner_configured",
+          "signer_matched",
+          "verified"
+        ]
+      },
+      "blob.Ref": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "size"
+        ]
+      }
+    }
+  }
+}

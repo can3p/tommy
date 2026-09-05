@@ -77,6 +77,39 @@ type apiHandler struct {
 	base string
 }
 
+// APIEndpoints documents what RegisterAPI mounts, and is what this plugin's
+// own OpenAPI description is generated from.
+func (p *Plugin) APIEndpoints() []plugin.APIEndpoint {
+	list := append(plugin.CommonListParams(),
+		plugin.APIParam{Name: "from", Description: "The partner's AS2-From identifier."},
+		plugin.APIParam{Name: "to", Description: "The AS2-To identifier the message was addressed to."},
+		plugin.APIParam{Name: "message_id", Description: "The AS2 Message-ID."},
+		plugin.APIParam{Name: "format", Description: "The business document's format, such as edifact or x12."},
+		plugin.APIParam{Name: "security", Description: "Which layers were used: signed, encrypted, compressed."},
+		plugin.APIParam{Name: "issue", Description: "Only messages tommy recorded a problem with, such as a signature it could not verify."},
+	)
+	return []plugin.APIEndpoint{
+		{Method: "GET", Path: "/messages", Description: "Every captured AS2 message, newest first.",
+			Query: list, Response: []MessageEnvelope{}},
+		{Method: "GET", Path: "/messages/{id}", Description: "One message, unwrapped through every layer it arrived in.",
+			Response: MessageEnvelope{}},
+		{Method: "GET", Path: "/messages/{id}/raw", Description: "The request exactly as it arrived, ciphertext included.",
+			Produces: "text/plain"},
+		{Method: "GET", Path: "/messages/{id}/payload", Description: "The business document after every layer was peeled.",
+			Produces: "application/octet-stream"},
+		{Method: "GET", Path: "/messages/{id}/mdn", Description: "The MDN receipt tommy returned, byte for byte.",
+			Produces: "text/plain"},
+		{Method: "GET", Path: "/certificate", Description: "Tommy's certificate as PEM, for a trading partner to import.",
+			Produces: "application/x-pem-file"},
+		{Method: "GET", Path: "/identity", Description: "Which certificate is in use, where it came from, and its fingerprint.",
+			Response: IdentityInfo{}},
+		{Method: "DELETE", Path: "/messages", Description: "Clear every captured AS2 message.",
+			Status: http.StatusNoContent},
+		{Method: "DELETE", Path: "/messages/{id}", Description: "Delete one captured message.",
+			Status: http.StatusNoContent},
+	}
+}
+
 func (h *apiHandler) mount(mux plugin.Mux) {
 	if h.base == "" {
 		h.base = APIBase
@@ -397,15 +430,23 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 // Endpoints describes the plugin's own API routes, for a provider that wants to
-// list them alongside its ingress ones and for the README to stay in step.
+// list them alongside its ingress ones.
+//
+// Derived from APIEndpoints rather than restated: this list used to be a second
+// copy of the same routes, which is one more place for them to drift. The DELETE
+// routes are left out, because this is shown to somebody looking for what to
+// read rather than what to remove.
 func Endpoints() []plugin.Endpoint {
-	return []plugin.Endpoint{
-		{Method: "GET", Path: APIBase + "/messages", Description: "List captured AS2 messages, newest first."},
-		{Method: "GET", Path: APIBase + "/messages/{id}", Description: "One captured message, unwrapped."},
-		{Method: "GET", Path: APIBase + "/messages/{id}/raw", Description: "The request exactly as it arrived."},
-		{Method: "GET", Path: APIBase + "/messages/{id}/payload", Description: "The EDI document after every layer was peeled."},
-		{Method: "GET", Path: APIBase + "/messages/{id}/mdn", Description: "The MDN receipt tommy returned."},
-		{Method: "GET", Path: APIBase + "/certificate", Description: "Tommy's AS2 certificate as PEM, for a partner to import."},
-		{Method: "GET", Path: APIBase + "/identity", Description: "Which certificate is in use, where it came from and its fingerprint."},
+	var out []plugin.Endpoint
+	for _, e := range (&Plugin{}).APIEndpoints() {
+		if e.Method == http.MethodDelete {
+			continue
+		}
+		out = append(out, plugin.Endpoint{
+			Method:      e.Method,
+			Path:        APIBase + e.Path,
+			Description: e.Description,
+		})
 	}
+	return out
 }

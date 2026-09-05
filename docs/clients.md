@@ -17,7 +17,10 @@ Reading the captures back is a different job from sending them, and it has its
 own description: `GET /api/v1/openapi.json`, or `docs/openapi.json` in this
 repository, is a generated OpenAPI 3.1 document of the events API — enough to
 generate a client, in whatever language your tests are in, that lists what was
-captured, fetches one in full, or follows the live stream.
+captured, fetches one in full, or follows the live stream. Each plugin's own
+read-back API is described separately — `docs/openapi-mail.json`,
+`GET /api/v1/mail/openapi.json` — for when the assertion is about the content
+type rather than about the event.
 
 Whichever way you point an SDK at tommy, **the response it gets back names what
 tommy captured**: `X-Tommy-Event-URL` carries the link to the event's own page,
