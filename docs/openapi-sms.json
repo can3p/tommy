@@ -1,0 +1,424 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tommy sms API",
+    "version": "v1",
+    "description": "Captures the SMS and MMS your code sends through a provider API instead of delivering them, and shows each one as a phone-style conversation with the segment count and encoding it would really cost on the wire.\n\nThese routes read back what tommy captured, in the shape this content type\nwants: filters that only mean something here, and the parts that are bytes\nrather than JSON. They read from the same store as the events API, so a\nclient that sends and immediately fetches sees its own write, and every\nentry carries the id of the event behind it.\n\nThe events API - /api/v1/events, described in its own document - is the\ngeneric view of the same captures, and is the one to use when what you are\nasserting does not depend on the content type. The fake vendor endpoints are\ndescribed nowhere here: they are the vendors' specifications, not tommy's.\n\nThis document is generated from the server's route table. It cannot describe\na route that does not exist, and CI fails if the checked-in copy stops\nmatching the code."
+  },
+  "servers": [
+    {
+      "url": "/api/v1/sms",
+      "description": "This tommy's sms API."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/messages": {
+      "get": {
+        "operationId": "getMessages",
+        "summary": "Every captured text message, newest first.",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only entries captured by this provider, such as mailjet.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only entries of this event type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Substring of the recipient number.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Substring of the sender number.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Delivery status the provider reported, such as queued.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "description": "outbound or inbound.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "encoding",
+            "in": "query",
+            "description": "GSM-7 or UCS-2.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mms",
+            "in": "query",
+            "description": "Only messages that carry media, or only those that do not.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/sms.MessageEnvelope"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMessages",
+        "summary": "Clear every captured text message.",
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/messages/{id}": {
+      "get": {
+        "operationId": "getMessagesById",
+        "summary": "One message, with its segment arithmetic and media references.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/sms.MessageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messages/{id}/media/{idx}": {
+      "get": {
+        "operationId": "getMessagesByIdMediaByIdx",
+        "summary": "One MMS attachment, streamed from the blob store with range support.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idx",
+            "in": "path",
+            "description": "Zero-based index into the attachments or media of that message.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "api.Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "blob.Ref": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "size"
+        ]
+      },
+      "sms.Media": {
+        "type": "object",
+        "properties": {
+          "blob": {
+            "$ref": "#/components/schemas/blob.Ref"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "sms.MediaRef": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "stored": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "stored",
+          "url"
+        ]
+      },
+      "sms.Message": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/sms.Media"
+            }
+          },
+          "messaging_service": {
+            "type": "string"
+          },
+          "segments": {
+            "$ref": "#/components/schemas/sms.Segments"
+          },
+          "status": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "segments",
+          "to"
+        ]
+      },
+      "sms.MessageEnvelope": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/sms.MediaRef"
+            }
+          },
+          "message": {
+            "$ref": "#/components/schemas/sms.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "provider": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "provider",
+          "received_at",
+          "type"
+        ]
+      },
+      "sms.Segments": {
+        "type": "object",
+        "properties": {
+          "capacity": {
+            "type": "integer"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "remaining": {
+            "type": "integer"
+          },
+          "units": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capacity",
+          "count",
+          "encoding",
+          "remaining",
+          "units"
+        ]
+      }
+    }
+  }
+}

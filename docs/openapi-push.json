@@ -1,0 +1,502 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tommy push API",
+    "version": "v1",
+    "description": "Captures the push notifications your app's backend sends instead of handing them to Apple or Google, and shows each one the way a phone would: a lock-screen card with the title, subtitle and body, next to the payload exactly as it was posted. It says plainly whether a push displays anything at all, which is what most silent-push debugging comes down to, and it keeps APNs and FCM apart rather than pretending a device token and a topic are the same thing. The endpoints that feed it arrive with the providers: fcm speaks the Firebase HTTP v1 send API, apns speaks Apple's HTTP/2 provider API.\n\nThese routes read back what tommy captured, in the shape this content type\nwants: filters that only mean something here, and the parts that are bytes\nrather than JSON. They read from the same store as the events API, so a\nclient that sends and immediately fetches sees its own write, and every\nentry carries the id of the event behind it.\n\nThe events API - /api/v1/events, described in its own document - is the\ngeneric view of the same captures, and is the one to use when what you are\nasserting does not depend on the content type. The fake vendor endpoints are\ndescribed nowhere here: they are the vendors' specifications, not tommy's.\n\nThis document is generated from the server's route table. It cannot describe\na route that does not exist, and CI fails if the checked-in copy stops\nmatching the code."
+  },
+  "servers": [
+    {
+      "url": "/api/v1/push",
+      "description": "This tommy's push API."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/messages": {
+      "get": {
+        "operationId": "getMessages",
+        "summary": "Every captured push, newest first. Paging is applied after the filters, so a limit never counts what a filter excluded.",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only entries captured by this provider, such as mailjet.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only entries of this event type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "displays",
+            "in": "query",
+            "description": "Only pushes that would show something on a lock screen, or only those that would not.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "alert, silent or background.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_kind",
+            "in": "query",
+            "description": "How the push was addressed: token, topic or condition.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "Substring of the target itself.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "app",
+            "in": "query",
+            "description": "The application or Firebase project the push was sent to.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "push_type",
+            "in": "query",
+            "description": "The APNs push type: alert, background, voip and the rest.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "description": "The priority, by level or by its raw value.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "data_key",
+            "in": "query",
+            "description": "Only pushes whose data payload carries this key.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/push.MessageEnvelope"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMessages",
+        "summary": "Clear every captured push.",
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/messages/{id}": {
+      "get": {
+        "operationId": "getMessagesById",
+        "summary": "One push, with the displays/explain verdict alongside the model.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/push.MessageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMessagesById",
+        "summary": "Delete one captured push.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messages/{id}/raw": {
+      "get": {
+        "operationId": "getMessagesByIdRaw",
+        "summary": "The request body exactly as it arrived, as text/plain with nosniff.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "api.Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "push.Alert": {
+        "type": "object",
+        "properties": {
+          "badge": {
+            "type": "integer"
+          },
+          "body": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "localization": {
+            "$ref": "#/components/schemas/push.Localization"
+          },
+          "sound": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "push.Delivery": {
+        "type": "object",
+        "properties": {
+          "collapse_key": {
+            "type": "string"
+          },
+          "expiry": {
+            "$ref": "#/components/schemas/push.Expiry"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "priority_raw": {
+            "type": "string"
+          }
+        }
+      },
+      "push.Expiry": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "immediate": {
+            "type": "boolean"
+          },
+          "raw": {
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "push.Localization": {
+        "type": "object",
+        "properties": {
+          "body_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "body_key": {
+            "type": "string"
+          },
+          "title_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title_key": {
+            "type": "string"
+          }
+        }
+      },
+      "push.Message": {
+        "type": "object",
+        "properties": {
+          "alert": {
+            "$ref": "#/components/schemas/push.Alert"
+          },
+          "app": {
+            "type": "string"
+          },
+          "data": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/push.Delivery"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "payloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/push.Payload"
+            }
+          },
+          "push_type": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/push.Target"
+          }
+        },
+        "required": [
+          "delivery",
+          "kind",
+          "target"
+        ]
+      },
+      "push.MessageEnvelope": {
+        "type": "object",
+        "properties": {
+          "displays": {
+            "type": "boolean"
+          },
+          "explain": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/push.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "preview": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "raw_url": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "displays",
+          "id",
+          "message",
+          "provider",
+          "raw_url",
+          "received_at",
+          "title",
+          "type"
+        ]
+      },
+      "push.Payload": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "format": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "format"
+        ]
+      },
+      "push.Target": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ]
+      }
+    }
+  }
+}

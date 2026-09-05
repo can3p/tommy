@@ -172,6 +172,12 @@ func (p *Provider) BindVFS(v *files.VFS) { p.vfs = v }
 
 Mounted under `/api/v1/files/`.
 
+These routes have their own OpenAPI description, generated from the server's
+route table: `GET /api/v1/files/openapi.json` from a running tommy, or
+[`docs/openapi-files.json`](../../docs/openapi-files.json) in the repository.
+The generic event routes are described separately, in
+[`docs/openapi.json`](../../docs/openapi.json).
+
 | Route | Notes |
 |---|---|
 | `GET /tree?path=&recursive=` | one directory listing plus breadcrumb, parent and whole-tree counts; `recursive=1` walks the subtree |

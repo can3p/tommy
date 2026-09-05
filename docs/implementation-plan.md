@@ -56,11 +56,12 @@ and fifteen providers, each capturing one more thing. Waves 9–12 build the
 only wave 11 adds a provider. The protocol backlog is still there, renumbered,
 behind them.
 
-**Waves 9 and 10 are built**, on `feat/event-page` and `feat/openapi-spec`:
+**Waves 9, 10 and 10·1 are built**, on `feat/event-page`, `feat/openapi-spec`
+and `feat/plugin-openapi`:
 every event has a page at `/ui/events/{id}`, every API representation of an
 event carries its `url`, an ingress response names what it captured in
-`X-Tommy-Event-URL`, and the events API has a generated OpenAPI 3.1 description
-that CI holds to the code.
+`X-Tommy-Event-URL`, and the events API and every plugin API have generated
+OpenAPI 3.1 descriptions that CI holds to the code.
 
 ## 2. The scoping rule
 
@@ -112,13 +113,14 @@ well-specified translation against a fixed contract to the cheaper one.
 Waves 11 and 12 are what is left of the surface work; **waves 9 and 10 are
 built** and are in `docs/archive/history.md`. What they leave behind:
 
-- **Wave 12 has its API reference already.** `docs/openapi.json` is generated
-  and CI-checked, so the website renders it rather than hand-writing anything.
-  It covers the events API alone; the plugin read-back routes reach the site
-  through each plugin's `README.md`, like everything else there.
-- **Wave 11 is unaffected by wave 10.** The description covers the events API
-  only, and `core/plugin` came out of that wave unchanged — a new provider, and
-  a new plugin, have exactly the contract they had before.
+- **Wave 12 has its API reference already.** `docs/openapi.json` and the seven
+  `docs/openapi-<plugin>.json` are generated and CI-checked, so the website
+  renders them rather than hand-writing anything. One page per document reads
+  better than one enormous page, and matches how they are generated.
+- **Wave 11 is nearly unaffected.** A *provider* implements nothing new: the
+  mail plugin already declares the routes a Resend message is read back
+  through. Only a new *plugin* meets `plugin.APIDescriber`, and only if it
+  mounts an API of its own.
 - **Nothing here blocks waves 13 and 14**, and nothing there blocks these. If a
   protocol is wanted sooner than the surface work, take it.
 
@@ -320,6 +322,12 @@ Independent of each other and of the protocol work; each is one agent.
 | **Upstream: kleiner** | — | Fix `MaybeNotifyAboutNewVersion` in `can3p/kleiner`: it prints the error and falls through to dereference a nil version, panicking a released binary at startup when GitHub is unreachable. Second latent deref on the same path. Affects every project scaffolded from kleiner. |
 
 ## Backlog — small, unblocked, good first tasks
+
+- **Link each plugin's OpenAPI description from its tab.** The shell links the
+  events document from the status bar; a per-plugin link needs either the
+  how-to-test panel to learn the API base or the shell to learn which plugins
+  have a document (`snmp` has none). Left out of wave 10·1 rather than
+  half-wired.
 
 - **Listener providers hand out no event link.** Wave 9 answers every *ingress*
   response with `X-Tommy-Event-URL`, but SMTP, FTP, SFTP, TFTP, NFS, MLLP and
