@@ -376,3 +376,8 @@ extract the binary into a folder that is mentioned in your `$PATH` variable.
 ## Notes
 
 The project has been scaffolded with the help of [kleiner](https://github.com/can3p/kleiner)
+
+## License
+
+tommy is released under the MIT license; see [`LICENSE`](./LICENSE) for the
+full text.
