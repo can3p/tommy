@@ -23,10 +23,14 @@ tommy is running
   ui       http://127.0.0.1:8811/ui/
   api      http://127.0.0.1:8811/api/v1
   ingress  http://127.0.0.1:8822
-  plugin   mail ([mailjet sendgrid smtp])
+  plugin   mail ([mailjet resend sendgrid smtp])
   plugin   sms ([twilio])
-  plugin   files ([ftp sftp])
+  plugin   files ([ftp sftp tftp nfs])
   plugin   chat ([slack msteams])
+  plugin   hl7 ([mllp])
+  plugin   snmp ([trap])
+  plugin   push ([fcm apns])
+  plugin   as2 ([http])
 run `tommy providers` for copy-paste examples
 ```
 
@@ -226,7 +230,7 @@ ones:
 
 ```
 $ tommy mail --enabled-providers bogus
-Error: unknown mail provider "bogus": valid providers are mailjet, sendgrid, smtp
+Error: unknown mail provider "bogus": valid providers are mailjet, resend, sendgrid, smtp
 ```
 
 Every subcommand mirrors `serve`'s flags where they apply: `--ui-port`,
@@ -333,8 +337,9 @@ sent anything.
 ## Learn more
 
 - [`docs/plan.md`](./docs/plan.md) — the original design brief.
-- [`docs/implementation-plan.md`](./docs/implementation-plan.md) — the
-  interfaces and the wave-by-wave build plan.
+- [`docs/implementation-plan.md`](./docs/implementation-plan.md) — what is
+  planned next, wave by wave. Forward-looking only; finished waves move to the
+  history.
 - [`docs/contracts.md`](./docs/contracts.md) — the contracts as actually
   implemented, including the small deviations from the plan.
 - Every plugin and provider directory carries its own `README.md` with the
