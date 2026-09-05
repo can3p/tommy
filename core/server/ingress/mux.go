@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/can3p/tommy/core/event"
 	"github.com/can3p/tommy/core/plugin"
 )
 
@@ -47,14 +48,30 @@ type Ingress struct {
 	errs     []error
 	logger   *slog.Logger
 	notFound http.Handler
+	eventURL func(event.ID) string
+}
+
+// Option tunes an ingress mux.
+type Option func(*Ingress)
+
+// WithEventURL makes every provider response carry a link to what it captured,
+// through the LinkHeader. The builder is a function rather than a base URL
+// because the addresses are not known when the ingress is built: a listener
+// takes its port when it binds.
+func WithEventURL(f func(event.ID) string) Option {
+	return func(i *Ingress) { i.eventURL = f }
 }
 
 // New returns an empty ingress mux.
-func New(logger *slog.Logger) *Ingress {
+func New(logger *slog.Logger, opts ...Option) *Ingress {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Ingress{mux: http.NewServeMux(), logger: logger}
+	i := &Ingress{mux: http.NewServeMux(), logger: logger}
+	for _, opt := range opts {
+		opt(i)
+	}
+	return i
 }
 
 // For returns the registration surface of one provider. Everything it mounts is
@@ -110,7 +127,7 @@ func (i *Ingress) register(pluginName, providerName, pattern string, h http.Hand
 		return
 	}
 
-	if err := i.handleSafely(pattern, h); err != nil {
+	if err := i.handleSafely(pattern, i.instrument(h)); err != nil {
 		i.errs = append(i.errs, fmt.Errorf("ingress: %s: route %q: %w", owner, pattern, err))
 		return
 	}

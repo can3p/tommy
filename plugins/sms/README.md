@@ -162,14 +162,16 @@ Mounted under `/api/v1/sms/`.
 
 Each entry is a `MessageEnvelope`: the event id, timestamp, provider, type and
 `Meta`, plus the message and a `media[]` array whose `url` either streams from
-tommy or is the provider's own link (`stored` says which).
+tommy or is the provider's own link (`stored` says which). The envelope's own
+top-level `url` is different again: the link to that message's page in the UI.
 
 ## UI
 
 `/ui/sms/` — conversations on the left, the open thread as bubbles on the right,
 a segment + encoding badge under every message, thumbnails for image media, and
 live updates over SSE on `sms.message`. `GET /ui/sms/events/{id}` is left to the
-core, so any message also opens in the generic raw inspector.
+core, so any message also opens in the generic raw inspector, and the *raw* link
+under a bubble goes to `/ui/events/{id}` — that message on a page of its own.
 
 ## Package tests
 

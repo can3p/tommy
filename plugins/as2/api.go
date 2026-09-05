@@ -29,6 +29,9 @@ type MessageEnvelope struct {
 	Provider   string         `json:"provider"`
 	Type       string         `json:"type"`
 	Meta       map[string]any `json:"meta,omitempty"`
+	// URL is this message's own page in the UI: the link to open, or to print
+	// in a log line, once something has been sent.
+	URL string `json:"url,omitempty"`
 
 	Title   string `json:"title"`
 	Preview string `json:"preview,omitempty"`
@@ -172,7 +175,9 @@ func (h *apiHandler) list(w http.ResponseWriter, r *http.Request) {
 		if !f.match(c.Message) {
 			continue
 		}
-		out = append(out, NewMessageEnvelope(h.base, c))
+		v := NewMessageEnvelope(h.base, c)
+		v.URL = coreapi.EventURL(r, c.Event.ID)
+		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, page(out, limit, offset))
 }
@@ -195,7 +200,9 @@ func (h *apiHandler) get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, NewMessageEnvelope(h.base, c))
+	v := NewMessageEnvelope(h.base, c)
+	v.URL = coreapi.EventURL(r, c.Event.ID)
+	writeJSON(w, http.StatusOK, v)
 }
 
 // raw serves the request exactly as it arrived. For an encrypted message that

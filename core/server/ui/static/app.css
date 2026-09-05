@@ -153,3 +153,21 @@ dl.headers dd { margin: 0; font-family: var(--mono); font-size: 12px; word-break
 .empty-state { padding: 12px 4px; }
 .empty-state h3 { margin-top: 0; }
 .event-detail header { margin-bottom: 10px; }
+
+/* One event on a page of its own - the URL that goes into a bug report or an
+   application's log line. */
+.event-page { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.event-page-nav { display: flex; align-items: center; gap: 12px; font-size: 12.5px; margin-bottom: 10px; }
+.event-page-steps { margin-left: auto; display: flex; gap: 12px; }
+.event-page-head { border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 12px; }
+.event-page-head h1 { font-size: 19px; margin: 0 0 4px; }
+.event-page-head p { margin: 3px 0; }
+.event-page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.event-page-actions .mono { overflow-wrap: anywhere; }
+.event-page-actions .copy-btn { margin-left: 0; }
+.btn {
+  display: inline-block; padding: 2px 8px; font-size: 11.5px;
+  border: 1px solid var(--line); border-radius: 6px; color: var(--ink);
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.pane-actions { display: flex; justify-content: flex-end; margin: 0 0 8px; }

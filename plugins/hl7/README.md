@@ -152,6 +152,9 @@ Mounted at `/api/v1/hl7/`.
 | `DELETE /messages` | clear every captured message |
 | `DELETE /messages/{id}` | delete one |
 
+Every message carries a `url`: the link to that event's own page in the UI, so
+a client that just posted something can open what it sent.
+
 `message_type` accepts the whole thing (`ADT^A01`), just the code (`ADT`) or just
 the trigger event (`A01`), because all three are how people describe the message
 they are hunting for.

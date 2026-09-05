@@ -189,7 +189,8 @@ so a client can walk the tree without building URLs itself.
 time and the protocol that wrote each file, download links, and a "recent
 activity" list underneath fed from the event log. It refreshes live over SSE on
 every `files.*` type. `GET /ui/files/events/{id}` is left to the core, so any
-operation also opens in the generic raw inspector.
+operation also opens in the generic raw inspector, and each activity row links to
+`/ui/events/{id}` — that operation on a page of its own.
 
 Filenames are untrusted input, so they are interpolated as plain strings through
 `html/template` and never as `template.HTML`; the URLs built around them are

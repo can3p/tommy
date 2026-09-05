@@ -701,6 +701,76 @@ makes. One agent also wrote "could not be verified" caveats about the broken
 integration module, which became stale the moment the module was fixed and had
 to be rewritten — a caveat is a fact with a shelf life.
 
+## Wave 9 — the event page and the link that reaches it · 1 session, 4 tasks
+
+The first of the surface waves: eight plugins captured plenty, and nothing they
+captured could be linked to.
+
+**Built:** `/ui/events/{id}` as a page for one event rather than a deep link
+into a list; a `url` field on every event the API returns, on both SSE streams
+and on every plugin's read-back resource; and `X-Tommy-Event-URL` on ingress
+responses, so the link reaches an application's own log without it calling the
+API back.
+
+**The route already existed, which was the problem.** `/ui/events/{id}` and
+`/ui/mail/messages/{id}` both answered a browser with the whole tab and one row
+selected. The pieces were all there and none of them joined up: a person had a
+URL that showed a list, and a program had an id and no URL at all. Nothing here
+was a missing feature so much as a missing *connection*, which is why the wave
+is mostly small edits in many files rather than one new subsystem.
+
+**Reusing the fragment route beat adding an interface.** A mail event has to
+render as a mail, not as a JSON dump, and the obvious design was an optional
+`EventRenderer` on `Plugin` — which every plugin would then have to implement,
+and which could not easily reach the `Deps` a plugin only sees inside
+`RegisterUI`. Instead the page dispatches an in-process request to the fragment
+route the plugin already serves, with `HX-Request: true`, and embeds what comes
+back. Zero plugin changes, and mail's sandboxed HTML frame came along
+untouched. A tiny `http.ResponseWriter` recorder does the capture, because
+`net/http/httptest` is a testing package and this runs in the shipped binary.
+The client-side alternative — an `hx-get` div — was rejected on the grounds
+that a link somebody pastes should render without JavaScript.
+
+**The URL is not on `event.Event`, and that was the decision worth making
+first.** Events are immutable and stored, so a URL on one would put a UI concern
+into the store contract and be wrong the moment a port moved. It lives in an
+envelope that embeds the event, defined once in `core/server/ui` next to the
+function that builds the link, so the REST routes, the API stream and the UI
+stream cannot drift into three shapes. The link is absolute — the caller is
+usually talking to the ingress, on a port with no UI on it — and falls back to
+the request host, then to a site-relative path.
+
+**Plugin API handlers cannot learn where the UI is.** They are handed
+`plugin.Deps`, which carries a `ProviderConfig` rather than the server's
+addresses, and those addresses are not known until the listeners have bound.
+Rather than widen `Deps`, the core stashes the origin in the request context
+when it mounts a plugin's API, and `api.EventURL(r, id)` reads it — degrading to
+a relative path for a handler mounted on a bare mux in a test. The same trick
+the UI already used to pass its `Shell` around.
+
+**The response header cost no provider changes**, which is why it was worth
+doing at all. Ingress middleware puts a collector in the request context,
+`Deps.Append` drops the id it just assigned into it, and the wrapper stamps the
+header before the first write. Every HTTP provider already opens its handler
+with `ctx := r.Context()` and passes that to `Append`, so all fifteen got it for
+free; a provider that appends with a context of its own simply gets no link
+rather than a wrong one. One request that fans out repeats the header once per
+event, which is the honest rendering of Mailjet `Messages[]`.
+
+**Deliberately not built:** the equivalent for listener providers. SMTP, FTP and
+MLLP have no response that can carry a header, and the only alternative was a
+log line per captured event — useful in local development, noise in CI, and
+nobody asked for it. It is in the backlog with that reasoning rather than
+shipped on a guess.
+
+**A phantom test failure cost real time, again.** `plugins/files/providers/nfs`
+started failing intermittently with `bind: address already in use` on the
+*client's* source port. It was not the change: a `tommy` left running from a
+manual check was still holding sockets, and killing the `go run` parent had left
+its child alive. Five clean runs after killing by port. `CLAUDE.md` already says
+to clean up background servers; what it did not say is that `go run` is not the
+process you need to kill.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project
