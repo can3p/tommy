@@ -22,6 +22,8 @@ make test           # go test -race -coverprofile=coverage.out ./...
 make lint           # golangci-lint run ./...
 go run . serve      # boot with defaults: UI :8811, ingress :8822, smtp :1025, ftp :2121, sftp :2222
 go run . providers  # every provider's description, endpoints and runnable snippets
+go run . openapi    # the OpenAPI 3.1 description of the events API
+make openapi        # regenerate docs/openapi.json; required whenever an events route changes
 ```
 
 Set `TOMMY_NO_UPDATE_CHECK=1` when running the binary in tests, CI or scripts.
@@ -51,6 +53,7 @@ compiles the import that fails.
 | `docs/lessons.md` | What this codebase taught us. Read before orchestrating more work. |
 | `docs/clients.md` | Pointing official vendor SDKs at tommy. |
 | `docs/catalogue.md` | **Index of every plugin and provider**, what each is for, and a link to its own README. Start here when asking whether tommy covers something. |
+| `docs/openapi.json` | The OpenAPI 3.1 description of the **events API**. **Generated — never edit it**; run `make openapi`. |
 | `core/` | Event, store, blob, plugin contracts, config, server (ui/api/ingress), testutil. |
 | `plugins/` | One directory per content type; providers nested under each. |
 | `plugins/all/all.go` | The single shared wiring file. Every plugin and provider is registered here explicitly. |
@@ -129,6 +132,17 @@ them be built in parallel.
     while the next *user* is never told what the thing is for: the coverage
     looks complete and the useful half is missing.
 
+13. **The OpenAPI description is generated, never edited.** `docs/openapi.json`
+    describes the **events API** — `/events`, `/events/{id}`, `/events/stream`,
+    `/blobs/{id}` — which is the surface every consumer of tommy programs
+    against, whatever it is capturing. It is the output of `tommy openapi`, so a
+    change to one of those routes or to a Go type it serves is finished only
+    when `make openapi` has been run and the result committed. A test fails
+    otherwise, and it names the line. Deliberately not in it: the fake vendor
+    endpoints (the vendors' specifications, not tommy's), each plugin's own
+    read-back routes (documented in that plugin's README), and the operational
+    routes `/health` and `/plugins`.
+
 ## Security invariants — do not weaken these
 
 - **Untrusted content never enters the page DOM.** A captured HTML mail body is
@@ -180,15 +194,18 @@ reported, and stale docs cost the next session more than they cost you.
 4. **`docs/lessons.md`** — add anything that generalises beyond this wave. A
    finding that would change how someone works, not a fact about one provider.
 5. **`CLAUDE.md`** — update if a rule, invariant, command or convention changed.
-6. **Update the documentation of every plugin and provider the wave touched** —
+6. **`docs/openapi.json`** — run `make openapi` and commit the result if an
+   events route, or any Go type one of them serves, changed. A test fails
+   otherwise, so this is a matter of when you find out, not whether.
+7. **Update the documentation of every plugin and provider the wave touched** —
    rule 12's three sections, plus anything the wave changed underneath them. A
    new plugin or provider needs its `README.md` written in the same wave, and a
    changed endpoint, flag or default needs it corrected there too. This is the
    step most easily skipped, because the code works without it and nothing
    fails; it is also the one a user notices first.
-7. **Commit the documentation** as its own commit, so the history shows the plan
+8. **Commit the documentation** as its own commit, so the history shows the plan
    moving in step with the code.
-8. **Hand the branch over.** Report what landed and stop; merging is the user's
+9. **Hand the branch over.** Report what landed and stop; merging is the user's
    call. The next wave starts from a fresh branch off whatever they merged.
 
 A useful test for step 2: if a new session read only your archive entry, would it

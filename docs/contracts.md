@@ -470,6 +470,7 @@ are left untouched.
 | `DELETE /events` | `?plugin=` to narrow; 204 |
 | `DELETE /events/{id}` | 204, or 404 |
 | `GET /blobs/{id}` | streams a blob with range support |
+| `GET /openapi.json` | the OpenAPI 3.1 description of the events API |
 | `/api/v1/<plugin>/…` | whatever the plugin mounted in `RegisterAPI` |
 
 `since` accepts an RFC3339 timestamp, a duration (`5m` = "in the last five
@@ -504,6 +505,50 @@ bare mux in a test still returns something usable.
 
 **A plugin API that returns event-shaped resources must carry the same `url`
 field**, built from `api.EventURL`. All six that have one do.
+
+### The OpenAPI description
+
+```go
+func BuildSpec(opts SpecOptions) *Spec // ServerURL only
+func (s *Spec) JSON() ([]byte, error)  // indented, trailing newline: the checked-in form
+func (a *API) Routes() []string        // every core route mounted, "METHOD /path"
+```
+
+**It describes the events API, and only that**: `GET/DELETE /events`,
+`GET/DELETE /events/{id}`, `GET /events/stream`, `GET /blobs/{id}`. That is the
+surface every consumer of tommy programs against, whatever it is capturing, and
+it is the one worth generating a client from. Out of scope, deliberately and
+stated in the document itself:
+
+- **the fake vendor endpoints** — Mailjet's, Twilio's, Slack's specifications
+  rather than tommy's, and a partial copy of somebody else's API is worse than
+  none;
+- **each plugin's read-back routes** (`/api/v1/mail/messages` and its kin) — a
+  convenience shaped by the content type, documented in each plugin's README;
+- **`/health` and `/plugins`** — operational details of one server rather than a
+  contract.
+
+It is **generated**, never edited:
+
+- **Routes** come from `eventEndpoints()` in `core/server/api/openapi.go`, an
+  unexported table beside the handlers. `Routes()` reports what the core
+  actually mounted, and a test asserts every described route is one of them —
+  a described route that is not mounted is a promise the server does not keep.
+- **Schemas** come from the Go types by reflection (`core/server/api/schema.go`),
+  so a field added to a response cannot be missing from the document. Embedded
+  structs are inlined the way `encoding/json` inlines them, `[]byte` is base64,
+  `any` is unconstrained, and named struct types become components qualified by
+  package.
+- **The checked-in copy** is `docs/openapi.json`, produced by `make openapi`
+  (which runs `tommy openapi`). A test regenerates it and fails when the file
+  differs, naming the first differing line. **Run `make openapi` and commit the
+  result whenever an events route or a type it serves changes.**
+- `GET /api/v1/openapi.json` serves the same document with this server's own
+  absolute URL, so a request can be pasted out of a rendered page and run.
+- `info.version` is the API version (`v1`), not the build version: the latter
+  would rewrite the file on every release for no change a reader can act on.
+- `security` is an explicit empty list. The API has no authentication, and
+  saying so is what stops a reader assuming a scheme was forgotten.
 
 ### SSE frame format
 

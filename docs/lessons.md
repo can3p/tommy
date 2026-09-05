@@ -259,6 +259,35 @@ third run. Both are cheap; reach for them before calling something flaky.
 
 ## On documentation
 
+**Generate a description from the types, and check the generated copy into the
+repository.** Hand-written schemas rot in the one way nothing catches: a field
+added to a response struct is simply missing from the document, and no test can
+assert about prose nobody wrote. Reflection over the response types costs about
+150 lines and removes the failure mode entirely. The checked-in copy is then a
+build product — which is exactly the arrangement that goes stale, so a test
+regenerates it and fails with the command that fixes it.
+
+**A generated document is not a valid document until a real validator says so.**
+Running `npx @redocly/cli lint` over the generated OpenAPI file found two errors
+that reading the specification had not: `{path...}` is Go's wildcard syntax and
+not OpenAPI's, so several routes described a parameter no client would bind, and
+an API with no authentication has to declare an empty `security` or a reader
+assumes a scheme was forgotten. Both were invisible to every test in the repo,
+because the tests knew only what the generator knew. Warnings that would need an
+invented response to silence were left standing instead.
+
+**Ask what a document is a contract *for* before deciding what goes in it.** The
+OpenAPI description first covered every route under `/api/v1` — the events API,
+the operational routes, and all 28 of the plugins' read-back routes — on the
+reasoning that a description should be complete. It should not: a description is
+for the surface somebody programs against, and here that is the events API,
+which is the same whatever the plugin captured. The wide version needed a new
+method on the `Plugin` interface to carry its prose; the narrow one needs an
+unexported table beside the handlers. **A contract addition that exists only to
+feed one document dies with that document's scope** — worth checking before
+adding the method, not after.
+
+
 **Ask who the reader is, not whether the file exists.** Every component but one
 had a README, several of them long — and they were written for the next
 implementer. Canonical models, internal seams, locking. Three plugins had no

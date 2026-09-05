@@ -13,6 +13,12 @@ Three SDKs, three different amounts of cooperation:
 | **sendgrid-go** (`github.com/sendgrid/sendgrid-go`) | First class, via a different entry point | Build the request with `sendgrid.GetRequest(key, endpoint, host)` instead of `sendgrid.NewSendClient(key)`, which hardcodes the real host |
 | **twilio-go** (`github.com/twilio/twilio-go`) | **None** | There is no field, flag or env var that lets `api.twilio.com` become anything else. Inject a custom `*http.Client` instead, via [`clienthelp`](../clienthelp) |
 
+Reading the captures back is a different job from sending them, and it has its
+own description: `GET /api/v1/openapi.json`, or `docs/openapi.json` in this
+repository, is a generated OpenAPI 3.1 document of the events API — enough to
+generate a client, in whatever language your tests are in, that lists what was
+captured, fetches one in full, or follows the live stream.
+
 Whichever way you point an SDK at tommy, **the response it gets back names what
 tommy captured**: `X-Tommy-Event-URL` carries the link to the event's own page,
 once per event the request produced. Most SDKs hide response headers, but a

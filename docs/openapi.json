@@ -1,0 +1,463 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tommy events API",
+    "version": "v1",
+    "description": "The events API: everything an application under test needs to read back what it\nsent.\n\nTommy stands in for the services an application talks to - mail providers, SMS\ngateways, file transfer, chat webhooks, EDI partners - and records every message\nit receives as an event. These routes list those events, fetch one in full,\nstream them as they arrive, delete them, and download the bytes any of them\ncarried. Every event names the page that renders it, so a test can print a link\nto what it just sent.\n\nTwo things are deliberately absent. The fake vendor endpoints - Mailjet's send\nAPI, Twilio's, Slack's - are those vendors' specifications rather than tommy's,\nand a partial copy of somebody else's API is worse than none; run `tommy providers`\nfor those. And each plugin's own read-back routes (`/api/v1/mail/messages` and its\nkin) are a convenience on top of these, shaped by the content type rather than\nby a contract worth generating a client from; each plugin's README documents its\nown.\n\nThis document is generated from the server's route table. It cannot describe a\nroute that does not exist, and CI fails if the checked-in copy stops matching\nthe code."
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "This tommy's API."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/blobs/{id}": {
+      "get": {
+        "operationId": "getBlobsById",
+        "summary": "The bytes an event carried - a mail attachment, an uploaded file - streamed with range support. Events reference these by the id in their payload rather than inlining them.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inline",
+            "in": "query",
+            "description": "Serve with an inline Content-Disposition rather than as a download.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "operationId": "getEvents",
+        "summary": "Every captured event, newest first, whatever plugin captured it. Raw request bodies are omitted unless asked for: they can be megabytes each.",
+        "parameters": [
+          {
+            "name": "plugin",
+            "in": "query",
+            "description": "Only events from this plugin, such as mail.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only events captured by this provider, such as mailjet.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only events of this type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of events to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many events to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "include_raw",
+            "in": "query",
+            "description": "Include each event's raw request body.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ui.EventJSON"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteEvents",
+        "summary": "Clear captured events, all of them or one plugin's. Stored payloads deliberately survive, so a link to one already handed out keeps working.",
+        "parameters": [
+          {
+            "name": "plugin",
+            "in": "query",
+            "description": "Clear only this plugin's events.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/stream": {
+      "get": {
+        "operationId": "getEventsStream",
+        "summary": "The same events as they arrive, as Server-Sent Events. Each event produces a JSON frame carrying the event without its raw body, and a frame named after the event type carrying just the id, so an htmx page can trigger on it.",
+        "parameters": [
+          {
+            "name": "plugin",
+            "in": "query",
+            "description": "Only events from this plugin, such as mail.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only events captured by this provider, such as mailjet.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only events of this type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of events to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many events to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/{id}": {
+      "get": {
+        "operationId": "getEventsById",
+        "summary": "One event in full, raw request body included.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ui.EventJSON"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteEventsById",
+        "summary": "Delete one captured event.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "api.Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "event.Raw": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "peer_addr": {
+            "type": "string"
+          },
+          "text": {
+            "type": "boolean"
+          },
+          "transport": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "transport"
+        ]
+      },
+      "event.Summary": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ui.EventJSON": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "payload": {},
+          "plugin": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "raw": {
+            "$ref": "#/components/schemas/event.Raw"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/event.Summary"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "plugin",
+          "provider",
+          "raw",
+          "received_at",
+          "summary",
+          "type"
+        ]
+      }
+    }
+  }
+}

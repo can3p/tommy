@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,11 @@ type Options struct {
 type API struct {
 	opts Options
 	mux  *http.ServeMux
+
+	// routes is every route the core itself mounts, which is what the OpenAPI
+	// description is checked against. A plugin's own routes are not here: they
+	// are the plugin's surface, and the description covers the events API.
+	routes []string
 }
 
 // New builds the API and mounts every plugin's own routes.
@@ -56,14 +62,19 @@ func New(opts Options) (*API, error) {
 	}
 
 	a := &API{opts: opts, mux: http.NewServeMux()}
-	a.mux.HandleFunc("GET /health", a.health)
-	a.mux.HandleFunc("GET /plugins", a.plugins)
-	a.mux.HandleFunc("GET /events", a.listEvents)
-	a.mux.HandleFunc("GET /events/stream", a.streamEvents)
-	a.mux.HandleFunc("GET /events/{id}", a.getEvent)
-	a.mux.HandleFunc("DELETE /events", a.clearEvents)
-	a.mux.HandleFunc("DELETE /events/{id}", a.deleteEvent)
-	a.mux.HandleFunc("GET /blobs/{id}", a.getBlob)
+	// Registered through handle rather than on the mux directly, so Routes()
+	// reports what is actually mounted. The OpenAPI drift test compares that
+	// against what coreEndpoints() and the plugins declare, and a comparison
+	// of a declaration with itself would prove nothing.
+	a.handle("GET /health", a.health)
+	a.handle("GET /plugins", a.plugins)
+	a.handle("GET /events", a.listEvents)
+	a.handle("GET /events/stream", a.streamEvents)
+	a.handle("GET /events/{id}", a.getEvent)
+	a.handle("DELETE /events", a.clearEvents)
+	a.handle("DELETE /events/{id}", a.deleteEvent)
+	a.handle("GET /blobs/{id}", a.getBlob)
+	a.handle("GET /openapi.json", a.openapi)
 
 	if opts.Registry != nil {
 		for _, p := range opts.Registry.Plugins() {
@@ -77,8 +88,20 @@ func New(opts Options) (*API, error) {
 			a.mux.Handle(prefix+"/{$}", mounted)
 		}
 	}
+	sort.Strings(a.routes)
 	return a, nil
 }
+
+// handle mounts a core route and records it.
+func (a *API) handle(pattern string, h http.HandlerFunc) {
+	a.routes = append(a.routes, pattern)
+	a.mux.HandleFunc(pattern, h)
+}
+
+// Routes returns the core routes mounted under /api/v1, as "METHOD /path". It
+// is what the OpenAPI drift test compares the description against: a described
+// route that is not mounted is a promise the server does not keep.
+func (a *API) Routes() []string { return append([]string(nil), a.routes...) }
 
 // Handler returns the API handler, expecting to be mounted at Prefix.
 func (a *API) Handler() http.Handler { return a.mux }
@@ -93,16 +116,17 @@ func (a *API) health(w http.ResponseWriter, r *http.Request) {
 	if a.opts.Registry != nil {
 		plugins = a.opts.Registry.SortedNames()
 	}
-	body := map[string]any{
-		"status":  "ok",
-		"uptime":  time.Since(a.opts.StartedAt).Round(time.Millisecond).String(),
-		"plugins": plugins,
-	}
-	if a.opts.Version != "" {
-		body["version"] = a.opts.Version
+	// A struct rather than a map, so the OpenAPI schema is generated from the
+	// same thing the handler writes.
+	body := HealthInfo{
+		Status:  "ok",
+		Uptime:  time.Since(a.opts.StartedAt).Round(time.Millisecond).String(),
+		Plugins: plugins,
+		Version: a.opts.Version,
 	}
 	if counter, ok := a.opts.Store.(interface{ Len() int }); ok {
-		body["events"] = counter.Len()
+		n := counter.Len()
+		body.Events = &n
 	}
 	writeJSON(w, http.StatusOK, body)
 }
@@ -292,5 +316,5 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+	writeJSON(w, status, Error{Error: msg})
 }
