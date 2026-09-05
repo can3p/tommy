@@ -51,18 +51,19 @@ a reviewable unit — and merge it before starting the next, because a wave
 branched off an unreviewed tip inherits every diff below it.
 
 What comes next is a change of emphasis. Waves 0–8 built breadth: eight plugins
-and fifteen providers, each capturing one more thing. Waves 9–12 build the
+and sixteen providers, each capturing one more thing. Waves 9–12 build the
 *surface* instead — how a person and a program reach what tommy captured — and
 only wave 11 adds a provider. The protocol backlog is still there, renumbered,
 behind them.
 
-**Waves 9, 10, 10·1 and 11 are built**, on `feat/event-page`,
-`feat/openapi-spec`, `feat/plugin-openapi` and `feat/resend-provider`:
+**Waves 9 through 12 are built**, on `feat/event-page`, `feat/openapi-spec`,
+`feat/plugin-openapi`, `feat/resend-provider` and `feat/website`:
 every event has a page at `/ui/events/{id}`, every API representation of an
 event carries its `url`, an ingress response names what it captured in
 `X-Tommy-Event-URL`, and the events API and every plugin API have generated
-OpenAPI 3.1 descriptions that CI holds to the code, and `mail` has a fourth
-provider.
+OpenAPI 3.1 descriptions that CI holds to the code, `mail` has a fourth
+provider, and the documentation is published as a site generated from the
+repository itself.
 
 ## 2. The scoping rule
 
@@ -109,103 +110,19 @@ reasoning; `CLAUDE.md` has the rules.
 Model guidance: contract-defining and subtle-parsing work to the stronger model;
 well-specified translation against a fixed contract to the cheaper one.
 
-## 4. What is left of the surface work
+## 4. The surface work is finished
 
-Wave 12 is what is left of the surface work; **waves 9, 10, 10·1 and 11 are
-built** and are in `docs/archive/history.md`. What they leave behind:
+Waves 9 through 12 are built and are in `docs/archive/history.md`. What is left
+is the protocol backlog below, plus one thing only the repository owner can do:
 
-- **Wave 12 has its API reference already.** `docs/openapi.json` and the seven
-  `docs/openapi-<plugin>.json` are generated and CI-checked, so the website
-  renders them rather than hand-writing anything. One page per document reads
-  better than one enormous page, and matches how they are generated.
-- **Nothing here blocks waves 13 and 14**, and nothing there blocks these. If a
-  protocol is wanted sooner than the surface work, take it.
-
-Each of these waves also has a *keep it true* half — a generated artifact plus a
-test that fails when it stops matching the code. That half is the deliverable,
-not the polish: a spec or a website that is updated by remembering to update it
-is one that is wrong within two waves. Where a wave adds such a gate, it also
-adds the `CLAUDE.md` rule that names it, because the rule is what survives into
-the next session.
-
----
-
-## Wave 12 — the project website on GitHub Pages
-
-**Goal.** `can3p.github.io/tommy` (or a custom domain): a landing page that
-shows what tommy is and why anyone would want it, plus the full documentation,
-regenerated from the repository on every push to `main`.
-
-**The constraint that shapes the whole wave:** the site holds no prose of its
-own except the landing page. `docs/catalogue.md` already states the principle —
-*the authoritative text is each component's own `README.md`, so there is one
-copy of every claim rather than two that drift apart* — and a website is the
-most tempting place in a project to break it. The generator renders the files
-that already exist; it does not restate them.
-
-### Tasks
-
-1. **The generator.** A small static-site generator in `website/`, **its own Go
-   module**, exactly as `test/integration` is one, so a Markdown library never
-   enters tommy's `go.mod`. It reads:
-   - `docs/*.md` and every `plugins/**/README.md` (fifteen providers and eight
-     plugins carry one; `clienthelp` has only a package doc, and
-     `docs/clients.md` is where it is explained),
-   - the provider catalogue as data, from `tommy providers --json`, which
-     already exists,
-   - `docs/openapi.json` from wave 10, rendered as an API reference page.
-
-   It rewrites the repo-relative links inside those files (`../plugins/mail/README.md`
-   and friends) into site paths — that rewriting is the fiddly part and the
-   place to put the tests.
-
-   **The website module must not `replace` the root module**, and must not
-   import tommy. `test/integration` does both, which is why every wave that adds
-   a root dependency has to re-tidy it — a standing cost `CLAUDE.md` now carries
-   a rule about. A generator that shells out to `go run . providers --json`
-   instead has no such coupling: it consumes tommy's output, not its packages,
-   and a root dependency change can never break it.
-
-2. **The landing page**, hand-written, and the only hand-written content: what
-   tommy is, the eight plugins and what each stands in for, the 30-second
-   quickstart, and the install line. Feature highlights should be *specific* —
-   "see the HTML your password-reset mail actually rendered", not "captures
-   email".
-
-3. **The workflow.** `.github/workflows/pages.yml`: build on push to `main`,
-   publish with `actions/deploy-pages`. It needs Pages enabled on the repository
-   with source *GitHub Actions* — a settings change only the repository owner can
-   make, so ask rather than assume it is done.
-
-4. **The coverage test.** Every plugin and every provider that
-   `tommy providers --json` reports must appear on the site with its README
-   rendered, and every internal link must resolve. This is the same drift gate
-   as wave 10, applied to documentation: a provider added in a later wave that
-   nobody remembered to link fails the build rather than quietly going missing.
-
-### Decisions
-
-- **A Go generator in its own module** rather than Jekyll or Hugo. Jekyll is
-  what GitHub Pages does for free, but it can only see files under `/docs`, and
-  tommy's documentation deliberately lives *next to the code it describes* — a
-  Jekyll site would need copies, which is the one thing this wave must not
-  create. Hugo and Docusaurus solve that but bring a toolchain and a
-  configuration surface out of proportion to a documentation site for a single
-  binary. A generator that can also run `tommy providers --json` and consume the
-  OpenAPI description keeps every claim on the site traceable to something the
-  build verified.
-- **Screenshots go stale silently**, which is the failure this project keeps
-  meeting in other forms. Either generate them in CI from a running tommy, or
-  ship the landing page with none and let the copy carry it. Do not hand-paste
-  a screenshot and hope.
-- **Versioning is out of scope.** The site describes `main`. Released binaries
-  are on the releases page; a docs-per-version site is a different project.
-
-### Done when
-
-The usual ritual, plus: `README.md` links the site, and `CLAUDE.md` gains a rule
-that the site is generated and that adding a plugin or provider without its
-README breaks the build — which, by then, is true.
+- **Enable GitHub Pages** on `can3p/tommy` with the source set to *GitHub
+  Actions* (Settings → Pages). The workflow is in place and builds on every pull
+  request; until that setting is flipped the deploy job cannot succeed.
+- Each of those waves left a *keep it true* half — a generated artifact plus a
+  test that fails when it stops matching the code. The OpenAPI descriptions, the
+  site's coverage test and rule 12's per-component READMEs are now the three
+  places where documentation is checked rather than remembered. A wave that adds
+  a plugin or provider now fails the build if it ships without a README.
 
 ---
 
