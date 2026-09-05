@@ -1,0 +1,71 @@
+{{define "api" -}}
+<h1>{{.Title}} <span class="muted">{{.Version}}</span></h1>
+{{.Description}}
+{{if .Servers}}
+<h2 id="servers">Server</h2>
+<ul class="servers">
+{{range .Servers}}<li><code>{{.URL}}</code> — {{.Description}}</li>{{end}}
+</ul>
+{{end}}
+<h2 id="operations">Operations</h2>
+{{range .Operations}}
+<section class="op" id="{{.ID}}">
+  <div class="op-head">
+    <span class="method {{.Method | lower}}">{{.Method}}</span>
+    <span class="path">{{.Path}}</span>
+    <span class="summary">{{.Summary}}</span>
+  </div>
+  <div class="op-body">
+    {{if .Parameters}}
+    <h4>Parameters</h4>
+    <table>
+      <thead><tr><th>Name</th><th>In</th><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+      {{range .Parameters}}
+      <tr>
+        <td><code>{{.Name}}</code>{{if .Required}} <span class="req">required</span>{{end}}</td>
+        <td>{{.In}}</td>
+        <td>{{schemaType .Schema}}</td>
+        <td>{{.Description}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{end}}
+    <h4>Responses</h4>
+    <table>
+      <thead><tr><th>Status</th><th>Body</th><th>Description</th></tr></thead>
+      <tbody>
+      {{range .Responses}}
+      <tr>
+        <td><code>{{.Status}}</code></td>
+        <td>{{range .Content}}<code>{{.MediaType}}</code>{{with .Type}} · {{.}}{{end}}<br>{{else}}<span class="muted">no body</span>{{end}}</td>
+        <td>{{.Description}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+{{if .Schemas}}
+<h2 id="schemas">Schemas</h2>
+{{range .Schemas}}
+<div class="schema" id="{{.ID}}">
+  <h3>{{.Name}}</h3>
+  {{if .Properties}}
+  <table>
+    <thead><tr><th>Property</th><th>Type</th></tr></thead>
+    <tbody>
+    {{range .Properties}}
+    <tr><td><code>{{.Name}}</code>{{if .Required}} <span class="req">required</span>{{end}}</td><td>{{.Type}}</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">{{.Type}}</p>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+{{- end}}
