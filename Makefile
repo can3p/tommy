@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt run check
+.PHONY: build test lint fmt run check openapi
 
 build: ## Build the tommy binary
 	go build -o tommy .
@@ -14,6 +14,9 @@ fmt: ## Format all Go source files
 
 run: ## Build and run tommy
 	go run . $(ARGS)
+
+openapi: ## Regenerate the checked-in OpenAPI description of /api/v1
+	TOMMY_NO_UPDATE_CHECK=1 go run . openapi > docs/openapi.json
 
 check: ## Run everything CI runs
 	@unformatted="$$(gofmt -l .)"; \

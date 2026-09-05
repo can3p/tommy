@@ -21,7 +21,9 @@
     <span class="tab empty muted" title="No plugins are enabled">no plugins enabled</span>
     {{- end}}
   </nav>
-  <span class="status"><span id="live-dot" class="dot" title="Live"></span> <span class="muted mono">{{.Version}}</span></span>
+  <span class="status">
+    <a class="muted" href="{{.APIBase}}/openapi.json" title="The OpenAPI description of this server's API">API</a>
+    <span id="live-dot" class="dot" title="Live"></span> <span class="muted mono">{{.Version}}</span></span>
 </header>
 <main id="main">
 {{.Body}}
