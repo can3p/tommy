@@ -342,7 +342,7 @@ func (h *uiHandler) messageView(c Captured) messageView {
 	m := c.Message
 	mv := messageView{
 		ID:       string(c.Event.ID),
-		EventURL: UIBase + "/events/" + string(c.Event.ID),
+		EventURL: coreui.EventURL("", c.Event.ID),
 		At:       c.Event.ReceivedAt,
 		Author:   m.Author.Display(),
 		Initials: m.Author.Initials(),

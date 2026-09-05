@@ -28,6 +28,9 @@ type MessageEnvelope struct {
 	Provider   string         `json:"provider"`
 	Type       string         `json:"type"`
 	Meta       map[string]any `json:"meta,omitempty"`
+	// URL is this message's own page in the UI: the link to open, or to print
+	// in a log line, once something has been sent.
+	URL string `json:"url,omitempty"`
 
 	// ChannelKey and ThreadKey are the derived identifiers: the same ones
 	// /channels reports and the tab uses in its URLs.
@@ -250,7 +253,9 @@ func (h *apiHandler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]MessageEnvelope, 0, len(captured))
 	for _, c := range captured {
-		out = append(out, NewMessageEnvelope(c))
+		v := NewMessageEnvelope(c)
+		v.URL = coreapi.EventURL(r, c.Event.ID)
+		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, page(out, limit, offset))
 }
@@ -306,7 +311,9 @@ func (h *apiHandler) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "event "+string(e.ID)+" carries no chat message")
 		return
 	}
-	writeJSON(w, http.StatusOK, NewMessageEnvelope(Captured{Event: e, Message: m}))
+	v := NewMessageEnvelope(Captured{Event: e, Message: m})
+	v.URL = coreapi.EventURL(r, e.ID)
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (h *apiHandler) clear(w http.ResponseWriter, r *http.Request) {

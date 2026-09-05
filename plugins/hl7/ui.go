@@ -264,7 +264,7 @@ func (h *uiHandler) detailView(c Captured) detailView {
 		At:       c.Event.ReceivedAt,
 		Provider: c.Event.Provider,
 		RawURL:   APIBase + "/messages/" + string(c.Event.ID) + "/raw",
-		EventURL: UIBase + "/events/" + string(c.Event.ID),
+		EventURL: coreui.EventURL("", c.Event.ID),
 		Badges:   messageBadges(m, c.Event.Provider),
 		Header:   headerTable(m),
 		Issues:   m.Issues,

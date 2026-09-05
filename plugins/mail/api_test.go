@@ -511,3 +511,37 @@ func TestListRejectsABadQuery(t *testing.T) {
 		t.Errorf("body = %q, want it to name the bad parameter", body)
 	}
 }
+
+// The link to a message's own page rides on the read-back API, because
+// /api/v1/mail/messages is what an application polling for "did my mail
+// arrive" actually calls, and the answer to that question is usually "show me".
+func TestMessagesCarryTheirPageURL(t *testing.T) {
+	in := start(t)
+	_, _, newer := seedInbox(t, in)
+
+	want := in.UI("/events/" + string(newer.ID))
+
+	status, views := getJSON[[]mail.MessageView](t, in, "/mail/messages")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if len(views) == 0 || views[0].URL != want {
+		t.Errorf("listed url = %q, want %q", views[0].URL, want)
+	}
+
+	status, one := getJSON[mail.MessageView](t, in, "/mail/messages/"+string(newer.ID))
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if one.URL != want {
+		t.Errorf("url = %q, want %q", one.URL, want)
+	}
+	// Absolute, because the sender is talking to the ingress on another port.
+	if !strings.HasPrefix(one.URL, "http://") {
+		t.Errorf("url = %q, want an absolute link", one.URL)
+	}
+	// And it is a page that exists.
+	if status, _ := in.GetBody(one.URL); status != http.StatusOK {
+		t.Errorf("the message page is broken: status %d", status)
+	}
+}

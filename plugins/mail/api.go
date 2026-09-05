@@ -26,8 +26,11 @@ type MessageView struct {
 	Provider   string         `json:"provider"`
 	Type       string         `json:"type"`
 	Meta       map[string]any `json:"meta,omitempty"`
-	Message    *Message       `json:"message"`
-	Links      MessageLinks   `json:"links"`
+	// URL is this message's own page in the UI: the link to open, or to print
+	// in a log line, once something has been sent.
+	URL     string       `json:"url,omitempty"`
+	Message *Message     `json:"message"`
+	Links   MessageLinks `json:"links"`
 }
 
 // MessageLinks are absolute paths for the parts of a message that are served as
@@ -184,7 +187,9 @@ func (h *apiHandler) list(w http.ResponseWriter, r *http.Request) {
 		if !ok || !filter.matches(m) {
 			continue
 		}
-		out = append(out, NewMessageView(e, m))
+		v := NewMessageView(e, m)
+		v.URL = coreapi.EventURL(r, e.ID)
+		out = append(out, v)
 	}
 
 	if offset >= len(out) {
@@ -207,7 +212,9 @@ func (h *apiHandler) get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, NewMessageView(e, m))
+	v := NewMessageView(e, m)
+	v.URL = coreapi.EventURL(r, e.ID)
+	writeJSON(w, http.StatusOK, v)
 }
 
 // html serves the HTML body as HTML.
