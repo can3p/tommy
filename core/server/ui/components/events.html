@@ -54,7 +54,35 @@ what makes a new protocol plugin useful on day one with zero UI code.
 {{/* event-pane takes an EventView: the detail of the selected event, or the
      empty state carrying the snippets that would fill this tab. */}}
 {{define "event-pane"}}
-{{- if .Selected}}{{template "event-detail" .Selected}}{{else}}{{template "empty-state" .EmptyState}}{{end}}
+{{- if .Selected}}
+{{- with .PageURL .Selected.ID}}<p class="pane-actions"><a class="btn" href="{{.}}">Open page &#8599;</a></p>{{end}}
+{{template "event-detail" .Selected}}
+{{- else}}{{template "empty-state" .EmptyState}}{{end}}
+{{end}}
+
+{{/* event-page takes an EventPage: one event, on a page of its own, at a URL
+     that can be pasted into a bug report or printed by an application's log.
+     The body is whatever the owning plugin renders for its own detail pane. */}}
+{{define "event-page"}}
+<article class="event-page">
+  <nav class="event-page-nav">
+    {{- with .PluginHref}}<a href="{{.}}">&#8592; {{$.PluginTitle}}</a>{{else}}<span class="muted">{{.PluginTitle}}</span>{{end}}
+    <span class="event-page-steps">
+      {{- with .Newer}}<a href="{{.Href}}" title="{{.Title}}" rel="prev">&#8593; Newer</a>{{else}}<span class="muted">&#8593; Newer</span>{{end}}
+      {{- with .Older}}<a href="{{.Href}}" title="{{.Title}}" rel="next">&#8595; Older</a>{{else}}<span class="muted">&#8595; Older</span>{{end}}
+    </span>
+  </nav>
+  <header class="event-page-head">
+    <h1>{{.Heading}}</h1>
+    <p class="muted mono">{{.Event.Type}} &middot; {{.Event.Provider}} &middot; {{timeFull .Event.ReceivedAt}}</p>
+    <p class="event-page-actions">
+      <span class="mono muted">{{.ShareURL}}</span>
+      {{template "copy-button" .ShareURL}}
+      <a class="btn" href="{{.APIHref}}">JSON</a>
+    </p>
+  </header>
+  <div class="event-page-body">{{.Body}}</div>
+</article>
 {{end}}
 
 {{/* generic-event-view takes an EventView. */}}

@@ -89,6 +89,10 @@ type UI struct {
 	mux  *http.ServeMux
 	tpl  *template.Template
 	log  *slog.Logger
+
+	// overview is the cross-plugin event view, kept because the event page
+	// hands htmx fragment requests back to it.
+	overview *eventViewHandler
 }
 
 // New builds the shell and mounts every enabled plugin's tab. A plugin that
@@ -122,8 +126,15 @@ func New(opts Options) (*UI, error) {
 	// the catch-all, so /static/ and the plugin prefixes still win: net/http
 	// picks the most specific pattern.
 	overviewMux := http.NewServeMux()
-	(&eventViewHandler{ui: u, plugin: "", base: Prefix, title: "All events"}).mount(overviewMux, "")
+	u.overview = &eventViewHandler{ui: u, plugin: "", base: Prefix, title: "All events"}
+	u.overview.mount(overviewMux, "")
 	u.mux.Handle("/", u.withShell("", overviewMux))
+
+	// One event, on a page of its own. Registered ahead of the overview
+	// because a browser asking for this URL wants the event, not the list it
+	// happens to be in; the handler still returns the overview's fragment when
+	// htmx is the one asking.
+	u.mux.HandleFunc("GET "+EventPath+"{id}", (&eventPageHandler{ui: u}).serve)
 
 	if opts.Registry != nil {
 		for _, p := range opts.Registry.Plugins() {
@@ -327,7 +338,55 @@ func Render(w http.ResponseWriter, r *http.Request, title string, body template.
 func (u *UI) stream(w http.ResponseWriter, r *http.Request) {
 	q := store.Query{Plugin: r.URL.Query().Get("plugin")}
 	ch := u.opts.Store.Subscribe(r.Context())
-	sse.Stream(w, r, ch, sse.Options{Filter: q})
+	origin := u.origin(r)
+	sse.Stream(w, r, ch, sse.Options{
+		Filter: q,
+		// The same shape the API stream sends, so a script can subscribe to
+		// either one and follow the link without knowing which it got.
+		Envelope: func(e *event.Event) any { return WithURL(e, origin) },
+	})
+}
+
+// render executes one component template into a fragment.
+func (u *UI) render(name string, data any) (template.HTML, error) {
+	var buf bytes.Buffer
+	if err := u.tpl.ExecuteTemplate(&buf, name, data); err != nil {
+		return "", err
+	}
+	return template.HTML(buf.String()), nil //nolint:gosec // our own templates
+}
+
+// plugin looks an enabled plugin up by name.
+func (u *UI) plugin(name string) (plugin.Plugin, bool) {
+	if u.opts.Registry == nil || name == "" {
+		return nil, false
+	}
+	return u.opts.Registry.Plugin(name)
+}
+
+// Origin is the absolute origin a link handed to somebody else should carry.
+//
+// The configured UI URL wins, because the caller is often talking to the
+// ingress on another port entirely and its own idea of the host would send it
+// somewhere with no UI on it. The request's host is the fallback for a tommy
+// that was never told what it is called, and "" - a site-relative link - is
+// the fallback for a request that has no host either.
+func Origin(uiURL string, r *http.Request) string {
+	if uiURL != "" {
+		return uiURL
+	}
+	if r == nil || r.Host == "" {
+		return ""
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+func (u *UI) origin(r *http.Request) string {
+	return Origin(u.opts.SnippetCtx().UIURL, r)
 }
 
 // info describes the plugins in scope of a view: one plugin, or all of them.
