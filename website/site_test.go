@@ -182,6 +182,7 @@ func TestEveryInternalLinkResolves(t *testing.T) {
 func TestLinksToUnpublishedFilesAreKnown(t *testing.T) {
 	site, _ := build(t)
 	want := []string{
+		"LICENSE",    // linked from the README; GitHub renders it better than we would
 		"clienthelp", // a Go package, explained by docs/clients.md
 		"clienthelp/clienthelp.go",
 		"tommy.toml", // the commented example config, read as a file
