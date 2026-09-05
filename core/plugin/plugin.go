@@ -10,6 +10,7 @@ import (
 	"context"
 	"io/fs"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/can3p/tommy/core/config"
@@ -58,18 +59,14 @@ type ListenerProvider interface {
 	Listen(ctx context.Context, d Deps) error
 }
 
-// Endpoint documents one route a provider mounts on the ingress. It is the
-// discovery surface: /api/v1/plugins, the UI and `tommy providers` all read it,
-// and plugintest.Conformance checks that every declared endpoint is reachable.
 // AddressableProvider is an optional interface a ListenerProvider may
 // implement to report the address it actually bound.
 //
-// A provider that takes an ephemeral port, or that falls back to its own
-// default when the configuration names none, is the only thing that knows
-// where it ended up listening. Without this the discovery surface has to guess
-// from configuration alone and gets it wrong in exactly those two cases, which
-// leaves a snippet telling someone to connect to the wrong port - or to no
-// port at all.
+// A provider that took an ephemeral port is the only thing that knows where it
+// ended up listening, so this is the authority for a *running* listener and
+// wins over anything derived from configuration. PortProvider answers the
+// other half - where a listener would bind, asked of a process with nothing
+// running.
 //
 // Addr blocks until the listener has bound or the timeout elapses, and returns
 // an error if it never does.
@@ -78,6 +75,57 @@ type AddressableProvider interface {
 	Addr(timeout time.Duration) (string, error)
 }
 
+// PortProvider reports where a listener provider would bind under a given
+// configuration, resolved without binding anything.
+//
+// Every ListenerProvider must implement it - plugintest.Conformance fails one
+// that does not - because otherwise tommy's own default ports live only in
+// package-level constants, and `tommy providers` on a process with nothing
+// running can say nothing about them. That is the fact the Docker EXPOSE list,
+// the compose file and the site's port table are all derived from, so a
+// listener provider that does not report it silently drops out of all three.
+//
+// The provider already resolves this value at Listen time (pc.Int("port",
+// DefaultPort)); ListenPort just says it out loud, so it is a report of a
+// decision the provider already makes rather than a second one that can drift.
+type PortProvider interface {
+	ListenerProvider
+	ListenPort(pc ProviderConfig) ListenPort
+}
+
+// ListenPort is where a listener provider would bind, and what it speaks there.
+type ListenPort struct {
+	// Port is the configured port, or the provider's own default when the
+	// configuration names none. Zero means the configuration asked for an
+	// ephemeral port (port = 0), which nothing can resolve before binding:
+	// AddressableProvider.Addr is the only answer in that case, and it needs
+	// a running listener. Zero is therefore reported as zero rather than
+	// papered over with the default, which would name a port nothing is
+	// listening on.
+	Port int `json:"port"`
+	// Network is "tcp" or "udp" - the transport a client must use to reach
+	// it. Docker's EXPOSE and `docker run -P` need it (a UDP trap receiver
+	// published as TCP is not published at all), and a port on its own does
+	// not carry it.
+	Network string `json:"network"`
+}
+
+// Ephemeral reports whether the port is only knowable once the listener binds.
+func (l ListenPort) Ephemeral() bool { return l.Port == 0 }
+
+// String renders the port the way Docker's EXPOSE, `docker run -p` and every
+// port table want it: "2575/tcp", "6969/udp".
+func (l ListenPort) String() string {
+	network := l.Network
+	if network == "" {
+		network = "tcp"
+	}
+	return strconv.Itoa(l.Port) + "/" + network
+}
+
+// Endpoint documents one route a provider mounts on the ingress. It is the
+// discovery surface: /api/v1/plugins, the UI and `tommy providers` all read it,
+// and plugintest.Conformance checks that every declared endpoint is reachable.
 type Endpoint struct {
 	Method      string `json:"method"`
 	Path        string `json:"path"`

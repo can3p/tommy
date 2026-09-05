@@ -1,6 +1,8 @@
 package sftp
 
 import (
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -126,12 +128,20 @@ func TestSnippetsCarryTheLivePort(t *testing.T) {
 	}
 
 	// With nothing bound the snippets still have to render to something a
-	// person can run, which is what the package default is for.
-	cold, err := plugin.RenderSnippets(New().Snippets(), plugin.NewSnippetCtx("localhost", "127.0.0.1:8811", "127.0.0.1:8811", "127.0.0.1:8822"))
+	// person can run - but the port comes from the provider's own report
+	// (plugin.PortProvider), which is what the core fills the context with
+	// when no listener has bound, rather than from a literal in the snippet.
+	cfg := plugin.NewSnippetCtx("localhost", "127.0.0.1:8811", "127.0.0.1:8811", "127.0.0.1:8822")
+	lp := New().ListenPort(plugin.ProviderConfig{})
+	if lp.Port != DefaultPort {
+		t.Fatalf("ListenPort() with no configuration = %d, want the package default %d", lp.Port, DefaultPort)
+	}
+	cfg.SetAddr(files.PluginName, ProviderName, net.JoinHostPort("localhost", strconv.Itoa(lp.Port)))
+	cold, err := plugin.RenderSnippets(New().Snippets(), cfg)
 	if err != nil {
 		t.Fatalf("render with no listener: %v", err)
 	}
 	if !strings.Contains(cold[0].Code, "2222") {
-		t.Errorf("with no listener bound the snippet should fall back to %d:\n%s", DefaultPort, cold[0].Code)
+		t.Errorf("with no listener bound the snippet should carry the reported port %d:\n%s", DefaultPort, cold[0].Code)
 	}
 }

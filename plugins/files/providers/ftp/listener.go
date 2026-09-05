@@ -25,6 +25,7 @@ var (
 	_ plugin.Provider            = (*Provider)(nil)
 	_ plugin.ListenerProvider    = (*Provider)(nil)
 	_ plugin.AddressableProvider = (*Provider)(nil)
+	_ plugin.PortProvider        = (*Provider)(nil)
 	_ files.VFSBinder            = (*Provider)(nil)
 )
 
@@ -52,12 +53,22 @@ func (p *Provider) Description() string {
 // port and mounts no HTTP routes.
 func (p *Provider) Endpoints() []plugin.Endpoint { return nil }
 
+// ListenPort implements plugin.PortProvider: the control port this listener
+// would bind under pc, resolved without binding anything. It reads the key
+// directly rather than through LoadConfig, which also parses the passive
+// range and fails on a bad one - the control port is still knowable then, and
+// a listing that goes silent because of an unrelated typo helps nobody. The
+// passive range is a range of its own and is not reported here.
+func (p *Provider) ListenPort(pc plugin.ProviderConfig) plugin.ListenPort {
+	return plugin.ListenPort{Port: pc.Int("port", DefaultPort), Network: "tcp"}
+}
+
 // Snippets implements plugin.Provider.
 func (p *Provider) Snippets() []plugin.Snippet {
-	// Rendered from the live SnippetCtx, with the package default as the
-	// fallback for a configuration that names no port explicitly - the same
-	// fallback Listen itself uses, so the two can never disagree.
-	addr := fmt.Sprintf(`{{with .FTPAddr}}{{.}}{{else}}{{.Host}}:%d{{end}}`, DefaultPort)
+	// The address comes from the SnippetCtx, which carries this provider's
+	// port whether or not anything is listening: the core asks ListenPort
+	// when nothing has bound. There is nothing left to hardcode here.
+	addr := `{{.FTPAddr}}`
 
 	return []plugin.Snippet{{
 		Title: "Upload a file with curl",

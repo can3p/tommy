@@ -10,11 +10,14 @@ package plugintest
 import (
 	"fmt"
 	"log/slog"
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	blobmem "github.com/can3p/tommy/core/blob/memory"
+	"github.com/can3p/tommy/core/config"
 	"github.com/can3p/tommy/core/plugin"
 	"github.com/can3p/tommy/core/server/ingress"
 	storemem "github.com/can3p/tommy/core/store/memory"
@@ -236,7 +239,62 @@ func CheckProvider(prov plugin.Provider) []error {
 	errs = append(errs, checkDescription("provider "+prov.Name(), prov.Description())...)
 	errs = append(errs, checkSnippets(prov)...)
 	errs = append(errs, checkEndpoints(prov)...)
+	errs = append(errs, checkListenPort(prov)...)
 	return errs
+}
+
+// checkListenPort is rule 7 applied to a listener provider's port: a provider
+// that owns a listener must be able to say where it would bind before it binds.
+//
+// Without it tommy's default ports exist only in package-level constants, and
+// the discovery surface - `tommy providers`, /api/v1/plugins, the site's port
+// table, the image's EXPOSE list - reports no port at all for a provider that
+// was never given one in configuration, which is the usual case. Nothing here
+// binds anything: the provider is asked, not started.
+func checkListenPort(prov plugin.Provider) []error {
+	if _, isListener := prov.(plugin.ListenerProvider); !isListener {
+		return nil
+	}
+	name := prov.Plugin() + "/" + prov.Name()
+	pp, ok := prov.(plugin.PortProvider)
+	if !ok {
+		return []error{fmt.Errorf(
+			"provider %q owns a listener but does not implement plugin.PortProvider; without ListenPort() its port lives only in a package constant and `tommy providers`, /api/v1/plugins and every port table derived from them report no port for it",
+			name)}
+	}
+
+	var errs []error
+	def := pp.ListenPort(plugin.ProviderConfig{})
+	switch def.Network {
+	case "tcp", "udp":
+	default:
+		errs = append(errs, fmt.Errorf("provider %q: ListenPort().Network = %q, want %q or %q: a port without its transport cannot be published (docker -p) or dialed",
+			name, def.Network, "tcp", "udp"))
+	}
+	if def.Port < 0 || def.Port > 65535 {
+		errs = append(errs, fmt.Errorf("provider %q: ListenPort() with no configuration reports port %d, which is not a port", name, def.Port))
+	}
+
+	// The value must come from the configuration rather than being a constant
+	// dressed up as a report: a provider whose listing disagrees with what it
+	// binds is worse than one that says nothing.
+	const probe = 45654
+	if got := pp.ListenPort(portConfig(probe)); got.Port != probe {
+		errs = append(errs, fmt.Errorf("provider %q: ListenPort() reports port %d for a configuration that sets port = %d; it must report what Listen would bind",
+			name, got.Port, probe))
+	}
+	// port = 0 means "bind an ephemeral port" (core/testutil pins every
+	// listener provider to it). Reporting the package default there would name
+	// a port nothing is listening on.
+	if got := pp.ListenPort(portConfig(0)); !got.Ephemeral() {
+		errs = append(errs, fmt.Errorf("provider %q: ListenPort() reports port %d for a configuration that sets port = 0; an explicit zero is an ephemeral port and must be reported as one",
+			name, got.Port))
+	}
+	return errs
+}
+
+func portConfig(port int) plugin.ProviderConfig {
+	return config.NewProviderConfig(map[string]any{"port": port})
 }
 
 func checkName(what, name string) []error {
@@ -280,6 +338,18 @@ func checkSnippets(prov plugin.Provider) []error {
 	}
 	var errs []error
 	ctx := SnippetCtx()
+	// A listener provider's snippets render against its own address, taken
+	// from the port it reports - the same thing `tommy providers` does with
+	// nothing running, so a snippet needs no hardcoded fallback for the case
+	// where the core has not been told a port.
+	wantPort := ""
+	if pp, ok := prov.(plugin.PortProvider); ok {
+		if lp := pp.ListenPort(plugin.ProviderConfig{}); !lp.Ephemeral() {
+			wantPort = strconv.Itoa(lp.Port)
+			ctx.SetAddr(prov.Plugin(), prov.Name(), net.JoinHostPort(ctx.Host, wantPort))
+		}
+	}
+	sawPort := false
 	for i, s := range snippets {
 		if strings.TrimSpace(s.Title) == "" {
 			errs = append(errs, fmt.Errorf("provider %q: snippet %d has no Title", prov.Name(), i))
@@ -303,6 +373,14 @@ func checkSnippets(prov plugin.Provider) []error {
 			errs = append(errs, fmt.Errorf("provider %q: snippet %q still contains a template action after rendering: %s",
 				prov.Name(), s.Title, out))
 		}
+		if wantPort != "" && strings.Contains(out, wantPort) {
+			sawPort = true
+		}
+	}
+	if wantPort != "" && !sawPort {
+		errs = append(errs, fmt.Errorf(
+			"provider %q: no snippet carries the listener's own port %s, rendered from SnippetCtx; a snippet that does not say where to connect cannot be copied and run",
+			prov.Name(), wantPort))
 	}
 	return errs
 }

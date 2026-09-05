@@ -124,6 +124,7 @@ var (
 	_ plugin.Provider            = (*Provider)(nil)
 	_ plugin.ListenerProvider    = (*Provider)(nil)
 	_ plugin.AddressableProvider = (*Provider)(nil)
+	_ plugin.PortProvider        = (*Provider)(nil)
 	_ files.VFSBinder            = (*Provider)(nil)
 )
 
@@ -170,6 +171,13 @@ func (p *Provider) Description() string {
 // own TCP port and mounts no HTTP routes.
 func (p *Provider) Endpoints() []plugin.Endpoint { return nil }
 
+// ListenPort implements plugin.PortProvider: where this listener would bind
+// under pc, resolved without binding anything. It is the same value Listen
+// resolves, so `tommy providers` and the running listener cannot disagree.
+func (p *Provider) ListenPort(pc plugin.ProviderConfig) plugin.ListenPort {
+	return plugin.ListenPort{Port: LoadConfig(pc).Port, Network: "tcp"}
+}
+
 // RegisterIngress implements plugin.Provider. Nothing is mounted: this
 // provider speaks NFS on a port of its own.
 func (p *Provider) RegisterIngress(mux plugin.Mux, d plugin.Deps) {}
@@ -177,12 +185,11 @@ func (p *Provider) RegisterIngress(mux plugin.Mux, d plugin.Deps) {}
 // Snippets implements plugin.Provider.
 //
 // Mounting is the whole point and the least obvious part, so it leads: a user
-// who cannot mount the share has nothing. The port is rendered from the live
-// SnippetCtx with the package default as the fallback, which is not a
-// hardcoded port in disguise - when the configuration names no port, Listen
-// binds this very constant.
+// who cannot mount the share has nothing. The port comes from the SnippetCtx,
+// which carries this provider's port whether or not anything is listening: the
+// core asks ListenPort when nothing has bound.
 func (p *Provider) Snippets() []plugin.Snippet {
-	port := fmt.Sprintf(`{{with .Port "files" "nfs"}}{{.}}{{else}}%d{{end}}`, DefaultPort)
+	port := `{{.Port "files" "nfs"}}`
 	host := `{{.Host}}`
 	url := `'nfs://` + host + `/tommy?version=3&nfsport=` + port + `&mountport=` + port + `'`
 

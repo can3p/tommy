@@ -102,6 +102,7 @@ var (
 	_ plugin.Provider            = (*Provider)(nil)
 	_ plugin.ListenerProvider    = (*Provider)(nil)
 	_ plugin.AddressableProvider = (*Provider)(nil)
+	_ plugin.PortProvider        = (*Provider)(nil)
 	_ files.VFSBinder            = (*Provider)(nil)
 )
 
@@ -147,17 +148,23 @@ func (p *Provider) Description() string {
 // UDP port and mounts no HTTP routes.
 func (p *Provider) Endpoints() []plugin.Endpoint { return nil }
 
+// ListenPort implements plugin.PortProvider: where this listener would bind
+// under pc, resolved without binding anything. It is the same value Listen
+// resolves, so `tommy providers` and the running listener cannot disagree.
+func (p *Provider) ListenPort(pc plugin.ProviderConfig) plugin.ListenPort {
+	return plugin.ListenPort{Port: LoadConfig(pc).Port, Network: "udp"}
+}
+
 // RegisterIngress implements plugin.Provider. Nothing is mounted: this
 // provider speaks TFTP on a port of its own.
 func (p *Provider) RegisterIngress(mux plugin.Mux, d plugin.Deps) {}
 
 // Snippets implements plugin.Provider.
 func (p *Provider) Snippets() []plugin.Snippet {
-	// The address is rendered from the live SnippetCtx, with the package
-	// default as the fallback. That fallback is not a hardcoded port in
-	// disguise: when the configuration names no port, Listen binds this very
-	// constant.
-	addr := fmt.Sprintf(`{{with .Addr "files" "tftp"}}{{.}}{{else}}127.0.0.1:%d{{end}}`, DefaultPort)
+	// The address comes from the SnippetCtx, which carries this provider's
+	// port whether or not anything is listening: the core asks ListenPort
+	// when nothing has bound. There is nothing left to hardcode here.
+	addr := `{{.Addr "files" "tftp"}}`
 
 	return []plugin.Snippet{
 		{
