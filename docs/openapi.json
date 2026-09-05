@@ -1,0 +1,4267 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tommy",
+    "version": "v1",
+    "description": "Tommy captures what an application sent to the services it talks to - mail\nproviders, SMS gateways, file transfer, chat webhooks, EDI partners - and this\nis the API for reading it back.\n\nEvery captured message is an event. The generic routes below serve all of them;\neach plugin adds routes that serve its own content type in a shape that suits\nit, and both are described here.\n\nThis describes tommy's own API only. The fake vendor endpoints - Mailjet's\nsend API, Twilio's, Slack's - live on a separate ingress listener and are\ndeliberately absent: they are those vendors' specifications, not tommy's, and a\npartial copy of somebody else's API is worse than none. Run `tommy providers`\nfor those, or read each provider's own documentation.\n\nThis document is generated from the running server's route table and the\nplugins' own endpoint declarations. It cannot describe a route that does not\nexist, and CI fails if the checked-in copy stops matching the code."
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "This tommy's API."
+    }
+  ],
+  "tags": [
+    {
+      "name": "core",
+      "description": "Events, blobs, discovery: everything that is not one plugin's own."
+    },
+    {
+      "name": "mail",
+      "description": "Captures the email your application sends instead of delivering it, whether it went out through a vendor's HTTP API or plain SMTP. Every message is parsed into one canonical model you can read back over the API or browse in the inbox tab, attachments included."
+    },
+    {
+      "name": "sms",
+      "description": "Captures the SMS and MMS your code sends through a provider API instead of delivering them, and shows each one as a phone-style conversation with the segment count and encoding it would really cost on the wire."
+    },
+    {
+      "name": "files",
+      "description": "Accepts the files your application uploads over FTP, SFTP or TFTP instead of shipping them anywhere, and keeps them in a virtual filesystem you can browse, download from and assert against. Every upload, mkdir, delete and rename is also recorded as an event, so the tree shows what is there now and the log shows how it got that way."
+    },
+    {
+      "name": "chat",
+      "description": "Captures the Slack and Microsoft Teams messages your application posts instead of delivering them, keeping each one's Block Kit blocks or Adaptive Card exactly as it was sent. The chat tab groups them by channel and nests replies under the message they answer."
+    },
+    {
+      "name": "hl7",
+      "description": "Captures the HL7 v2 messages your integration sends instead of handing them to a hospital system, parsing each one with the separators it declared for itself rather than the ones everybody assumes. The HL7 tab shows a message as a segment tree - every field at its own position, every repetition kept apart - next to the bytes exactly as they arrived. The MLLP listener that feeds it comes with the mllp provider."
+    },
+    {
+      "name": "push",
+      "description": "Captures the push notifications your app's backend sends instead of handing them to Apple or Google, and shows each one the way a phone would: a lock-screen card with the title, subtitle and body, next to the payload exactly as it was posted. It says plainly whether a push displays anything at all, which is what most silent-push debugging comes down to, and it keeps APNs and FCM apart rather than pretending a device token and a topic are the same thing. The endpoints that feed it arrive with the providers: fcm speaks the Firebase HTTP v1 send API, apns speaks Apple's HTTP/2 provider API."
+    },
+    {
+      "name": "as2",
+      "description": "Stands in for a trading partner's AS2 endpoint: it accepts the EDIINT messages your integration posts - signed, encrypted, compressed, in any combination - and answers with the MDN receipt the sender is waiting on, so an AS2 client runs unmodified against a fake. The AS2 tab shows each message unwrapped layer by layer, the EDI document that was inside, the computed MIC and exactly what the signature did and did not prove."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/as2/certificate": {
+      "get": {
+        "operationId": "getAs2Certificate",
+        "summary": "Tommy's certificate as PEM, for a trading partner to import.",
+        "tags": [
+          "as2"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/x-pem-file": {}
+            }
+          }
+        }
+      }
+    },
+    "/as2/identity": {
+      "get": {
+        "operationId": "getAs2Identity",
+        "summary": "Which certificate is in use, where it came from, and its fingerprint.",
+        "tags": [
+          "as2"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/as2.IdentityInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/as2/messages": {
+      "get": {
+        "operationId": "getAs2Messages",
+        "summary": "Every captured AS2 message, newest first.",
+        "tags": [
+          "as2"
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only events captured by this provider.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only events of this type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "The partner's AS2-From identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "The AS2-To identifier the message was addressed to.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "message_id",
+            "in": "query",
+            "description": "The AS2 Message-ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "The business document's format, such as edifact or x12.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "security",
+            "in": "query",
+            "description": "Which layers were used: signed, encrypted, compressed.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "issue",
+            "in": "query",
+            "description": "Only messages tommy recorded a problem with, such as a signature it could not verify.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/as2.MessageEnvelope"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAs2Messages",
+        "summary": "Clear every captured AS2 message.",
+        "tags": [
+          "as2"
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/as2/messages/{id}": {
+      "get": {
+        "operationId": "getAs2MessagesById",
+        "summary": "One message, unwrapped through every layer it arrived in.",
+        "tags": [
+          "as2"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/as2.MessageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAs2MessagesById",
+        "summary": "Delete one captured message.",
+        "tags": [
+          "as2"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/as2/messages/{id}/mdn": {
+      "get": {
+        "operationId": "getAs2MessagesByIdMdn",
+        "summary": "The MDN receipt tommy returned, byte for byte.",
+        "tags": [
+          "as2"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/as2/messages/{id}/payload": {
+      "get": {
+        "operationId": "getAs2MessagesByIdPayload",
+        "summary": "The business document after every layer was peeled.",
+        "tags": [
+          "as2"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/as2/messages/{id}/raw": {
+      "get": {
+        "operationId": "getAs2MessagesByIdRaw",
+        "summary": "The request exactly as it arrived, ciphertext included.",
+        "tags": [
+          "as2"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blobs/{id}": {
+      "get": {
+        "operationId": "getBlobsById",
+        "summary": "One stored payload - an attachment, an uploaded file - streamed with range support.",
+        "tags": [
+          "core"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inline",
+            "in": "query",
+            "description": "Serve with an inline Content-Disposition rather than as a download.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/channels": {
+      "get": {
+        "operationId": "getChatChannels",
+        "summary": "The derived channel index: message, thread, reply and orphan counts, and the last message. Computed on every request, so it always agrees with the tab.",
+        "tags": [
+          "chat"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/chat.ChannelSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/messages": {
+      "get": {
+        "operationId": "getChatMessages",
+        "summary": "Every captured chat message, newest first.",
+        "tags": [
+          "chat"
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only events captured by this provider.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only events of this type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "description": "The provider's channel id, its display name, or the derived key - all three appear in responses.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "description": "Substring of the author's name or id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "thread",
+            "in": "query",
+            "description": "Only messages in this thread, by derived thread key.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "The payload format the provider sent, such as blocks or text.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bot",
+            "in": "query",
+            "description": "Only messages posted by a bot, or only those that were not.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "replies",
+            "in": "query",
+            "description": "Include or exclude thread replies.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/chat.MessageEnvelope"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteChatMessages",
+        "summary": "Clear every captured chat message.",
+        "tags": [
+          "chat"
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/chat/messages/{id}": {
+      "get": {
+        "operationId": "getChatMessagesById",
+        "summary": "One message, with its derived channel, thread and root identifiers.",
+        "tags": [
+          "chat"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/chat.MessageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "operationId": "getEvents",
+        "summary": "Every captured event, newest first, whatever plugin captured it.",
+        "tags": [
+          "core"
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only events captured by this provider.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only events of this type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "plugin",
+            "in": "query",
+            "description": "Only events from this plugin, such as mail.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_raw",
+            "in": "query",
+            "description": "Include the raw request body, which listings omit because it can be megabytes.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ui.EventJSON"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteEvents",
+        "summary": "Clear captured events, all of them or one plugin's.",
+        "tags": [
+          "core"
+        ],
+        "parameters": [
+          {
+            "name": "plugin",
+            "in": "query",
+            "description": "Clear only this plugin's events.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/stream": {
+      "get": {
+        "operationId": "getEventsStream",
+        "summary": "The same events as they arrive, as Server-Sent Events. Each event produces a JSON frame carrying the event without its raw body, and a frame named after the event type carrying just the id.",
+        "tags": [
+          "core"
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only events captured by this provider.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only events of this type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "plugin",
+            "in": "query",
+            "description": "Only events from this plugin, such as mail.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_raw",
+            "in": "query",
+            "description": "Include the raw request body, which listings omit because it can be megabytes.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/{id}": {
+      "get": {
+        "operationId": "getEventsById",
+        "summary": "One event in full, raw request body included.",
+        "tags": [
+          "core"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ui.EventJSON"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteEventsById",
+        "summary": "Delete one captured event.",
+        "tags": [
+          "core"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/content/{path}": {
+      "get": {
+        "operationId": "getFilesContentByPath",
+        "summary": "A file's bytes, streamed from the blob store with range support.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "description": "Path inside the shared virtual filesystem. It may contain slashes: this is the whole remaining path, not one segment.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteFilesContentByPath",
+        "summary": "Delete one file, or a directory with ?recursive=1.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "description": "Path inside the shared virtual filesystem. It may contain slashes: this is the whole remaining path, not one segment.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recursive",
+            "in": "query",
+            "description": "Required to delete a directory, so a mistyped path cannot take a subtree with it.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/stat/{path}": {
+      "get": {
+        "operationId": "getFilesStatByPath",
+        "summary": "One entry's metadata: size, mode, times, and which provider wrote it.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "description": "Path inside the shared virtual filesystem. It may contain slashes: this is the whole remaining path, not one segment.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/files.EntryView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/tree": {
+      "get": {
+        "operationId": "getFilesTree",
+        "summary": "One directory of the shared virtual filesystem, or the whole subtree.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "description": "The directory to list; the root when omitted.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recursive",
+            "in": "query",
+            "description": "List the whole subtree rather than one level.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/files.TreeView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteFilesTree",
+        "summary": "Empty the virtual filesystem.",
+        "tags": [
+          "files"
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Liveness, uptime, the enabled plugins and how many events are held.",
+        "tags": [
+          "core"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.HealthInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hl7/messages": {
+      "get": {
+        "operationId": "getHl7Messages",
+        "summary": "Every captured HL7 message, newest first.",
+        "tags": [
+          "hl7"
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only events captured by this provider.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only events of this type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "message_type",
+            "in": "query",
+            "description": "The whole type (ADT^A01), just the code (ADT) or just the trigger event (A01).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "control_id",
+            "in": "query",
+            "description": "MSH-10, the message control id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sending_application",
+            "in": "query",
+            "description": "MSH-3, the sending application.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "receiving_application",
+            "in": "query",
+            "description": "MSH-5, the receiving application.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "segment",
+            "in": "query",
+            "description": "Only messages carrying this segment, such as PID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/hl7.MessageEnvelope"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteHl7Messages",
+        "summary": "Clear every captured HL7 message.",
+        "tags": [
+          "hl7"
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/hl7/messages/{id}": {
+      "get": {
+        "operationId": "getHl7MessagesById",
+        "summary": "One message: the parsed header and the segment tree.",
+        "tags": [
+          "hl7"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hl7.MessageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteHl7MessagesById",
+        "summary": "Delete one captured message.",
+        "tags": [
+          "hl7"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hl7/messages/{id}/raw": {
+      "get": {
+        "operationId": "getHl7MessagesByIdRaw",
+        "summary": "The bytes exactly as they arrived, served inert as text/plain.",
+        "tags": [
+          "hl7"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mail/messages": {
+      "get": {
+        "operationId": "getMailMessages",
+        "summary": "Every captured message, newest first.",
+        "tags": [
+          "mail"
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only events captured by this provider.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only events of this type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Substring of any recipient - To, Cc or Bcc.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Substring of the sender.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "description": "Substring of the subject.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "has_attachments",
+            "in": "query",
+            "description": "Only messages with, or without, attachments.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/mail.MessageView"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMailMessages",
+        "summary": "Clear every captured message. Attachment blobs deliberately survive.",
+        "tags": [
+          "mail"
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/mail/messages/{id}": {
+      "get": {
+        "operationId": "getMailMessagesById",
+        "summary": "One message, with links to its bodies and attachments.",
+        "tags": [
+          "mail"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mail.MessageView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mail/messages/{id}/attachments/{idx}": {
+      "get": {
+        "operationId": "getMailMessagesByIdAttachmentsByIdx",
+        "summary": "One attachment, streamed from the blob store with range support.",
+        "tags": [
+          "mail"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idx",
+            "in": "path",
+            "description": "Zero-based index into the attachments or media of that message.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inline",
+            "in": "query",
+            "description": "Force an inline Content-Disposition.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "description": "Force an attachment Content-Disposition.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mail/messages/{id}/html": {
+      "get": {
+        "operationId": "getMailMessagesByIdHtml",
+        "summary": "The HTML part, served under a no-script CSP because it is untrusted content.",
+        "tags": [
+          "mail"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/html": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mail/messages/{id}/raw": {
+      "get": {
+        "operationId": "getMailMessagesByIdRaw",
+        "summary": "The untouched request that produced the message; ?download=1 serves it as an .eml.",
+        "tags": [
+          "mail"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "description": "Serve as a downloadable message/rfc822 attachment.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mail/messages/{id}/text": {
+      "get": {
+        "operationId": "getMailMessagesByIdText",
+        "summary": "The plain-text part of the message, as text/plain.",
+        "tags": [
+          "mail"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "getOpenapiJson",
+        "summary": "This document, generated from the running server's own routes and describing only the plugins this instance enabled.",
+        "tags": [
+          "core"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/plugins": {
+      "get": {
+        "operationId": "getPlugins",
+        "summary": "Every plugin and provider, with its endpoints and its snippets rendered against the ports this instance actually bound.",
+        "tags": [
+          "core"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/plugin.PluginInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/push/messages": {
+      "get": {
+        "operationId": "getPushMessages",
+        "summary": "Every captured push, newest first. Paging is applied after the filters, so a limit never counts what a filter excluded.",
+        "tags": [
+          "push"
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only events captured by this provider.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only events of this type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "displays",
+            "in": "query",
+            "description": "Only pushes that would show something on a lock screen, or only those that would not.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "alert, silent or background.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_kind",
+            "in": "query",
+            "description": "How the push was addressed: token, topic or condition.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "Substring of the target itself.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "app",
+            "in": "query",
+            "description": "The application or Firebase project the push was sent to.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "push_type",
+            "in": "query",
+            "description": "The APNs push type: alert, background, voip and the rest.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "description": "The priority, by level or by its raw value.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "data_key",
+            "in": "query",
+            "description": "Only pushes whose data payload carries this key.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/push.MessageEnvelope"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePushMessages",
+        "summary": "Clear every captured push.",
+        "tags": [
+          "push"
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/push/messages/{id}": {
+      "get": {
+        "operationId": "getPushMessagesById",
+        "summary": "One push, with the displays/explain verdict alongside the model.",
+        "tags": [
+          "push"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/push.MessageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePushMessagesById",
+        "summary": "Delete one captured push.",
+        "tags": [
+          "push"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/push/messages/{id}/raw": {
+      "get": {
+        "operationId": "getPushMessagesByIdRaw",
+        "summary": "The request body exactly as it arrived, as text/plain with nosniff.",
+        "tags": [
+          "push"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sms/messages": {
+      "get": {
+        "operationId": "getSmsMessages",
+        "summary": "Every captured text message, newest first.",
+        "tags": [
+          "sms"
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only events captured by this provider.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only events of this type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Substring of the recipient number.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Substring of the sender number.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Delivery status the provider reported, such as queued.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "description": "outbound or inbound.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "encoding",
+            "in": "query",
+            "description": "GSM-7 or UCS-2.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mms",
+            "in": "query",
+            "description": "Only messages that carry media, or only those that do not.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/sms.MessageEnvelope"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteSmsMessages",
+        "summary": "Clear every captured text message.",
+        "tags": [
+          "sms"
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/sms/messages/{id}": {
+      "get": {
+        "operationId": "getSmsMessagesById",
+        "summary": "One message, with its segment arithmetic and media references.",
+        "tags": [
+          "sms"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/sms.MessageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sms/messages/{id}/media/{idx}": {
+      "get": {
+        "operationId": "getSmsMessagesByIdMediaByIdx",
+        "summary": "One MMS attachment, streamed from the blob store with range support.",
+        "tags": [
+          "sms"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idx",
+            "in": "path",
+            "description": "Zero-based index into the attachments or media of that message.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "api.Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "api.HealthInfo": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "integer"
+          },
+          "plugins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "uptime": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugins",
+          "status",
+          "uptime"
+        ]
+      },
+      "as2.CertInfo": {
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "key_algorithm": {
+            "type": "string"
+          },
+          "not_after": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "not_before": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "self_signed": {
+            "type": "boolean"
+          },
+          "serial": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "issuer",
+          "not_after",
+          "not_before",
+          "self_signed",
+          "serial",
+          "subject"
+        ]
+      },
+      "as2.CompressionInfo": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "algorithm_oid": {
+            "type": "string"
+          },
+          "compressed_size": {
+            "type": "integer"
+          },
+          "decompressed": {
+            "type": "boolean"
+          },
+          "decompressed_size": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "placement": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "algorithm_oid",
+          "compressed_size",
+          "decompressed",
+          "placement"
+        ]
+      },
+      "as2.Encryption": {
+        "type": "object",
+        "properties": {
+          "content_algorithm": {
+            "type": "string"
+          },
+          "content_algorithm_oid": {
+            "type": "string"
+          },
+          "decrypted": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "key_algorithm": {
+            "type": "string"
+          },
+          "key_algorithm_oid": {
+            "type": "string"
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/as2.RecipientInfo"
+            }
+          }
+        },
+        "required": [
+          "decrypted"
+        ]
+      },
+      "as2.IdentityInfo": {
+        "type": "object",
+        "properties": {
+          "cert_path": {
+            "type": "string"
+          },
+          "certificate": {
+            "$ref": "#/components/schemas/as2.CertInfo"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "key_path": {
+            "type": "string"
+          },
+          "partner": {
+            "$ref": "#/components/schemas/as2.CertInfo"
+          },
+          "pem": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "ready",
+          "source"
+        ]
+      },
+      "as2.Issue": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "detail",
+          "severity"
+        ]
+      },
+      "as2.Layer": {
+        "type": "object",
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "opened": {
+            "type": "boolean"
+          },
+          "smime_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bytes",
+          "kind",
+          "opened"
+        ]
+      },
+      "as2.MDNRecord": {
+        "type": "object",
+        "properties": {
+          "blob": {
+            "$ref": "#/components/schemas/blob.Ref"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "human_text": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "micalg": {
+            "type": "string"
+          },
+          "received_content_mic": {
+            "type": "string"
+          },
+          "signed": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "disposition",
+          "message_id",
+          "signed",
+          "size",
+          "status"
+        ]
+      },
+      "as2.MIC": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "coverage": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "algorithm",
+          "bytes",
+          "coverage",
+          "digest"
+        ]
+      },
+      "as2.Message": {
+        "type": "object",
+        "properties": {
+          "alternate_mics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/as2.MIC"
+            }
+          },
+          "as2_version": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/as2.Issue"
+            }
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/as2.Layer"
+            }
+          },
+          "mdn": {
+            "$ref": "#/components/schemas/as2.MDNRecord"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "mic": {
+            "$ref": "#/components/schemas/as2.MIC"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/as2.Payload"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/as2.ReceiptRequest"
+          },
+          "security": {
+            "$ref": "#/components/schemas/as2.Security"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "user_agent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "payload",
+          "receipt",
+          "security",
+          "to"
+        ]
+      },
+      "as2.MessageEnvelope": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "mdn_url": {
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/as2.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "payload_url": {
+            "type": "string"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "raw_url": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "provider",
+          "raw_url",
+          "received_at",
+          "title",
+          "type"
+        ]
+      },
+      "as2.Payload": {
+        "type": "object",
+        "properties": {
+          "blob": {
+            "$ref": "#/components/schemas/blob.Ref"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "recovered": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "transfer_encoding": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "size"
+        ]
+      },
+      "as2.ReceiptRequest": {
+        "type": "object",
+        "properties": {
+          "async_url": {
+            "type": "string"
+          },
+          "mic_algs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notify_to": {
+            "type": "string"
+          },
+          "options": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "requested": {
+            "type": "boolean"
+          },
+          "signed_importance": {
+            "type": "string"
+          },
+          "signed_requested": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requested",
+          "signed_requested"
+        ]
+      },
+      "as2.RecipientInfo": {
+        "type": "object",
+        "properties": {
+          "issuer": {
+            "type": "string"
+          },
+          "serial": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "issuer",
+          "serial"
+        ]
+      },
+      "as2.Security": {
+        "type": "object",
+        "properties": {
+          "compressed": {
+            "type": "boolean"
+          },
+          "compression": {
+            "$ref": "#/components/schemas/as2.CompressionInfo"
+          },
+          "encrypted": {
+            "type": "boolean"
+          },
+          "encryption": {
+            "$ref": "#/components/schemas/as2.Encryption"
+          },
+          "signature": {
+            "$ref": "#/components/schemas/as2.Signature"
+          },
+          "signed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "compressed",
+          "encrypted",
+          "signed"
+        ]
+      },
+      "as2.Signature": {
+        "type": "object",
+        "properties": {
+          "chain": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/as2.CertInfo"
+            }
+          },
+          "declared_micalg": {
+            "type": "string"
+          },
+          "digest_algorithm": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "partner_configured": {
+            "type": "boolean"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "signature_algorithm": {
+            "type": "string"
+          },
+          "signer": {
+            "$ref": "#/components/schemas/as2.CertInfo"
+          },
+          "signer_matched": {
+            "type": "boolean"
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "partner_configured",
+          "signer_matched",
+          "verified"
+        ]
+      },
+      "blob.Ref": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "size"
+        ]
+      },
+      "chat.Author": {
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "boolean"
+          },
+          "icon_url": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "chat.ChannelRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "chat.ChannelSummary": {
+        "type": "object",
+        "properties": {
+          "display": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "last_author": {
+            "type": "string"
+          },
+          "last_message_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_message_id": {
+            "type": "string"
+          },
+          "last_preview": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "integer"
+          },
+          "messages_url": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "orphans": {
+            "type": "integer"
+          },
+          "replies": {
+            "type": "integer"
+          },
+          "threads": {
+            "type": "integer"
+          },
+          "ui_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "display",
+          "id",
+          "key",
+          "last_message_at",
+          "messages",
+          "messages_url",
+          "orphans",
+          "replies",
+          "threads",
+          "ui_url"
+        ]
+      },
+      "chat.Content": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "format": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "format"
+        ]
+      },
+      "chat.Message": {
+        "type": "object",
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/chat.Author"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/chat.ChannelRef"
+          },
+          "contents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/chat.Content"
+            }
+          },
+          "text": {
+            "type": "string"
+          },
+          "thread_ts": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "author",
+          "channel",
+          "text"
+        ]
+      },
+      "chat.MessageEnvelope": {
+        "type": "object",
+        "properties": {
+          "channel_key": {
+            "type": "string"
+          },
+          "formats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/chat.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "provider": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reply": {
+            "type": "boolean"
+          },
+          "root_id": {
+            "type": "string"
+          },
+          "thread_key": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_key",
+          "id",
+          "message",
+          "provider",
+          "received_at",
+          "reply",
+          "root_id",
+          "thread_key",
+          "type"
+        ]
+      },
+      "event.Raw": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "peer_addr": {
+            "type": "string"
+          },
+          "text": {
+            "type": "boolean"
+          },
+          "transport": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "transport"
+        ]
+      },
+      "event.Summary": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "files.Crumb": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "url"
+        ]
+      },
+      "files.EntryLinks": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "self": {
+            "type": "string"
+          },
+          "tree": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "self"
+        ]
+      },
+      "files.EntryView": {
+        "type": "object",
+        "properties": {
+          "blob": {
+            "$ref": "#/components/schemas/blob.Ref"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "dir": {
+            "type": "boolean"
+          },
+          "links": {
+            "$ref": "#/components/schemas/files.EntryLinks"
+          },
+          "mod_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blob",
+          "dir",
+          "links",
+          "mod_time",
+          "name",
+          "path",
+          "size"
+        ]
+      },
+      "files.Stats": {
+        "type": "object",
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "dirs": {
+            "type": "integer"
+          },
+          "files": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "dirs",
+          "files"
+        ]
+      },
+      "files.TreeView": {
+        "type": "object",
+        "properties": {
+          "breadcrumb": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/files.Crumb"
+            }
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/files.EntryView"
+            }
+          },
+          "parent": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "recursive": {
+            "type": "boolean"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/files.Stats"
+          }
+        },
+        "required": [
+          "breadcrumb",
+          "entries",
+          "path",
+          "stats"
+        ]
+      },
+      "hl7.Component": {
+        "type": "object",
+        "properties": {
+          "subcomponents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "hl7.Field": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "integer"
+          },
+          "repetitions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hl7.Repetition"
+            }
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "position",
+          "value"
+        ]
+      },
+      "hl7.Header": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "control_id": {
+            "type": "string"
+          },
+          "processing_id": {
+            "type": "string"
+          },
+          "receiving_application": {
+            "type": "string"
+          },
+          "receiving_facility": {
+            "type": "string"
+          },
+          "sending_application": {
+            "type": "string"
+          },
+          "sending_facility": {
+            "type": "string"
+          },
+          "structure": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "trigger_event": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "hl7.Issue": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "detail"
+        ]
+      },
+      "hl7.Message": {
+        "type": "object",
+        "properties": {
+          "header": {
+            "$ref": "#/components/schemas/hl7.Header"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hl7.Issue"
+            }
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hl7.Segment"
+            }
+          },
+          "separators": {
+            "$ref": "#/components/schemas/hl7.Separators"
+          }
+        },
+        "required": [
+          "header",
+          "separators"
+        ]
+      },
+      "hl7.MessageEnvelope": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/hl7.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "preview": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "raw_url": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "provider",
+          "raw_url",
+          "received_at",
+          "title",
+          "type"
+        ]
+      },
+      "hl7.Repetition": {
+        "type": "object",
+        "properties": {
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hl7.Component"
+            }
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "hl7.Segment": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hl7.Field"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "occurrence": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "index",
+          "occurrence"
+        ]
+      },
+      "hl7.Separators": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "escape": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "repetition": {
+            "type": "string"
+          },
+          "subcomponent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ]
+      },
+      "mail.Address": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "mail.Attachment": {
+        "type": "object",
+        "properties": {
+          "blob": {
+            "$ref": "#/components/schemas/blob.Ref"
+          },
+          "content_id": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "inline": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blob",
+          "size"
+        ]
+      },
+      "mail.Message": {
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/mail.Attachment"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/mail.Address"
+            }
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/mail.Address"
+            }
+          },
+          "from": {
+            "$ref": "#/components/schemas/mail.Address"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "html": {
+            "type": "string"
+          },
+          "reply_to": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/mail.Address"
+            }
+          },
+          "subject": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/mail.Address"
+            }
+          }
+        },
+        "required": [
+          "from"
+        ]
+      },
+      "mail.MessageLinks": {
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "html": {
+            "type": "string"
+          },
+          "raw": {
+            "type": "string"
+          },
+          "self": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "raw",
+          "self"
+        ]
+      },
+      "mail.MessageView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "links": {
+            "$ref": "#/components/schemas/mail.MessageLinks"
+          },
+          "message": {
+            "$ref": "#/components/schemas/mail.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "provider": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "links",
+          "message",
+          "provider",
+          "received_at",
+          "type"
+        ]
+      },
+      "plugin.Endpoint": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "method",
+          "path"
+        ]
+      },
+      "plugin.PluginInfo": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plugin.ProviderInfo"
+            }
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "enabled",
+          "name",
+          "providers",
+          "title"
+        ]
+      },
+      "plugin.ProviderInfo": {
+        "type": "object",
+        "properties": {
+          "addr": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plugin.Endpoint"
+            }
+          },
+          "listener": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "snippets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plugin.RenderedSnippet"
+            }
+          }
+        },
+        "required": [
+          "description",
+          "enabled",
+          "endpoints",
+          "listener",
+          "name",
+          "plugin",
+          "snippets"
+        ]
+      },
+      "plugin.RenderedSnippet": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "lang": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "lang",
+          "title"
+        ]
+      },
+      "push.Alert": {
+        "type": "object",
+        "properties": {
+          "badge": {
+            "type": "integer"
+          },
+          "body": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "localization": {
+            "$ref": "#/components/schemas/push.Localization"
+          },
+          "sound": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "push.Delivery": {
+        "type": "object",
+        "properties": {
+          "collapse_key": {
+            "type": "string"
+          },
+          "expiry": {
+            "$ref": "#/components/schemas/push.Expiry"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "priority_raw": {
+            "type": "string"
+          }
+        }
+      },
+      "push.Expiry": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "immediate": {
+            "type": "boolean"
+          },
+          "raw": {
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "push.Localization": {
+        "type": "object",
+        "properties": {
+          "body_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "body_key": {
+            "type": "string"
+          },
+          "title_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title_key": {
+            "type": "string"
+          }
+        }
+      },
+      "push.Message": {
+        "type": "object",
+        "properties": {
+          "alert": {
+            "$ref": "#/components/schemas/push.Alert"
+          },
+          "app": {
+            "type": "string"
+          },
+          "data": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/push.Delivery"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "payloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/push.Payload"
+            }
+          },
+          "push_type": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/push.Target"
+          }
+        },
+        "required": [
+          "delivery",
+          "kind",
+          "target"
+        ]
+      },
+      "push.MessageEnvelope": {
+        "type": "object",
+        "properties": {
+          "displays": {
+            "type": "boolean"
+          },
+          "explain": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/push.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "preview": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "raw_url": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "displays",
+          "id",
+          "message",
+          "provider",
+          "raw_url",
+          "received_at",
+          "title",
+          "type"
+        ]
+      },
+      "push.Payload": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "format": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "format"
+        ]
+      },
+      "push.Target": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ]
+      },
+      "sms.Media": {
+        "type": "object",
+        "properties": {
+          "blob": {
+            "$ref": "#/components/schemas/blob.Ref"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "sms.MediaRef": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "stored": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "stored",
+          "url"
+        ]
+      },
+      "sms.Message": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/sms.Media"
+            }
+          },
+          "messaging_service": {
+            "type": "string"
+          },
+          "segments": {
+            "$ref": "#/components/schemas/sms.Segments"
+          },
+          "status": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "segments",
+          "to"
+        ]
+      },
+      "sms.MessageEnvelope": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/sms.MediaRef"
+            }
+          },
+          "message": {
+            "$ref": "#/components/schemas/sms.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "provider": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "provider",
+          "received_at",
+          "type"
+        ]
+      },
+      "sms.Segments": {
+        "type": "object",
+        "properties": {
+          "capacity": {
+            "type": "integer"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "remaining": {
+            "type": "integer"
+          },
+          "units": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capacity",
+          "count",
+          "encoding",
+          "remaining",
+          "units"
+        ]
+      },
+      "ui.EventJSON": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "payload": {},
+          "plugin": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "raw": {
+            "$ref": "#/components/schemas/event.Raw"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/event.Summary"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "plugin",
+          "provider",
+          "raw",
+          "received_at",
+          "summary",
+          "type"
+        ]
+      }
+    }
+  }
+}
