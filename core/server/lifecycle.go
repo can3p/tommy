@@ -21,6 +21,7 @@ import (
 	"github.com/can3p/tommy/core/blob"
 	blobmem "github.com/can3p/tommy/core/blob/memory"
 	"github.com/can3p/tommy/core/config"
+	"github.com/can3p/tommy/core/event"
 	"github.com/can3p/tommy/core/plugin"
 	"github.com/can3p/tommy/core/server/api"
 	"github.com/can3p/tommy/core/server/ingress"
@@ -281,7 +282,13 @@ func (s *Server) listenerAddr(ref plugin.Ref) string {
 }
 
 func (s *Server) build() error {
-	s.ingress = ingress.New(s.log.With("component", "ingress"))
+	// Every ingress response carries a link to what it captured: the point of
+	// sending a mail to a fake provider is to look at the mail, and the link
+	// lands in the sending application's own log without it calling back.
+	s.ingress = ingress.New(s.log.With("component", "ingress"),
+		ingress.WithEventURL(func(id event.ID) string {
+			return ui.EventURL(s.SnippetCtx().UIURL, id)
+		}))
 	if err := s.ingress.Mount(s.reg, s.baseDeps); err != nil {
 		return err
 	}

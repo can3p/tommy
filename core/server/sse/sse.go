@@ -26,6 +26,12 @@ type Options struct {
 	// Backlog, when set, is written as the first frames, so a client can paint
 	// without a second request.
 	Backlog []*event.Event
+
+	// Envelope, when set, replaces the event as the JSON payload of a data
+	// frame. The API uses it to add the URL of the event's own page, so a
+	// stream consumer gets the same shape the REST routes return; core needs
+	// no envelope of its own, and nothing here knows what the wrapper is.
+	Envelope func(*event.Event) any
 }
 
 // Each appended event produces two frames:
@@ -55,7 +61,7 @@ func Stream(w http.ResponseWriter, r *http.Request, events <-chan *event.Event, 
 	flusher.Flush()
 
 	for _, e := range opts.Backlog {
-		writeEvent(w, e)
+		writeEvent(w, e, opts.Envelope)
 	}
 	if len(opts.Backlog) > 0 {
 		flusher.Flush()
@@ -83,14 +89,18 @@ func Stream(w http.ResponseWriter, r *http.Request, events <-chan *event.Event, 
 			if !opts.Filter.Matches(e) {
 				continue
 			}
-			writeEvent(w, e)
+			writeEvent(w, e, opts.Envelope)
 			flusher.Flush()
 		}
 	}
 }
 
-func writeEvent(w http.ResponseWriter, e *event.Event) {
-	payload, err := json.Marshal(e.WithoutRawBody())
+func writeEvent(w http.ResponseWriter, e *event.Event, envelope func(*event.Event) any) {
+	var body any = e.WithoutRawBody()
+	if envelope != nil {
+		body = envelope(e.WithoutRawBody())
+	}
+	payload, err := json.Marshal(body)
 	if err != nil {
 		return
 	}
