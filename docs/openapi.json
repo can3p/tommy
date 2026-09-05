@@ -82,7 +82,7 @@
           {
             "name": "provider",
             "in": "query",
-            "description": "Only events captured by this provider, such as mailjet.",
+            "description": "Only entries captured by this provider, such as mailjet.",
             "schema": {
               "type": "string"
             }
@@ -90,7 +90,7 @@
           {
             "name": "type",
             "in": "query",
-            "description": "Only events of this type, such as mail.message.",
+            "description": "Only entries of this event type, such as mail.message.",
             "schema": {
               "type": "string"
             }
@@ -114,7 +114,7 @@
           {
             "name": "limit",
             "in": "query",
-            "description": "Maximum number of events to return.",
+            "description": "Maximum number of entries to return.",
             "schema": {
               "type": "integer"
             }
@@ -122,7 +122,7 @@
           {
             "name": "offset",
             "in": "query",
-            "description": "How many events to skip.",
+            "description": "How many entries to skip.",
             "schema": {
               "type": "integer"
             }
@@ -208,7 +208,7 @@
           {
             "name": "provider",
             "in": "query",
-            "description": "Only events captured by this provider, such as mailjet.",
+            "description": "Only entries captured by this provider, such as mailjet.",
             "schema": {
               "type": "string"
             }
@@ -216,7 +216,7 @@
           {
             "name": "type",
             "in": "query",
-            "description": "Only events of this type, such as mail.message.",
+            "description": "Only entries of this event type, such as mail.message.",
             "schema": {
               "type": "string"
             }
@@ -240,7 +240,7 @@
           {
             "name": "limit",
             "in": "query",
-            "description": "Maximum number of events to return.",
+            "description": "Maximum number of entries to return.",
             "schema": {
               "type": "integer"
             }
@@ -248,7 +248,7 @@
           {
             "name": "offset",
             "in": "query",
-            "description": "How many events to skip.",
+            "description": "How many entries to skip.",
             "schema": {
               "type": "integer"
             }

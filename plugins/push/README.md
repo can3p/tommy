@@ -169,6 +169,12 @@ every field.
 
 Mounted at `/api/v1/push/`.
 
+These routes have their own OpenAPI description, generated from the server's
+route table: `GET /api/v1/push/openapi.json` from a running tommy, or
+[`docs/openapi-push.json`](../../docs/openapi-push.json) in the repository.
+The generic event routes are described separately, in
+[`docs/openapi.json`](../../docs/openapi.json).
+
 | Route | Notes |
 |---|---|
 | `GET /messages` | the core's `?plugin=…&search=…&since=…&limit=&offset=` plus the filters below |

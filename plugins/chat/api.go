@@ -126,6 +126,29 @@ type apiHandler struct {
 	deps plugin.Deps
 }
 
+// APIEndpoints documents what RegisterAPI mounts, and is what this plugin's
+// own OpenAPI description is generated from.
+func (p *Plugin) APIEndpoints() []plugin.APIEndpoint {
+	list := append(plugin.CommonListParams(),
+		plugin.APIParam{Name: "channel", Description: "The provider's channel id, its display name, or the derived key - all three appear in responses."},
+		plugin.APIParam{Name: "author", Description: "Substring of the author's name or id."},
+		plugin.APIParam{Name: "thread", Description: "Only messages in this thread, by derived thread key."},
+		plugin.APIParam{Name: "format", Description: "The payload format the provider sent, such as blocks or text."},
+		plugin.APIParam{Name: "bot", Description: "Only messages posted by a bot, or only those that were not.", Type: "boolean"},
+		plugin.APIParam{Name: "replies", Description: "Include or exclude thread replies.", Type: "boolean"},
+	)
+	return []plugin.APIEndpoint{
+		{Method: "GET", Path: "/messages", Description: "Every captured chat message, newest first.",
+			Query: list, Response: []MessageEnvelope{}},
+		{Method: "GET", Path: "/messages/{id}", Description: "One message, with its derived channel, thread and root identifiers.",
+			Response: MessageEnvelope{}},
+		{Method: "GET", Path: "/channels", Description: "The derived channel index: message, thread, reply and orphan counts, and the last message. Computed on every request, so it always agrees with the tab.",
+			Response: []ChannelSummary{}},
+		{Method: "DELETE", Path: "/messages", Description: "Clear every captured chat message.",
+			Status: http.StatusNoContent},
+	}
+}
+
 func (h *apiHandler) mount(mux plugin.Mux) {
 	mux.HandleFunc("GET /messages", h.list)
 	mux.HandleFunc("GET /messages/{id}", h.get)

@@ -144,6 +144,12 @@ editor, a heredoc or an HTTP client will not have one.
 
 Mounted at `/api/v1/hl7/`.
 
+These routes have their own OpenAPI description, generated from the server's
+route table: `GET /api/v1/hl7/openapi.json` from a running tommy, or
+[`docs/openapi-hl7.json`](../../docs/openapi-hl7.json) in the repository.
+The generic event routes are described separately, in
+[`docs/openapi.json`](../../docs/openapi.json).
+
 | Route | Notes |
 |---|---|
 | `GET /messages` | `?message_type=&control_id=&sending_application=&receiving_application=&segment=` plus the core's `search`, `since`, `limit`, `offset` |
