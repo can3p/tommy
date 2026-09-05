@@ -18,10 +18,16 @@
 # Run with:  tommy serve --config tommy.toml
 # Inspect a config without starting anything:  tommy providers --config tommy.toml
 
-# Default interface for every core listener (ui, api, ingress). Override a
-# single listener's own `bind` below if you need one facing a different
-# interface than the others - the ingress facing 0.0.0.0 while ui/api stay on
-# localhost, say.
+# Default interface for every listener tommy opens: the core three (ui, api,
+# ingress) and every protocol provider below (smtp, ftp, sftp, tftp, nfs, mllp,
+# trap). Override a single listener's own `bind` below if you need one facing a
+# different interface than the others - the ingress facing 0.0.0.0 while ui/api
+# stay on localhost, say.
+#
+# `tommy serve --bind X` sets this and clears the three core listeners' own
+# `bind`, so the flag always wins for them; a per-provider `bind` set below is
+# left alone and still wins. That matters in a container, where everything has
+# to face 0.0.0.0 for a published port to reach it - see docs/docker.md.
 bind = "127.0.0.1"
 
 # Hostname used in the URLs tommy prints at startup and in every snippet
@@ -68,9 +74,11 @@ capacity = 500
 
 # Total bytes the blob store (mail attachments, uploaded files) may hold
 # across every plugin. An integer is bytes; a string like "1.5GiB" also works.
+# Note the unit: MB is 1000*1000 and MiB is 1024*1024, so "256MB" is NOT the
+# default - this line said exactly that until a test compared the two.
 # Once the cap is reached, further uploads fail loudly instead of silently
 # evicting an older blob a UI page or download link might still point at.
-blob_limit = "256MB"
+blob_limit = "256MiB"
 
 # Per-plugin overrides of `capacity` above, uncomment to give one plugin more
 # room than the rest:
@@ -133,7 +141,7 @@ port    = 1025          # the provider's own listener, not the shared ingress. C
 #
 # The rest are tuning knobs nobody needs to flip per test run, so they stay
 # file-only (no CLI flag):
-# bind              = "127.0.0.1"  # interface this listener binds, independent of the top-level `bind`
+# bind              = "127.0.0.1"  # this listener's own interface; unset, it inherits the top-level `bind`
 # domain            = "tommy"      # hostname in the SMTP greeting banner
 # max_message_bytes = 26214400     # 25MiB, caps one DATA transaction
 # max_recipients    = 100          # caps RCPT TO per transaction
@@ -178,7 +186,7 @@ port = 2121              # the provider's own listener, not the shared ingress. 
 #
 # The rest are tuning knobs nobody needs to flip per test run, so they stay
 # file-only (no CLI flag):
-# bind               = "127.0.0.1"  # interface this listener binds, independent of the top-level `bind`
+# bind               = "127.0.0.1"  # this listener's own interface; unset, it inherits the top-level `bind`
 # idle_timeout       = 900          # seconds a connection may sit with no command
 # connection_timeout = 30           # seconds to establish a data connection
 
@@ -196,7 +204,7 @@ port = 2222               # the provider's own listener, not the shared ingress.
 #
 # The rest are tuning knobs nobody needs to flip per test run, so they stay
 # file-only (no CLI flag):
-# bind              = "127.0.0.1"     # interface this listener binds, independent of the top-level `bind`
+# bind              = "127.0.0.1"     # this listener's own interface; unset, it inherits the top-level `bind`
 # server_version    = "SSH-2.0-tommy" # identification string sent before the handshake
 # handshake_timeout = 30              # seconds allowed to complete authentication
 # idle_timeout      = 600             # seconds a connection may sit with no read or write
@@ -214,7 +222,7 @@ port = 6969               # the provider's own UDP listener. 6969 rather than TF
 #
 # The rest are tuning knobs nobody needs to flip per test run, so they stay
 # file-only (no CLI flag):
-# bind            = "127.0.0.1"  # interface this listener binds, independent of the top-level `bind`
+# bind            = "127.0.0.1"  # this listener's own interface; unset, it inherits the top-level `bind`
 # timeout_seconds = 5            # how long to wait for an ACK or DATA packet before retransmitting
 # retries         = 5            # retransmission attempts before a transfer is abandoned
 
@@ -235,7 +243,7 @@ port = 2049               # the provider's own listener. 2049 is NFS's usual por
 #
 # The rest are tuning knobs nobody needs to flip per test run, so they stay
 # file-only (no CLI flag):
-# bind = "127.0.0.1"      # interface this listener binds, independent of the top-level `bind`
+# bind = "127.0.0.1"      # this listener's own interface; unset, it inherits the top-level `bind`
 
 # -----------------------------------------------------------------------------
 # chat - captures chat messages your application posts to Slack or Microsoft
@@ -281,7 +289,7 @@ port = 2575               # the provider's own listener. 2575 is IANA-registered
 #
 # The rest are tuning knobs nobody needs to flip per test run, so they stay
 # file-only (no CLI flag):
-# bind              = "127.0.0.1"  # interface this listener binds, independent of the top-level `bind`
+# bind              = "127.0.0.1"  # this listener's own interface; unset, it inherits the top-level `bind`
 # max_message_bytes = 10485760     # 10MiB; a frame that never terminates is dropped and the connection closed
 
 # -----------------------------------------------------------------------------
@@ -305,7 +313,7 @@ port = 1162               # the provider's own UDP listener. 1162 rather than SN
 #
 # The rest are tuning knobs nobody needs to flip per test run, so they stay
 # file-only (no CLI flag):
-# bind = "127.0.0.1"      # interface this listener binds, independent of the top-level `bind`
+# bind = "127.0.0.1"      # this listener's own interface; unset, it inherits the top-level `bind`
 
 # -----------------------------------------------------------------------------
 # push - captures the push notifications your app's backend sends to Apple or
@@ -371,7 +379,10 @@ enabled = true
                                              # file; with no config file, into the OS user config
                                              # dir - ~/.config/tommy/as2 on Linux, but
                                              # ~/Library/Application Support/tommy/as2 on macOS.
-                                             # CLI: --as2-cert-dir
+                                             # CLI: --as2-cert-dir, the one provider option that is
+                                             # also a flag on `tommy serve` - a container needs it,
+                                             # because "beside this config file" is a read-only path
+                                             # there (see docs/docker.md).
 # common_name        = "tommy"              # subject CN of a generated certificate; ignored when
                                              # cert_file is given. CLI: --as2-common-name
 # in_memory          = false                # generate a key pair and write nothing to disk at all;

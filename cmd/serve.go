@@ -12,6 +12,8 @@ import (
 	"github.com/can3p/tommy/core/server"
 	"github.com/can3p/tommy/generated/buildinfo"
 	"github.com/can3p/tommy/plugins/all"
+	"github.com/can3p/tommy/plugins/as2"
+	as2http "github.com/can3p/tommy/plugins/as2/providers/http"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -25,6 +27,7 @@ var serveFlags struct {
 	host        string
 	logLevel    string
 	h2c         bool
+	as2CertDir  string
 }
 
 var serveCmd = &cobra.Command{
@@ -133,12 +136,34 @@ func loadConfig() (*config.Config, error) {
 	if serveFlagSet != nil && serveFlagSet.Changed("h2c") {
 		cfg.Ingress.H2C = config.Bool(serveFlags.h2c)
 	}
+	// The one provider option `serve` carries a flag for. Every other provider
+	// setting belongs in the config file or on a single-plugin shortcut, but
+	// as2 writes a key pair on first use and picks the directory beside the
+	// config file - which in a container image is a read-only path that the
+	// non-root user cannot create anything in. Without a flag here the image's
+	// only way to point that at a writable volume would be to ship an altered
+	// config, and the shipped config is the repository's own (docs/docker.md).
+	if serveFlags.as2CertDir != "" {
+		setProviderOption(cfg, as2.Name, as2http.Name, "cert_dir", serveFlags.as2CertDir)
+	}
 
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// setProviderOption merges one key into a provider's config section, leaving
+// every other key the file set alone. It is the flags-over-file rule applied to
+// a provider section rather than a core listener.
+func setProviderOption(cfg *config.Config, pluginName, providerName, key string, value any) {
+	values := cfg.Provider(pluginName, providerName).Values()
+	if values == nil {
+		values = map[string]any{}
+	}
+	values[key] = value
+	cfg.SetProvider(pluginName, providerName, config.NewProviderConfig(values))
 }
 
 func newLogger(level string) (*slog.Logger, error) {
@@ -160,6 +185,8 @@ func init() {
 	f.StringVar(&serveFlags.logLevel, "log-level", "info", "debug, info, warn or error")
 	f.BoolVar(&serveFlags.h2c, "h2c", true,
 		"serve cleartext HTTP/2 (h2c) on the ingress alongside HTTP/1.1; --h2c=false disables it")
+	f.StringVar(&serveFlags.as2CertDir, "as2-cert-dir", "",
+		"directory a generated AS2 certificate is written to and reused from (default: beside the config file, or the OS user config dir)")
 	serveFlagSet = f
 
 	rootCmd.AddCommand(serveCmd)
