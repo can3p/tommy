@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -50,10 +51,7 @@ func start(t *testing.T) (*testutil.Instance, *nfsc.Target, *nfsrpc.Client) {
 		t.Fatalf("listener never bound: %v", err)
 	}
 
-	client, err := nfsrpc.DialTCP("tcp", addr, false)
-	if err != nil {
-		t.Fatalf("dial %s: %v", addr, err)
-	}
+	client := dialNFS(t, addr)
 	t.Cleanup(func() { client.Close() })
 
 	// AUTH_UNIX, the credential a real client sends, so the recording half of
@@ -70,6 +68,37 @@ func start(t *testing.T) (*testutil.Instance, *nfsc.Target, *nfsrpc.Client) {
 	t.Cleanup(func() { _ = mounter.Unmount() })
 
 	return inst, target, client
+}
+
+// dialNFS retries the dial when the client cannot bind its own source port.
+//
+// nfsrpc picks a random local port - 49152-65535 for an unprivileged client -
+// and its own retry loop for "address already in use" is gated on the
+// privileged flag, so an unprivileged dial gives up on the first collision
+// instead of picking another port. Worse, pickLdr reseeds math/rand from
+// time.Now().UnixNano() on every call, so two dials close together can choose
+// the same port. On a busy machine that failed roughly one run in four.
+//
+// Retrying here rather than dropping to a privileged dial keeps the test
+// runnable without root, which is the whole reason it is unprivileged.
+func dialNFS(t *testing.T, addr string) *nfsrpc.Client {
+	t.Helper()
+
+	var err error
+	for attempt := range 10 {
+		var client *nfsrpc.Client
+		client, err = nfsrpc.DialTCP("tcp", addr, false)
+		if err == nil {
+			return client
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			break
+		}
+		// Long enough that UnixNano has moved on, short enough not to matter.
+		time.Sleep(time.Duration(attempt+1) * time.Millisecond)
+	}
+	t.Fatalf("dial %s: %v", addr, err)
+	return nil
 }
 
 // writeFile is create-then-write, which is what NFS actually is: there is no
