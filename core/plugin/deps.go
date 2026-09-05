@@ -72,5 +72,12 @@ func (d Deps) Append(ctx context.Context, e *event.Event) error {
 	if e.ReceivedAt.IsZero() {
 		e.ReceivedAt = n.Now()
 	}
-	return n.Store.Append(ctx, e)
+	if err := n.Store.Append(ctx, e); err != nil {
+		return err
+	}
+	// Tell whoever is handling the request what was captured, so the response
+	// can carry a link to it. Nothing is attached outside the ingress, and a
+	// provider that appends with a context of its own simply collects nothing.
+	EventCollectorFrom(ctx).add(e.ID)
+	return nil
 }

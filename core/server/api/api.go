@@ -15,6 +15,7 @@ import (
 	"github.com/can3p/tommy/core/event"
 	"github.com/can3p/tommy/core/plugin"
 	"github.com/can3p/tommy/core/server/sse"
+	"github.com/can3p/tommy/core/server/ui"
 	"github.com/can3p/tommy/core/store"
 )
 
@@ -71,8 +72,9 @@ func New(opts Options) (*API, error) {
 			d.Logger = d.Logger.With("plugin", p.Name())
 			p.RegisterAPI(sub, d)
 			prefix := "/" + p.Name()
-			a.mux.Handle(prefix+"/", http.StripPrefix(prefix, sub))
-			a.mux.Handle(prefix+"/{$}", http.StripPrefix(prefix, sub))
+			mounted := a.withOrigin(http.StripPrefix(prefix, sub))
+			a.mux.Handle(prefix+"/", mounted)
+			a.mux.Handle(prefix+"/{$}", mounted)
 		}
 	}
 	return a, nil
@@ -138,7 +140,7 @@ func (a *API) listEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		events = stripped
 	}
-	writeJSON(w, http.StatusOK, events)
+	writeJSON(w, http.StatusOK, ui.WithURLs(events, a.origin(r)))
 }
 
 func (a *API) getEvent(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +153,7 @@ func (a *API) getEvent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, e)
+	writeJSON(w, http.StatusOK, ui.WithURL(e, a.origin(r)))
 }
 
 func (a *API) streamEvents(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +163,11 @@ func (a *API) streamEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ch := a.opts.Store.Subscribe(r.Context())
-	sse.Stream(w, r, ch, sse.Options{Filter: q})
+	origin := a.origin(r)
+	sse.Stream(w, r, ch, sse.Options{
+		Filter:   q,
+		Envelope: func(e *event.Event) any { return ui.WithURL(e, origin) },
+	})
 }
 
 func (a *API) clearEvents(w http.ResponseWriter, r *http.Request) {
