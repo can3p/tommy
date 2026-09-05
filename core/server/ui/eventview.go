@@ -104,9 +104,10 @@ func (h *eventViewHandler) view(r *http.Request) (components.EventView, error) {
 	types, providers := distinct(all)
 
 	return components.EventView{
-		Base:   trimTrailingSlash(h.base),
-		Plugin: h.plugin,
-		Title:  h.title,
+		Base:     trimTrailingSlash(h.base),
+		PageBase: Prefix + EventPath,
+		Plugin:   h.plugin,
+		Title:    h.title,
 		Filter: components.EventFilter{
 			Search:   q.Search,
 			Type:     q.Type,
