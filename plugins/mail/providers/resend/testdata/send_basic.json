@@ -1,0 +1,7 @@
+{
+  "from": "Acme <alice@example.com>",
+  "to": ["bob@example.com"],
+  "subject": "Hello from tommy",
+  "html": "<p>It <b>works</b>.</p>",
+  "text": "It works."
+}
