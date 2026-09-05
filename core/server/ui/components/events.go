@@ -39,6 +39,22 @@ type EventView struct {
 	// Types and ProviderNames populate the filter dropdowns.
 	Types         []string
 	ProviderNames []string
+
+	// PageBase is where an event's own page lives, "/ui/events/". The view
+	// links to it rather than building the path itself, so the components
+	// package stays ignorant of where the UI is mounted.
+	PageBase string
+}
+
+// PageURL is the standalone page of one event: the URL to paste into a bug
+// report or open from a log line. Empty when the view was built without a
+// PageBase, which is how a plugin rendering this view outside the server gets
+// no dangling link.
+func (v EventView) PageURL(id event.ID) string {
+	if v.PageBase == "" {
+		return ""
+	}
+	return v.PageBase + string(id)
 }
 
 // HowToTest describes the plugins in scope, opening the panel when there is
@@ -134,6 +150,51 @@ func SummaryTable(e *event.Event) KVTable {
 		t.Rows = append(t.Rows, KV{Key: "Title", Value: e.Summary.Title})
 	}
 	return t
+}
+
+// EventPageLink is one step of the newer/older navigation on an event page.
+type EventPageLink struct {
+	Href  string
+	Title string
+}
+
+// EventPage is the standalone page for a single event - the one URL a captured
+// event can be linked by, and what an application's own logs point at.
+//
+// Body is the rendered detail: the owning plugin's own view when it has one,
+// the generic inspector otherwise. It arrives as already-rendered HTML because
+// a plugin renders it from its own template set.
+type EventPage struct {
+	Event *event.Event
+	Body  template.HTML
+
+	// PluginTitle and PluginHref point back at the tab this event belongs to.
+	// Href is empty when the plugin is not mounted, which is what a link to an
+	// event captured by a since-disabled plugin looks like.
+	PluginTitle string
+	PluginHref  string
+
+	// ShareURL is absolute, because the point of the copy button is to paste
+	// the link somewhere that is not this browser tab.
+	ShareURL string
+	// APIHref is the same event as JSON.
+	APIHref string
+
+	// Newer and Older walk the events of the same plugin, so an inbox can be
+	// read from the page rather than the list.
+	Newer *EventPageLink
+	Older *EventPageLink
+}
+
+// Heading is what the page calls the event.
+func (p EventPage) Heading() string {
+	if p.Event == nil {
+		return "Event"
+	}
+	if p.Event.Summary.Title != "" {
+		return p.Event.Summary.Title
+	}
+	return "(no title)"
 }
 
 // RawMeta renders the transport metadata of a Raw as a key/value table.
