@@ -1,0 +1,51 @@
+{{define "landing" -}}
+<section class="hero">
+  <h1>tommy</h1>
+  <div class="lede">{{.Lede}}</div>
+  <div class="cta">
+    <a class="primary" href="#quickstart">Quickstart</a>
+    <a href="#plugins">What it stands in for</a>
+    <a href="readme.html">README</a>
+    <a href="api/events.html">API reference</a>
+    <a href="https://github.com/can3p/tommy">GitHub</a>
+  </div>
+</section>
+<div class="landing">
+  <section id="quickstart" class="panel">{{.Quickstart}}</section>
+
+  <section id="plugins">
+    <h2>{{.CatalogueTitle}}</h2>
+    <div class="lede">{{.CatalogueIntro}}</div>
+    <div class="cards">
+      {{range .Plugins}}
+      <div class="card">
+        <h3><a href="{{.Path}}">{{.Name}}</a> <span class="title">{{.Title}}</span></h3>
+        <div class="stands-for">{{.StandsFor}}</div>
+        <dl class="providers">
+          {{range .Providers}}
+          <dt><a href="{{.Path}}">{{.Name}}</a></dt>
+          <dd>{{.ReachFor}}</dd>
+          {{end}}
+        </dl>
+      </div>
+      {{end}}
+    </div>
+  </section>
+
+  <section id="install" class="panel">{{.Install}}</section>
+
+  <section id="limits" class="panel">{{.NotDoing}}</section>
+
+  <section id="docs">
+    <h2>Documentation</h2>
+    <div class="cards">
+      {{range .Nav}}
+      <div class="card">
+        <h3>{{.Title}}</h3>
+        <ul>{{range .Items}}<li><a href="{{.Path}}">{{.Title}}</a></li>{{end}}</ul>
+      </div>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{- end}}
