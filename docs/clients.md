@@ -5,10 +5,11 @@ Every snippet below is written against the ports in the repo's own
 Run `tommy providers` (or check your own config) if you have moved a port —
 every value here is otherwise exactly what a fresh `tommy serve` binds.
 
-Three SDKs, three different amounts of cooperation:
+Four SDKs, four different amounts of cooperation:
 
 | SDK | Base URL support | What you do |
 |---|---|---|
+| **resend-go** (`github.com/resend/resend-go/v4`) | First class, and the easy case | Set the exported `Client.BaseURL` field — a plain `*url.URL` — after construction |
 | **mailjet-apiv3-go** (`github.com/mailjet/mailjet-apiv3-go/v4`) | First class | Pass the base URL as the third argument to `NewMailjetClient`, or call `SetBaseURL`/`SetURL` after construction |
 | **sendgrid-go** (`github.com/sendgrid/sendgrid-go`) | First class, via a different entry point | Build the request with `sendgrid.GetRequest(key, endpoint, host)` instead of `sendgrid.NewSendClient(key)`, which hardcodes the real host |
 | **twilio-go** (`github.com/twilio/twilio-go`) | **None** | There is no field, flag or env var that lets `api.twilio.com` become anything else. Inject a custom `*http.Client` instead, via [`clienthelp`](../clienthelp) |
@@ -35,6 +36,75 @@ own `go.mod`, and it never gets pulled into tommy's. See the package doc in
 [`clienthelp/clienthelp.go`](../clienthelp/clienthelp.go) for how the rewrite
 works. **Do not point a `clienthelp` transport at a real vendor host** — it
 redirects every request that passes through it, unconditionally.
+
+## Resend — `resend-go`
+
+This is the easy case. `resend.NewClient` builds a `*Client` whose `BaseURL`
+field is a plain, exported `*url.URL` — no constructor argument to remember,
+no hardcoded-host workaround like `sendgrid.NewSendClient`, and none of the
+`twilio-go` problem below where no field, flag or env var reaches the host at
+all. Parse the URL and assign it after construction; every call the SDK makes
+resolves against it from then on.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+
+	"github.com/resend/resend-go/v4"
+)
+
+func main() {
+	// Any API key is accepted; tommy just records it.
+	client := resend.NewClient("re_fake_key")
+
+	base, err := url.Parse("http://localhost:8822")
+	if err != nil {
+		panic(err)
+	}
+	client.BaseURL = base
+
+	params := &resend.SendEmailRequest{
+		From:    "Acme <alice@example.com>",
+		To:      []string{"bob@example.com"},
+		Subject: "Hello from tommy",
+		Html:    "<p>It <b>works</b>.</p>",
+		Text:    "It works.",
+	}
+
+	ctx := context.Background()
+
+	sent, err := client.Emails.SendWithContext(ctx, params)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(sent.Id)
+
+	got, err := client.Emails.GetWithContext(ctx, sent.Id)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%+v\n", got)
+}
+```
+
+Run against a `tommy mail --enabled-providers resend`, this prints the id the
+send call minted and then the full `Email` the SDK's own read-back decoded —
+`&{Id:01a0727e-... Object:email ... To:[bob@example.com] From:Acme <alice@example.com> ... Subject:Hello from tommy Html:<p>It <b>works</b>.</p> Text:It works. Bcc:[] Cc:[] ReplyTo:[] LastEvent:delivered}` —
+confirming the SDK sees its own write back through `GetWithContext`, unmodified.
+
+The one sharp edge worth knowing, not in wiring the client but in what it puts
+on the wire: `resend-go` marshals `to`/`cc`/`bcc` as JSON arrays but `reply_to`
+as a bare string, and its `Attachment.MarshalJSON` encodes attachment content
+as a JSON array of integers rather than base64. Both are handled — see
+`plugins/mail/providers/resend/README.md` for the decoding rules — but they
+are why a hand-rolled fake that only accepts the REST reference's documented
+shapes breaks against this SDK specifically. `test/integration/resend_test.go`
+drives both cases, plus a batch send and the `Emails.GetWithContext` read-back,
+against a live tommy.
 
 ## Mailjet — `mailjet-apiv3-go`
 

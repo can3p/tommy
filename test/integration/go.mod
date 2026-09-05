@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/can3p/tommy v0.0.0-00010101000000-000000000000
 	github.com/mailjet/mailjet-apiv3-go/v4 v4.0.8
+	github.com/resend/resend-go/v4 v4.3.0
 	github.com/sendgrid/rest v2.6.9+incompatible
 	github.com/sendgrid/sendgrid-go v3.16.1+incompatible
 	github.com/twilio/twilio-go v1.31.0
