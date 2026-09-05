@@ -121,3 +121,139 @@ jobs:
           else
             echo "test/integration does not exist yet; skipping."
           fi
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The build in docs/docker.md compiles the binary itself: the image is
+      # assembled from a prebuilt binary rather than with a `go build` inside
+      # it, exactly as GoReleaser does at release time.
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The commands come out of docs/docker.md rather than being repeated
+      # here, so what a reader copies is what this job proves. A block claims
+      # itself with a leading `# ci: <name>` comment; a name that disappears
+      # fails the extraction rather than silently skipping a check.
+      - name: Extract the documented commands
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+
+          required = {
+              "build", "run", "quickstart", "readback", "smtp", "as2", "stop",
+              "narrow", "narrow-providers", "narrow-check", "shortcut",
+              "compose-up", "ftp", "compose-down",
+          }
+          doc = pathlib.Path("docs/docker.md").read_text()
+          found = {}
+          for block in re.findall(r"^```bash\n(.*?)^```", doc, re.S | re.M):
+              first = block.splitlines()[0].strip()
+              if not first.startswith("# ci:"):
+                  continue
+              name = first[len("# ci:"):].strip()
+              if name in found:
+                  sys.exit(f"docs/docker.md has two blocks named {name!r}")
+              found[name] = block
+          missing = sorted(required - set(found))
+          if missing:
+              sys.exit("docs/docker.md no longer carries these commands: "
+                       + ", ".join(missing)
+                       + " - this job drives the documentation, so the two move together.")
+          out = pathlib.Path("ci-docker")
+          out.mkdir(exist_ok=True)
+          for name, block in found.items():
+              (out / f"{name}.sh").write_text("set -euo pipefail\n" + block)
+              print("extracted", name)
+          PY
+
+      - name: Build the image
+        run: bash ci-docker/build.sh
+
+      # Nine published ports, every plugin enabled: the image's default, which
+      # is what `docker run can3p/tommy` has to give a stranger.
+      - name: Start it
+        run: |
+          bash ci-docker/run.sh
+          for _ in $(seq 30); do
+            if curl -sf http://127.0.0.1:8811/api/v1/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          echo "tommy did not answer on the published UI port"; docker logs tommy; exit 1
+
+      # The README quickstart, driven through the published ingress port.
+      - name: Send it something, and read it back
+        run: |
+          bash ci-docker/quickstart.sh | tee /tmp/sent.json
+          grep -q '"Status":"success"' /tmp/sent.json
+          bash ci-docker/readback.sh | tee /tmp/events.json
+          grep -q '"plugin":"mail"' /tmp/events.json
+          grep -q 'Hello from tommy' /tmp/events.json
+
+      # The half a published HTTP port cannot prove: a listener provider on its
+      # own socket, which stays on loopback unless --bind reaches it too.
+      - name: Drive SMTP through its published port
+        run: |
+          bash ci-docker/smtp.sh | tee /tmp/smtp.json
+          grep -q '"provider":"smtp"' /tmp/smtp.json
+          grep -q 'Sent over SMTP' /tmp/smtp.json
+
+      # AS2 mints a key pair on first use and writes it to the /data volume;
+      # a distroless non-root image has nowhere else to put it.
+      - name: Fetch the AS2 certificate
+        run: |
+          bash ci-docker/as2.sh | tee /tmp/as2.txt
+          grep -q 'CN=tommy AS2' /tmp/as2.txt
+          bash ci-docker/stop.sh
+
+      # The same image, narrowed by one read-only bind mount: what a team that
+      # only wants mail actually runs, and proof that a disabled provider is
+      # gone rather than merely hidden.
+      - name: Narrow it with a mounted config
+        run: |
+          bash ci-docker/narrow.sh
+          for _ in $(seq 30); do
+            curl -sf http://127.0.0.1:8811/api/v1/health >/dev/null && break
+            sleep 1
+          done
+          bash ci-docker/narrow-providers.sh | tee /tmp/providers.txt
+          grep -q 'mail/mailjet' /tmp/providers.txt
+          ! grep -q 'mail/sendgrid' /tmp/providers.txt
+          bash ci-docker/narrow-check.sh | tee /tmp/narrow.txt
+          grep -q 'mailjet  200' /tmp/narrow.txt
+          grep -q 'sendgrid 404' /tmp/narrow.txt
+
+      # The entrypoint is the binary, so the single-plugin shortcuts work in the
+      # image too - including the part people get wrong, that overriding the
+      # command drops the image's --bind 0.0.0.0.
+      - name: Run a single-plugin shortcut
+        run: |
+          bash ci-docker/shortcut.sh | tee /tmp/plugins.json
+          grep -q '"name":"mailjet"' /tmp/plugins.json
+
+      # FTP passive mode is the most likely bug report about running tommy in a
+      # container: the data connection lands on a port that has to be both
+      # pinned in the config and published by the compose file.
+      - name: Transfer a file over FTP through the compose stack
+        run: |
+          bash ci-docker/compose-up.sh
+          for _ in $(seq 30); do
+            curl -sf http://127.0.0.1:8811/api/v1/health >/dev/null && break
+            sleep 1
+          done
+          bash ci-docker/ftp.sh | tee /tmp/ftp.txt
+          grep -q 'invoice 4711' /tmp/ftp.txt
+          grep -q '"provider":"ftp"' /tmp/ftp.txt
+
+      - name: Stop everything
+        if: always()
+        run: |
+          bash ci-docker/compose-down.sh || docker compose down -v || true
+          docker rm -f tommy tommy-mail tommy-shortcut 2>/dev/null || true

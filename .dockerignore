@@ -1,0 +1,17 @@
+# The release image is built from a context GoReleaser stages (the prebuilt
+# binaries plus `extra_files`), and the local build described in docs/docker.md
+# stages a context of the same shape by hand - so neither build sees the
+# repository itself. This file only matters when someone points `docker build`
+# at the repository root anyway; keep it narrow enough that the two paths cannot
+# diverge silently.
+.git
+.github
+dist
+site
+coverage.out
+tommy
+*.test
+test
+website
+docs
+plugins/**/testdata
