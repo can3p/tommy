@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 
@@ -252,33 +251,36 @@ func (s *Server) bind() error {
 const listenerAddrTimeout = 250 * time.Millisecond
 
 // buildSnippetCtx resolves the addresses snippets render against.
+//
+// Two sources, in this order: what the configuration says a listener would bind
+// (ConfiguredAddrs, which binds nothing and is all `tommy providers` has), then
+// what each listener actually bound, which wins. The two differ exactly when
+// the port was ephemeral - the case configuration cannot answer at all.
 func (s *Server) buildSnippetCtx() plugin.SnippetCtx {
 	ctx := plugin.NewSnippetCtx(s.cfg.Host, s.addrs.UI, s.addrs.API, s.addrs.Ingress)
+	s.reg.ConfiguredAddrs(&ctx)
 	for _, ref := range s.reg.ListenerRefs() {
-		if addr := s.listenerAddr(ref); addr != "" {
+		if addr := s.boundAddr(ref); addr != "" {
 			ctx.SetAddr(ref.Plugin.Name(), ref.Provider.Name(), addr)
 		}
 	}
 	return ctx
 }
 
-// listenerAddr reports where a listener provider can actually be reached.
-//
-// Ask the provider first: one that took an ephemeral port, or that fell back to
-// its own default because the configuration named none, is the only thing that
-// knows where it ended up. Configuration is the fallback, and on its own it is
-// wrong in both of those cases - which is how a snippet ends up telling someone
-// to connect to a port nothing is listening on.
-func (s *Server) listenerAddr(ref plugin.Ref) string {
-	if a, ok := ref.Provider.(plugin.AddressableProvider); ok {
-		if addr, err := a.Addr(listenerAddrTimeout); err == nil && addr != "" {
-			return addr
-		}
+// boundAddr reports where a listener provider actually bound, or "" when it has
+// not (yet) said. A provider that took an ephemeral port is the only thing that
+// knows, which is why AddressableProvider exists and why it outranks anything
+// derived from configuration.
+func (s *Server) boundAddr(ref plugin.Ref) string {
+	a, ok := ref.Provider.(plugin.AddressableProvider)
+	if !ok {
+		return ""
 	}
-	if pc := s.reg.ProviderConfig(ref.Plugin.Name(), ref.Provider.Name()); pc.Port > 0 {
-		return net.JoinHostPort(s.cfg.Host, strconv.Itoa(pc.Port))
+	addr, err := a.Addr(listenerAddrTimeout)
+	if err != nil {
+		return ""
 	}
-	return ""
+	return addr
 }
 
 func (s *Server) build() error {

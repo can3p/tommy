@@ -39,14 +39,11 @@ the output, or plugin/provider for a single provider.`,
 		}
 
 		// The snippets are rendered against the addresses this configuration
-		// would bind, so what is printed is what would actually work.
+		// would bind, so what is printed is what would actually work. Nothing
+		// is started to find out: every listener provider reports the port it
+		// would take, configured or its own default.
 		ctx := plugin.NewSnippetCtx(cfg.Host, cfg.UIAddr(), cfg.APIAddr(), cfg.IngressAddr())
-		for _, ref := range reg.ListenerRefs() {
-			pc := reg.ProviderConfig(ref.Plugin.Name(), ref.Provider.Name())
-			if pc.Port > 0 {
-				ctx.SetAddr(ref.Plugin.Name(), ref.Provider.Name(), fmt.Sprintf("%s:%d", cfg.Host, pc.Port))
-			}
-		}
+		reg.ConfiguredAddrs(&ctx)
 
 		info, err := reg.Describe(ctx)
 		if err != nil {
@@ -117,7 +114,7 @@ func printProviders(w io.Writer, info []plugin.PluginInfo) {
 		for _, prov := range p.Providers {
 			fmt.Fprintf(w, "\n  %s/%s", p.Name, prov.Name)
 			if prov.Listener {
-				fmt.Fprintf(w, "  [own listener%s]", addrSuffix(prov.Addr))
+				fmt.Fprintf(w, "  [%s]", listenerNote(prov))
 			}
 			fmt.Fprintln(w)
 			fmt.Fprintf(w, "    %s\n", prov.Description)
@@ -138,11 +135,23 @@ func printProviders(w io.Writer, info []plugin.PluginInfo) {
 	}
 }
 
-func addrSuffix(addr string) string {
-	if addr == "" {
-		return ""
+// listenerNote describes a listener provider's own port: where it bound if
+// something is running, otherwise where this configuration says it would.
+func listenerNote(prov plugin.ProviderInfo) string {
+	network := prov.Network
+	if network == "" {
+		network = "tcp"
 	}
-	return " on " + addr
+	switch {
+	case prov.Addr != "":
+		return fmt.Sprintf("own %s listener on %s", network, prov.Addr)
+	case prov.Port > 0:
+		return fmt.Sprintf("own %s listener on port %d", network, prov.Port)
+	default:
+		// port = 0: the port is picked when the listener binds, so there is
+		// nothing honest to print until it has.
+		return fmt.Sprintf("own %s listener on an ephemeral port", network)
+	}
 }
 
 func init() {

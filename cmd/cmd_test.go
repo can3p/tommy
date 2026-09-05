@@ -209,3 +209,139 @@ func TestCommandsAreRegistered(t *testing.T) {
 		}
 	}
 }
+
+// runProviders runs the command the way a user would and returns what it
+// printed. It starts nothing: `tommy providers` must never bind a listener,
+// which is also why this test can name well-known ports safely.
+func runProviders(t *testing.T, asJSON bool, configPath string, args ...string) string {
+	t.Helper()
+	resetFlags(t)
+	serveFlags.configPath = configPath
+	var out bytes.Buffer
+	providersCmd.SetOut(&out)
+	providersFlags.asJSON = asJSON
+	t.Cleanup(func() {
+		providersCmd.SetOut(nil)
+		providersFlags.asJSON = false
+	})
+	if err := providersCmd.RunE(providersCmd, args); err != nil {
+		t.Fatalf("providers: %v", err)
+	}
+	return out.String()
+}
+
+type listedProvider struct {
+	Name     string `json:"name"`
+	Listener bool   `json:"listener"`
+	Addr     string `json:"addr"`
+	Port     int    `json:"port"`
+	Network  string `json:"network"`
+}
+
+type listedPlugin struct {
+	Name      string           `json:"name"`
+	Providers []listedProvider `json:"providers"`
+}
+
+func listedProviders(t *testing.T, body string) []listedPlugin {
+	t.Helper()
+	var got []listedPlugin
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, body)
+	}
+	return got
+}
+
+// TestProvidersReportsListenerPorts is the reason ListenPort exists: with no
+// configuration at all, the listing has to say which ports a default tommy
+// would bind. It used to report none, because it only knew a port the config
+// named explicitly, and every default lived in a package constant instead.
+func TestProvidersReportsListenerPorts(t *testing.T) {
+	var listeners int
+	for _, p := range listedProviders(t, runProviders(t, true, "")) {
+		for _, prov := range p.Providers {
+			if !prov.Listener {
+				if prov.Port != 0 {
+					t.Errorf("%s/%s is path-routed onto the shared ingress but reports port %d", p.Name, prov.Name, prov.Port)
+				}
+				continue
+			}
+			listeners++
+			if prov.Port == 0 {
+				t.Errorf("%s/%s reports no port; the default lives in a constant nothing can read", p.Name, prov.Name)
+			}
+			if prov.Network != "tcp" && prov.Network != "udp" {
+				t.Errorf("%s/%s reports network %q", p.Name, prov.Name, prov.Network)
+			}
+			if prov.Addr == "" {
+				t.Errorf("%s/%s reports no address for a snippet to render against", p.Name, prov.Name)
+			}
+		}
+	}
+	if listeners == 0 {
+		t.Skip("this build has no listener providers compiled in")
+	}
+}
+
+// TestProvidersHonoursAConfiguredPort proves the listing reports the resolved
+// value rather than the constant, in both directions.
+func TestProvidersHonoursAConfiguredPort(t *testing.T) {
+	if !hasProvider(t, "mail", "smtp") {
+		t.Skip("this build has no mail/smtp provider")
+	}
+	path := writeConfig(t, "[plugins.mail.providers.smtp]\nport = 9999\n")
+
+	var found bool
+	for _, p := range listedProviders(t, runProviders(t, true, path, "mail/smtp")) {
+		for _, prov := range p.Providers {
+			found = true
+			if prov.Port != 9999 {
+				t.Errorf("mail/smtp reports port %d, want the configured 9999", prov.Port)
+			}
+			if !strings.HasSuffix(prov.Addr, ":9999") {
+				t.Errorf("mail/smtp reports addr %q, want the configured port", prov.Addr)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("mail/smtp was not listed")
+	}
+
+	// port = 0 is the ephemeral case: nothing can know it without binding, and
+	// the listing must not invent the package default.
+	ephemeral := writeConfig(t, "[plugins.mail.providers.smtp]\nport = 0\n")
+	for _, p := range listedProviders(t, runProviders(t, true, ephemeral, "mail/smtp")) {
+		for _, prov := range p.Providers {
+			if prov.Port != 0 || prov.Addr != "" {
+				t.Errorf("mail/smtp reports %+v for an ephemeral port; only a bound listener knows it", prov)
+			}
+		}
+	}
+}
+
+// TestProvidersPrintsListenerPortsForHumans: the human form is what most people
+// read, and it printed no port at all for a default run.
+func TestProvidersPrintsListenerPortsForHumans(t *testing.T) {
+	if !hasProvider(t, "mail", "smtp") {
+		t.Skip("this build has no mail/smtp provider")
+	}
+	got := runProviders(t, false, "", "mail/smtp")
+	if !strings.Contains(got, "own tcp listener on localhost:1025") {
+		t.Errorf("output does not say where the listener would bind:\n%s", got)
+	}
+}
+
+func hasProvider(t *testing.T, plugin, provider string) bool {
+	t.Helper()
+	for _, p := range all.Plugins() {
+		if p.Name() != plugin {
+			continue
+		}
+		for _, prov := range p.Providers() {
+			if prov.Name() == provider {
+				return true
+			}
+		}
+	}
+	return false
+}

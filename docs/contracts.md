@@ -218,6 +218,35 @@ type AddressableProvider interface {
     Addr(timeout time.Duration) (string, error)
 }
 
+// PortProvider is optional, and every listener provider must implement it -
+// plugintest fails one that does not. It answers "where would this bind under
+// this configuration" without binding anything, which Addr cannot do: Addr
+// needs a running listener. That is the difference between the two, and the
+// precedence follows from it - a bound address always wins, and PortProvider
+// is what the discovery surface shows when nothing is running.
+//
+// Until this existed the default ports lived only in seven package-level
+// DefaultPort constants, so `tommy providers` reported no address at all for
+// any listener provider on a default run, and nothing that publishes those
+// ports - the container image, the compose file, the site's port table - could
+// derive them.
+type PortProvider interface {
+    ListenerProvider
+    ListenPort(pc ProviderConfig) ListenPort
+}
+
+// ListenPort is where a listener provider would bind, and what it speaks there.
+// Port is the configured value, else the provider's own default; 0 means the
+// configuration asked for an ephemeral port, which is unknowable before
+// binding and is reported as no port at all rather than as the default.
+type ListenPort struct {
+    Port    int    `json:"port"`
+    Network string `json:"network"` // "tcp" | "udp"
+}
+
+func (l ListenPort) Ephemeral() bool // Port == 0
+func (l ListenPort) String() string  // "6969/udp" - the docker EXPOSE and -p form
+
 type Endpoint struct{ Method, Path, Description string }
 
 // Optional, and required of any plugin that mounts API routes: what its own
@@ -316,7 +345,18 @@ func (r *Registry) ListenerRefs() []Ref                // ListenerProviders
 func (r *Registry) ProviderConfig(plugin, provider string) ProviderConfig
 func (r *Registry) DepsFor(base Deps, plugin, provider string) Deps
 func (r *Registry) Describe(ctx SnippetCtx) ([]PluginInfo, error)
+func (r *Registry) ListenPort(plugin, provider string) (ListenPort, bool) // false for a non-listener
+func (r *Registry) ConfiguredAddrs(ctx *SnippetCtx)                       // fills a SnippetCtx, binds nothing
 ```
+
+`ConfiguredAddrs` writes the configured-or-default address of every listener
+provider into a `SnippetCtx`, and records nothing for an ephemeral one. A
+running server then overwrites each entry with what actually bound. Between them
+a snippet always renders a real address, which is why no provider template
+carries a hardcoded port fallback any more (rule 6).
+
+`ProviderInfo` carries both halves: `addr` is where a running listener bound,
+and `port`/`network` are where it would bind, omitted when ephemeral.
 
 `New` fails on a duplicate plugin name, a duplicate provider inside a plugin, a
 non-URL-safe name, or a provider whose `Plugin()` disagrees with the plugin that
@@ -345,7 +385,10 @@ declared** — the last two for a provider's ingress routes, and for a plugin's
 API routes against `APIEndpoints()`. A plugin that mounts API routes without
 implementing `APIDescriber` fails too: an undescribed route is one no reader
 knows exists. A `ListenerProvider` with no endpoints is exempt from the route
-checks. **A task is not done until this passes.**
+checks, but owes a port instead: it must implement `PortProvider`, report a
+`tcp` or `udp` network and an in-range port, report the port it was configured
+with rather than its default, leave an explicit `port: 0` ephemeral, and carry
+that port in at least one snippet. **A task is not done until this passes.**
 
 ## `core/config`
 
@@ -792,8 +835,14 @@ or document why not.
 7. Read-back endpoints serve from the `Store`, so an SDK that writes then fetches
    sees its own write.
 8. Never import another provider's package.
-9. A listener provider implements `AddressableProvider` and treats `port: 0` as
-   ephemeral, so tests never bind a well-known port.
+9. A listener provider implements **both** `AddressableProvider` and
+   `PortProvider`, and treats `port: 0` as ephemeral, so tests never bind a
+   well-known port. `plugintest` fails a listener that reports no port, reports
+   a port other than the one it was configured with, substitutes its default
+   for an explicit `port: 0`, or has no snippet carrying the port it reports;
+   `plugins/all/ports_test.go` additionally holds every *shipped* listener to a
+   distinct, unprivileged default, because that list is what the container image
+   and the site's port table are generated from.
 10. A bespoke tab renders the shared `how-to-test` component from
     `ui.ShellFrom(r).Info()`, open when the tab is empty.
 11. Anything captured is untrusted: interpolate as a plain string through

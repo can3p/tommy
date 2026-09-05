@@ -3,7 +3,9 @@ package plugin
 import (
 	"errors"
 	"fmt"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/can3p/tommy/core/config"
@@ -163,6 +165,48 @@ func (r *Registry) IngressRefs() []Ref {
 	return out
 }
 
+// ListenPort reports where a listener provider would bind under this
+// registry's configuration, without binding anything: the configured port, or
+// the provider's own default when the configuration names none. The second
+// result is false for anything that is not a listener provider, and for a
+// listener provider that does not implement PortProvider (which
+// plugintest.Conformance rejects).
+func (r *Registry) ListenPort(plugin, provider string) (ListenPort, bool) {
+	for _, ref := range r.ListenerRefs() {
+		if ref.Plugin.Name() != plugin || ref.Provider.Name() != provider {
+			continue
+		}
+		p, ok := ref.Provider.(PortProvider)
+		if !ok {
+			return ListenPort{}, false
+		}
+		return p.ListenPort(r.ProviderConfig(plugin, provider)), true
+	}
+	return ListenPort{}, false
+}
+
+// ConfiguredAddrs records into ctx the address every enabled listener provider
+// would bind under this registry's configuration - what `tommy providers` can
+// show with nothing running.
+//
+// It binds nothing, so it cannot know an ephemeral port and records no address
+// at all for one. A running server calls this first and then overwrites each
+// entry with the address the listener actually bound: what is running beats
+// what was configured, and the two differ exactly when the port was ephemeral.
+func (r *Registry) ConfiguredAddrs(ctx *SnippetCtx) {
+	host := r.cfg.Host
+	if host == "" {
+		host = config.DefaultHost
+	}
+	for _, ref := range r.ListenerRefs() {
+		lp, ok := r.ListenPort(ref.Plugin.Name(), ref.Provider.Name())
+		if !ok || lp.Ephemeral() {
+			continue
+		}
+		ctx.SetAddr(ref.Plugin.Name(), ref.Provider.Name(), net.JoinHostPort(host, strconv.Itoa(lp.Port)))
+	}
+}
+
 // ProviderConfig returns the config section of a provider.
 func (r *Registry) ProviderConfig(plugin, provider string) ProviderConfig {
 	return r.cfg.Provider(plugin, provider)
@@ -203,6 +247,13 @@ func (r *Registry) Describe(ctx SnippetCtx) ([]PluginInfo, error) {
 				Addr:        ctx.Addr(p.Name(), prov.Name()),
 				Enabled:     true,
 			}
+			// Where this listener would bind, resolved from configuration
+			// alone. Addr above is where one actually did, and is empty
+			// unless something is running.
+			if lp, ok := r.ListenPort(p.Name(), prov.Name()); ok {
+				pi.Port = lp.Port
+				pi.Network = lp.Network
+			}
 			if pi.Endpoints == nil {
 				pi.Endpoints = []Endpoint{}
 			}
@@ -230,14 +281,23 @@ type PluginInfo struct {
 
 // ProviderInfo is one provider inside PluginInfo.
 type ProviderInfo struct {
-	Name        string            `json:"name"`
-	Plugin      string            `json:"plugin"`
-	Description string            `json:"description"`
-	Enabled     bool              `json:"enabled"`
-	Listener    bool              `json:"listener"`
-	Addr        string            `json:"addr,omitempty"`
-	Endpoints   []Endpoint        `json:"endpoints"`
-	Snippets    []RenderedSnippet `json:"snippets"`
+	Name        string `json:"name"`
+	Plugin      string `json:"plugin"`
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	Listener    bool   `json:"listener"`
+	// Addr is where the listener actually bound, and is set only while a
+	// server is running. Port and Network are where it would bind under the
+	// current configuration, resolved without binding anything - so they are
+	// filled in for every listener provider, including in `tommy providers`
+	// with nothing listening. Port is omitted when the configuration asked
+	// for an ephemeral port, which only Addr can report.
+	Addr    string `json:"addr,omitempty"`
+	Port    int    `json:"port,omitempty"`
+	Network string `json:"network,omitempty"`
+
+	Endpoints []Endpoint        `json:"endpoints"`
+	Snippets  []RenderedSnippet `json:"snippets"`
 }
 
 // SortedNames returns the enabled plugin names, sorted. Handy in tests.
