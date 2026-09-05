@@ -92,6 +92,7 @@ func (p *spyPlugin) Description() string {
 func (p *spyPlugin) Providers() []plugin.Provider        { return []plugin.Provider{p.prov} }
 func (p *spyPlugin) Templates() fs.FS                    { return nil }
 func (p *spyPlugin) RegisterAPI(plugin.Mux, plugin.Deps) {}
+func (p *spyPlugin) APIEndpoints() []plugin.Endpoint     { return nil }
 func (p *spyPlugin) RegisterUI(plugin.Mux, plugin.Deps)  {}
 
 type depsSpy struct{ seen plugin.Deps }

@@ -67,6 +67,38 @@ func NewMessageView(e *event.Event, m *Message) MessageView {
 	}
 }
 
+// APIEndpoints documents what RegisterAPI mounts, and is what the OpenAPI
+// description is generated from.
+func (p *Plugin) APIEndpoints() []plugin.Endpoint {
+	list := append(plugin.CoreListParams(),
+		plugin.Param{Name: "to", Description: "Substring of any recipient - To, Cc or Bcc."},
+		plugin.Param{Name: "from", Description: "Substring of the sender."},
+		plugin.Param{Name: "subject", Description: "Substring of the subject."},
+		plugin.Param{Name: "has_attachments", Description: "Only messages with, or without, attachments.", Type: "boolean"},
+	)
+	return []plugin.Endpoint{
+		{Method: "GET", Path: "/messages", Description: "Every captured message, newest first.",
+			Query: list, Response: []MessageView{}},
+		{Method: "GET", Path: "/messages/{id}", Description: "One message, with links to its bodies and attachments.",
+			Response: MessageView{}},
+		{Method: "GET", Path: "/messages/{id}/html", Description: "The HTML part, served under a no-script CSP because it is untrusted content.",
+			Produces: "text/html"},
+		{Method: "GET", Path: "/messages/{id}/text", Description: "The plain-text part of the message, as text/plain.",
+			Produces: "text/plain"},
+		{Method: "GET", Path: "/messages/{id}/raw", Description: "The untouched request that produced the message; ?download=1 serves it as an .eml.",
+			Query:    []plugin.Param{{Name: "download", Description: "Serve as a downloadable message/rfc822 attachment.", Type: "boolean"}},
+			Produces: "text/plain"},
+		{Method: "GET", Path: "/messages/{id}/attachments/{idx}", Description: "One attachment, streamed from the blob store with range support.",
+			Query: []plugin.Param{
+				{Name: "inline", Description: "Force an inline Content-Disposition.", Type: "boolean"},
+				{Name: "download", Description: "Force an attachment Content-Disposition.", Type: "boolean"},
+			},
+			Produces: "application/octet-stream"},
+		{Method: "DELETE", Path: "/messages", Description: "Clear every captured message. Attachment blobs deliberately survive.",
+			Status: http.StatusNoContent},
+	}
+}
+
 // RegisterAPI mounts the mail read-back API. The core strips /api/v1/mail, so
 // the patterns here are relative to it.
 func (p *Plugin) RegisterAPI(mux plugin.Mux, d plugin.Deps) {
