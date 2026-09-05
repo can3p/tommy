@@ -44,13 +44,17 @@ setting has a flag. Every plugin and provider carries user-facing documentation
 — what it is, what it is for, and commands that have been run — indexed in
 `docs/catalogue.md` and required from here on by `CLAUDE.md` rule 12.
 
-Waves 0–6·0 are merged to `main`. Waves 6a, 6b, 6c, 7 and 8 are on
-`feat/hl7-and-tftp`, `feat/mllp-and-nfs`, `feat/snmp-traps`, `feat/push-plugin`
-and `feat/as2-plugin`, each branched off the last and all awaiting review. That
-stack is now five deep; it is worth merging before it grows again, since a new
-wave branched off the tip inherits every unreviewed diff below it. **Start each
-new wave on its own branch**, named for what it builds, so a wave stays a
-reviewable unit.
+Everything through wave 8·1 is merged to `main`; the six-deep review stack that
+carried waves 6a–8·1 is gone, and a new wave now branches off a clean trunk.
+**Start each wave on its own branch**, named for what it builds, so a wave stays
+a reviewable unit — and merge it before starting the next, because a wave
+branched off an unreviewed tip inherits every diff below it.
+
+What comes next is a change of emphasis. Waves 0–8 built breadth: eight plugins
+and fifteen providers, each capturing one more thing. Waves 9–12 build the
+*surface* instead — how a person and a program reach what tommy captured — and
+only wave 11 adds a provider. The protocol backlog is still there, renumbered,
+behind them.
 
 ## 2. The scoping rule
 
@@ -97,9 +101,392 @@ reasoning; `CLAUDE.md` has the rules.
 Model guidance: contract-defining and subtle-parsing work to the stronger model;
 well-specified translation against a fixed contract to the cheaper one.
 
+## 4. The order of the next four waves
+
+Waves 9–12 are the surface work. They are nearly independent, and the couplings
+that do exist are worth knowing before anything is scheduled:
+
+- **Wave 9 before wave 10.** Wave 9 adds a field to the event representation.
+  Writing the OpenAPI description first would mean describing a surface that is
+  about to change, and the first thing the new drift gate caught would be its
+  own author.
+- **Wave 10 before wave 12.** The website renders the API reference from the
+  spec. Without it, wave 12 either omits the API or hand-writes it, and
+  hand-writing it is the thing wave 10 exists to prevent.
+- **Wave 11 is independent** of all three and can run in parallel on its own
+  branch. It touches `plugins/mail/**`, `cmd/mail.go`, `plugins/all/all.go` and
+  `test/integration/**` — none of which waves 9, 10 and 12 own — with one
+  exception to watch: wave 10 may add an `APIEndpoints()` method to the `Plugin`
+  interface, which touches `plugins/mail/plugin.go`. A provider does not
+  implement `Plugin`, so the collision is a rebase at worst.
+- **Nothing here blocks waves 13 and 14**, and nothing there blocks these. If a
+  protocol is wanted sooner than the surface work, take it; the ordering above
+  is internal to waves 9–12.
+
+Each of these waves also has a *keep it true* half — a generated artifact plus a
+test that fails when it stops matching the code. That half is the deliverable,
+not the polish: a spec or a website that is updated by remembering to update it
+is one that is wrong within two waves. Where a wave adds such a gate, it also
+adds the `CLAUDE.md` rule that names it, because the rule is what survives into
+the next session.
+
 ---
 
-## Wave 8 — tier 2 protocols
+## Wave 9 — the event page and the link that reaches it
+
+**Goal.** Every captured event gets a page of its own at a stable URL, and every
+API representation of an event carries that URL. The motivating case is the
+smallest one: an application sends a mail through the fake vendor API during
+local development, and the developer wants to *open the mail* — not the inbox,
+not a filtered list, the mail — without hunting for it.
+
+Today the pieces are nearly there and none of them join up. `/ui/events/{id}`
+and `/ui/mail/messages/{id}` already exist, but they answer a browser with the
+whole tab and the row merely selected (`eventview.go`, `detail`), which is a
+deep link into a list rather than a page for one thing. The API never mentions
+a URL at all, so nothing an SDK or a script gets back leads anywhere.
+
+### Tasks
+
+| Task | Owns | Must not touch |
+|---|---|---|
+| **1. The standalone page** | `core/server/ui/**` | `core/server/api/**`, plugin dirs |
+| **2. The link in the API** | `core/server/api/**`, `core/server/sse/**` | `core/server/ui/**` |
+| **3. The link in plugin APIs** | `plugins/*/api.go` | core |
+| **4. The link on the way out** (optional, see below) | `core/server/ingress/**`, `core/plugin/deps.go` | providers |
+
+Tasks 1 and 2 are one agent each and can run in parallel: they meet only at the
+URL shape, which is fixed below before either starts. Task 3 follows task 2,
+because it consumes the helper task 2 writes. Task 4 is independent of all
+three and is the one to drop if the wave is running long.
+
+### 1. The standalone page
+
+`GET /ui/events/{id}` becomes the canonical page for one event, whatever plugin
+produced it. Requirements:
+
+- **The htmx fragment behaviour is preserved.** `ui.IsPartial` already
+  distinguishes an `HX-Request` from a browser navigation; the fragment path
+  stays exactly as it is, so in-tab selection is untouched.
+- **The full-page branch stops rendering the list.** It renders the event: the
+  header (plugin, provider, type, received-at, summary), the body, the
+  attachments and blob links, a *back to the `<plugin>` tab* link, and
+  previous/next within the same plugin so an inbox can be walked from the page.
+- **A plugin's own view is used when it has one.** A mail event must show the
+  rendered message, not a JSON dump. Recommended mechanism: the core handler
+  dispatches an **in-process sub-request** to the plugin's existing fragment
+  route (`/ui/<plugin>/events/{id}` with `HX-Request: true`) through the mounted
+  UI handler and embeds the result. That route already exists for every plugin —
+  claimed by the plugin, or filled in by the generic view — so this adds no
+  interface and no per-plugin work. The alternative, an `hx-get` div that loads
+  the fragment client-side, was rejected: a pasted link should render without
+  JavaScript.
+- **An event whose plugin is disabled or unknown still renders**, through the
+  generic inspector.
+- The security invariants are unchanged and are the reason this is core work:
+  an HTML mail body is still served from its own API route under the restrictive
+  CSP and framed sandboxed, and everything else is still interpolated as a plain
+  string.
+
+### 2. The link in the API
+
+`GET /api/v1/events`, `GET /api/v1/events/{id}` and the SSE stream each gain a
+`url` field on every event.
+
+Three decisions worth making once, in this order of consequence:
+
+- **The field does not go on `event.Event`.** Events are immutable and stored;
+  a URL baked into a stored event would be a UI concern in the store contract
+  and would be wrong the moment a port moves. Add it in an API-level envelope
+  that embeds `*event.Event` — `encoding/json` inlines the embedded fields, so
+  the wire shape gains exactly one key.
+- **The URL is absolute.** The caller is usually talking to the *ingress*, on a
+  different port from the UI, so a relative path is not something it can turn
+  into a link. Build it from `SnippetCtx().UIURL`, which `api.Options` already
+  carries and which knows the configured host and UI port
+  (`core/server/lifecycle.go:533` builds the same thing for the startup banner).
+  Fall back to the request's `Host` when the configured host is empty.
+- **One helper, used everywhere.** Export it from core (`ui.EventURL`, or
+  `api.EventURL` if it reads better) so tasks 3 and 4 and any future plugin
+  produce identical links.
+
+### 3. The link in plugin APIs
+
+`GET /api/v1/mail/messages` is what a developer polling for "did my mail
+arrive" actually calls, so a `url` there is the one that serves the motivating
+case. Every plugin API route that returns event-shaped items gets the same
+field from the same helper. Mail is the one that matters; do the rest for
+consistency, and say in each README that it is there.
+
+### 4. The link on the way out (optional)
+
+The zero-call version of the use case: the response to the send itself carries
+`X-Tommy-Event-URL`, so an application's own logs contain a clickable link with
+nothing added to the application. Vendor SDKs ignore unknown response headers,
+so this does not violate the "respond with the vendor's real response shape"
+rule, but it *is* a deliberate deviation and must be recorded as one.
+
+Mechanism, so this does not become an edit to fifteen providers: ingress
+middleware puts a collector in the request context; `Deps.Append` already takes
+a `context.Context` and can record the id it just assigned into that collector;
+the middleware wraps the `ResponseWriter` and sets the header before the first
+write. Providers that pass `r.Context()` to `Append` need no change, and a
+spot-check of `mailjet`, `sendgrid` and `msteams` says every HTTP provider does
+(each opens its handler with `ctx := r.Context()`) — confirm the remaining ones
+before building on it.
+
+Listener providers have no HTTP response to carry a header, so for SMTP, FTP,
+MLLP and friends the equivalent is a log line at info level naming the URL. A
+one-line "captured, see <url>" per event is a plausible default for a local
+development tool and an annoyance in CI; if it is not obviously right, leave it
+out and say so.
+
+### Done when
+
+Everything in `CLAUDE.md` → *Finishing a wave*, plus specifically: the
+`docs/contracts.md` section on the API surface names the `url` field and where
+it comes from; `README.md`'s quickstart shows the link (it is the most
+persuasive thing on that page); and any plugin whose UI or API changed has its
+own README corrected. If task 4 lands, `CLAUDE.md`'s rule 2 gains a sentence
+naming `X-Tommy-Event-URL` as the one header tommy adds that no vendor sends.
+
+---
+
+## Wave 10 — the OpenAPI spec, and the gate that keeps it true
+
+**Goal.** `/api/v1` gets a published OpenAPI description, and the description
+cannot drift from the code without CI saying so. The second half is the whole
+point: a spec that is hand-maintained is a spec that is wrong by wave 12.
+
+**Scope.** This describes **tommy's own API** — the generic event, blob,
+plugin-discovery and stream routes, and every plugin's `/api/v1/<plugin>/`
+routes. It deliberately does **not** describe the fake vendor endpoints on the
+ingress: those are Mailjet's, SendGrid's, Twilio's and Resend's specifications,
+not tommy's, and re-publishing a partial copy of somebody else's API invites
+exactly the "looks complete, is not" failure `Endpoints()` and the snippets
+already avoid. Say this in the spec's own description so nobody has to guess.
+
+### The drift gate is the design
+
+The mechanism, not the document, is what this wave is really building. Three
+parts, in dependency order:
+
+1. **Capture the routes.** `core/server/ingress/mux.go` already proves the
+   pattern: hand plugins a recording `plugin.Mux` and you see every registration
+   before it happens. `api.New` currently passes a bare `*http.ServeMux` to
+   `RegisterAPI`; wrap it the same way and the core knows every mounted API
+   route, plugin routes included, without asking anyone to declare anything.
+2. **Assert both directions.** A route with no spec entry fails; a spec entry
+   with no route fails. This is rule 7 — *every mounted route must be declared
+   in `Endpoints()` and vice versa* — extended from the ingress to the API,
+   and it should read as the same rule to anyone who meets it.
+3. **Assert the schemas.** Full JSON-Schema generation by reflection is more
+   machinery than this needs. Walk the Go types instead (`event.Event`,
+   `event.Summary`, `event.Raw`, `blob.Ref`, `plugin.PluginInfo`,
+   `mail.Message`, …) and assert every JSON field name appears in the
+   corresponding component schema. Cheap, and it catches the drift that actually
+   happens: a field added to a struct and forgotten in the spec.
+
+### Where the descriptions live
+
+The routes come from the mux; the prose does not. Two options, and the
+recommendation is the first:
+
+- **A plugin describes its own API routes** — an `APIEndpoints() []plugin.Endpoint`
+  on the `Plugin` interface, enforced by `plugintest.Conformance` the way
+  `Endpoints()` is for providers. Ownership stays next to the code, and a new
+  plugin cannot ship an undocumented API by accident. Cost: a change to the
+  `Plugin` interface, so all eight plugins and `core/testutil/fakeplugin` move
+  in the same wave, and `docs/contracts.md` changes.
+- One core file holding every description. Cheaper now; it is the arrangement
+  that goes stale, because the person adding a route is not the person editing
+  that file.
+
+### Artifacts
+
+- **Canonical, checked in: `docs/openapi.json`.** JSON rather than YAML on
+  purpose — `encoding/json` is in the standard library and no OpenAPI-shaped
+  dependency enters the root `go.mod` for it. A YAML rendering is nicer to read
+  in a diff; if it is wanted, generate it where a dependency is free (wave 12's
+  website module, or a CI step), never by hand.
+- **Served from the binary**: `GET /api/v1/openapi.json`, generated at request
+  time from the live route table rather than served from an embedded copy — a
+  running tommy then describes *itself*, including only the plugins that
+  instance actually enabled, which is more useful than a fixed document and
+  cannot go stale at all. The checked-in file is the same generator run with
+  every plugin enabled. Link it from the UI's discovery panel and from
+  `README.md`.
+- **`make openapi`** regenerates it; `make check` and CI fail when regenerating
+  changes the file. The generator is Go code in `core/server/api` — the spec is
+  *generated from the route table*, and the checked-in file is a build product
+  kept in the repo so it can be linked, diffed and reviewed.
+- **OpenAPI 3.1**, so the schemas are JSON Schema proper. Note in the wave that
+  some older tooling still only reads 3.0; if that turns out to matter for the
+  wave 12 rendering, it is a reason to reconsider, not a reason to hand-write.
+- The SSE endpoint is described as `text/event-stream` with the event envelope
+  as its schema. It cannot be exercised by a generated client, and the spec
+  should say so rather than pretend.
+
+### Done when
+
+The wave's own ritual, plus a new `CLAUDE.md` rule to the effect of: *the
+OpenAPI description is generated, never edited — any change to an `/api/v1`
+route or to a type it serves is finished only when `make openapi` has been run
+and the result committed*, and a line in *Finishing a wave* saying the same. It
+is the rule, not this document, that keeps the spec current after this wave
+ends.
+
+---
+
+## Wave 11 — the Resend provider
+
+**Goal.** `plugins/mail/providers/resend`: a fourth mail provider, the same
+shape as `sendgrid`, standing in for `api.resend.com`.
+
+This wave is independent of waves 9, 10 and 12 and can run on its own branch at
+any time. It is the cheapest of the four, and it is a good one to hand to a
+single agent with `plugins/mail/providers/sendgrid` as the worked example.
+
+### What to build
+
+Verify every one of these against **live Resend documentation** before writing
+the response — the shapes below were read once, while planning, and are a
+starting point, not a source:
+
+| Route | Notes |
+|---|---|
+| `POST /emails` | The main one. `200` with `{"id": "<uuid>"}`. |
+| `POST /emails/batch` | Up to 100 messages; `{"data":[{"id":…},…]}`, index-aligned with the request. **One event per message** — rule 3. |
+| `GET /emails/{id}` | Read-back, served **from the store** (rule 5), returning `object`, `id`, `from`, `to`, `cc`, `bcc`, `reply_to`, `subject`, `html`, `text`, `created_at`, `last_event`, `scheduled_at`, `tags`. |
+
+Wire details that need care:
+
+- **Auth is `Authorization: Bearer re_…`.** Record it in `Event.Meta`; accept
+  anything (rule 1).
+- **`to`, `cc`, `bcc` and `reply_to` are each a string *or* an array of
+  strings.** A union decode is the sharp edge of this provider; table-test both
+  forms.
+- **`from` is an RFC 5322 address**, `Name <email@example.com>` or bare. The
+  mail plugin's `Address` parsing already exists — reuse it, do not re-write it.
+- **`Idempotency-Key`** is a request header worth recording in `Meta`. Tommy
+  does not deduplicate: that is state, and state is scenario machinery. Say so
+  in the README.
+- **Attachments** carry either `content` (base64) or `path` (a URL Resend
+  fetches). The base64 form goes to the blob store like every other attachment.
+  **The `path` form must not be fetched** — tommy makes no outbound requests.
+  Record the URL in `Meta`, put nothing in the blob store, and document the
+  refusal in the README next to the other deliberate non-implementations.
+- **`scheduled_at`, `tags`, `topic_id`, `template`** are recorded, never acted
+  on. Scheduling is not simulated.
+- **The error shape** (`statusCode`/`message`/`name`, apparently) must be read
+  from the live error reference before anything returns a 4xx.
+- Resend ids are **UUIDs**, not tommy's 24-hex event ids. `sms/twilio` already
+  solves exactly this — it mints an `SM…`/`MM…` Sid from the event id and maps
+  back on read (`plugins/sms/providers/twilio/twilio.go`, `sidFor`/`idFromSid`).
+  Use a reversible mapping of the same kind rather than a second index.
+
+### Around the provider
+
+- **`plugins/all/all.go`** registration, and `cmd/mail.go` — the provider must be
+  selectable through `--enabled-providers` and any option worth setting needs a
+  flag (rule 10).
+- **`README.md` for the provider** with the three required sections, and
+  commands that were actually run.
+- **`docs/catalogue.md`** gains a row; `docs/clients.md` gains a Resend section.
+  The SDK is `github.com/resend/resend-go/v4` and its `Client.BaseURL` is an
+  exported field, so this is the *easy* kind of SDK: `client := resend.NewClient(key);
+  client.BaseURL, _ = url.Parse("http://localhost:8822")` — verify the exact
+  field and type against the source before writing it down.
+- **An integration test** in `test/integration`, driving the real SDK, alongside
+  the Mailjet and SendGrid ones.
+- **No new dependency in the root `go.mod`.** The provider parses JSON with the
+  standard library, like its siblings. `resend-go` belongs to
+  `test/integration` only — and adding it there still means
+  `cd test/integration && go mod tidy && go test -tags integration ./...` in the
+  same commit.
+
+---
+
+## Wave 12 — the project website on GitHub Pages
+
+**Goal.** `can3p.github.io/tommy` (or a custom domain): a landing page that
+shows what tommy is and why anyone would want it, plus the full documentation,
+regenerated from the repository on every push to `main`.
+
+**The constraint that shapes the whole wave:** the site holds no prose of its
+own except the landing page. `docs/catalogue.md` already states the principle —
+*the authoritative text is each component's own `README.md`, so there is one
+copy of every claim rather than two that drift apart* — and a website is the
+most tempting place in a project to break it. The generator renders the files
+that already exist; it does not restate them.
+
+### Tasks
+
+1. **The generator.** A small static-site generator in `website/`, **its own Go
+   module**, exactly as `test/integration` is one, so a Markdown library never
+   enters tommy's `go.mod`. It reads:
+   - `docs/*.md` and every `plugins/**/README.md` (fifteen providers and eight
+     plugins carry one; `clienthelp` has only a package doc, and
+     `docs/clients.md` is where it is explained),
+   - the provider catalogue as data, from `tommy providers --json`, which
+     already exists,
+   - `docs/openapi.json` from wave 10, rendered as an API reference page.
+
+   It rewrites the repo-relative links inside those files (`../plugins/mail/README.md`
+   and friends) into site paths — that rewriting is the fiddly part and the
+   place to put the tests.
+
+   **The website module must not `replace` the root module**, and must not
+   import tommy. `test/integration` does both, which is why every wave that adds
+   a root dependency has to re-tidy it — a standing cost `CLAUDE.md` now carries
+   a rule about. A generator that shells out to `go run . providers --json`
+   instead has no such coupling: it consumes tommy's output, not its packages,
+   and a root dependency change can never break it.
+
+2. **The landing page**, hand-written, and the only hand-written content: what
+   tommy is, the eight plugins and what each stands in for, the 30-second
+   quickstart, and the install line. Feature highlights should be *specific* —
+   "see the HTML your password-reset mail actually rendered", not "captures
+   email".
+
+3. **The workflow.** `.github/workflows/pages.yml`: build on push to `main`,
+   publish with `actions/deploy-pages`. It needs Pages enabled on the repository
+   with source *GitHub Actions* — a settings change only the repository owner can
+   make, so ask rather than assume it is done.
+
+4. **The coverage test.** Every plugin and every provider that
+   `tommy providers --json` reports must appear on the site with its README
+   rendered, and every internal link must resolve. This is the same drift gate
+   as wave 10, applied to documentation: a provider added in a later wave that
+   nobody remembered to link fails the build rather than quietly going missing.
+
+### Decisions
+
+- **A Go generator in its own module** rather than Jekyll or Hugo. Jekyll is
+  what GitHub Pages does for free, but it can only see files under `/docs`, and
+  tommy's documentation deliberately lives *next to the code it describes* — a
+  Jekyll site would need copies, which is the one thing this wave must not
+  create. Hugo and Docusaurus solve that but bring a toolchain and a
+  configuration surface out of proportion to a documentation site for a single
+  binary. A generator that can also run `tommy providers --json` and consume the
+  OpenAPI description keeps every claim on the site traceable to something the
+  build verified.
+- **Screenshots go stale silently**, which is the failure this project keeps
+  meeting in other forms. Either generate them in CI from a running tommy, or
+  ship the landing page with none and let the copy carry it. Do not hand-paste
+  a screenshot and hope.
+- **Versioning is out of scope.** The site describes `main`. Released binaries
+  are on the releases page; a docs-per-version site is a different project.
+
+### Done when
+
+The usual ritual, plus: `README.md` links the site, and `CLAUDE.md` gains a rule
+that the site is generated and that adding a plugin or provider without its
+README breaks the build — which, by then, is true.
+
+---
+
+## Wave 13 — tier 2 protocols
 
 Bigger, still worth doing, roughly in this order. Each is a self-contained agent
 task once its plugin core exists; none block each other.
@@ -128,7 +515,7 @@ support; strictly after Modbus.
 
 ---
 
-## Wave 9 — cross-cutting
+## Wave 14 — cross-cutting
 
 Independent of each other and of the protocol work; each is one agent.
 
