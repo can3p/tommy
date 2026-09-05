@@ -31,7 +31,11 @@ builds:
 
 archives:
   - formats: [tar.gz]
-    files: [only-the-binary*]
+    # only the binary, plus the licence MIT requires to travel with every copy
+    files:
+      - only-the-binary*
+      - LICENSE
+      - README.md
     # this name template makes the OS and Arch compatible with the results of `uname`.
     name_template: >-
       {{ .ProjectName }}_
