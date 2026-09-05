@@ -143,7 +143,10 @@ restricted sandboxed iframe, which is the only place it is ever rendered.
 
 {{/* mail-pane takes an inboxView: the selected message, or the empty state. */}}
 {{define "mail-pane"}}
-{{- if .Selected}}{{template "mail-detail" .Selected}}{{else}}{{template "empty-state" .EmptyState}}{{end}}
+{{- if .Selected}}
+<p class="pane-actions"><a class="btn" href="{{.Selected.PageURL}}">Open page &#8599;</a></p>
+{{template "mail-detail" .Selected}}
+{{- else}}{{template "empty-state" .EmptyState}}{{end}}
 {{end}}
 
 {{/* mail-detail takes a messageDetail. */}}

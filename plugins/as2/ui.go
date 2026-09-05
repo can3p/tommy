@@ -272,7 +272,7 @@ func (h *uiHandler) detailFor(r *http.Request, c Captured) detailView {
 		Provider: c.Event.Provider,
 		Badges:   messageBadges(m, c.Event.Provider),
 		RawURL:   APIBase + "/messages/" + id + "/raw",
-		EventURL: UIBase + "/events/" + id,
+		EventURL: coreui.EventURL("", event.ID(id)),
 		Headers:  headerTable(m),
 		Layers:   layerRows(m, h.deps.Now()),
 
