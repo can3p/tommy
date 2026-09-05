@@ -1,6 +1,7 @@
 package plugintest_test
 
 import (
+	"context"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -273,4 +274,119 @@ func joinErrs(errs []error) string {
 		parts = append(parts, e.Error())
 	}
 	return strings.Join(parts, " | ")
+}
+
+// listenerProv is a listener provider whose reported port is under the test's
+// control. Nothing here binds anything - reporting a port is the point.
+type listenerProv struct {
+	prov
+	port func(pc plugin.ProviderConfig) plugin.ListenPort
+}
+
+func (l listenerProv) Listen(ctx context.Context, _ plugin.Deps) error {
+	<-ctx.Done()
+	return nil
+}
+
+// portless implements ListenerProvider but not PortProvider, which is the
+// regression this suite exists to catch.
+type portless struct{ prov }
+
+func (p portless) Listen(ctx context.Context, _ plugin.Deps) error {
+	<-ctx.Done()
+	return nil
+}
+
+func goodListener() listenerProv {
+	p := good()
+	p.endpoints = nil
+	p.mount = nil
+	p.snippets = []plugin.Snippet{{Title: "Connect", Lang: "bash", Code: `nc {{.Addr "mail" "vendor"}}`}}
+	return listenerProv{
+		prov: p,
+		port: func(pc plugin.ProviderConfig) plugin.ListenPort {
+			return plugin.ListenPort{Port: pc.Int("port", 1025), Network: "tcp"}
+		},
+	}
+}
+
+func (l listenerProv) ListenPort(pc plugin.ProviderConfig) plugin.ListenPort {
+	return l.port(pc)
+}
+
+// TestListenerProviderMustReportItsPort is rule 7 for a listener's port: a
+// provider that cannot say where it would bind drops out of `tommy providers`,
+// /api/v1/plugins and every port table derived from them, which is exactly the
+// gap this check exists to keep closed.
+func TestListenerProviderMustReportItsPort(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*listenerProv)
+		wantErr string
+	}{
+		{name: "a listener that reports its port is fine"},
+		{
+			name: "a port that ignores the configuration",
+			mutate: func(l *listenerProv) {
+				l.port = func(plugin.ProviderConfig) plugin.ListenPort { return plugin.ListenPort{Port: 1025, Network: "tcp"} }
+			},
+			wantErr: "must report what Listen would bind",
+		},
+		{
+			name: "the package default substituted for an explicit port = 0",
+			mutate: func(l *listenerProv) {
+				l.port = func(pc plugin.ProviderConfig) plugin.ListenPort {
+					port := pc.Int("port", 1025)
+					if port == 0 {
+						port = 1025
+					}
+					return plugin.ListenPort{Port: port, Network: "tcp"}
+				}
+			},
+			wantErr: "ephemeral port and must be reported as one",
+		},
+		{
+			name: "a port with no transport",
+			mutate: func(l *listenerProv) {
+				l.port = func(pc plugin.ProviderConfig) plugin.ListenPort {
+					return plugin.ListenPort{Port: pc.Int("port", 1025)}
+				}
+			},
+			wantErr: "Network",
+		},
+		{
+			name: "a snippet that never names the port",
+			mutate: func(l *listenerProv) {
+				l.snippets = []plugin.Snippet{{Title: "Connect", Lang: "bash", Code: "nc localhost"}}
+			},
+			wantErr: "no snippet carries the listener's own port",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			l := goodListener()
+			if tc.mutate != nil {
+				tc.mutate(&l)
+			}
+			errs := plugintest.CheckProvider(l)
+			joined := joinErrs(errs)
+			if tc.wantErr == "" {
+				if len(errs) != 0 {
+					t.Fatalf("expected no problems, got %s", joined)
+				}
+				return
+			}
+			if !strings.Contains(joined, tc.wantErr) {
+				t.Fatalf("problems = %s, want one containing %q", joined, tc.wantErr)
+			}
+		})
+	}
+
+	t.Run("a listener that does not implement PortProvider at all", func(t *testing.T) {
+		errs := plugintest.CheckProvider(portless{goodListener().prov})
+		if !strings.Contains(joinErrs(errs), "plugin.PortProvider") {
+			t.Fatalf("problems = %s, want the missing interface named", joinErrs(errs))
+		}
+	})
 }

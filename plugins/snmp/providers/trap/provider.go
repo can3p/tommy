@@ -87,6 +87,7 @@ var (
 	_ plugin.Provider            = (*Provider)(nil)
 	_ plugin.ListenerProvider    = (*Provider)(nil)
 	_ plugin.AddressableProvider = (*Provider)(nil)
+	_ plugin.PortProvider        = (*Provider)(nil)
 )
 
 // New returns the trap provider. The port comes from the configuration at
@@ -112,16 +113,23 @@ func (p *Provider) Description() string {
 // UDP port and mounts no HTTP routes.
 func (p *Provider) Endpoints() []plugin.Endpoint { return nil }
 
+// ListenPort implements plugin.PortProvider: where this listener would bind
+// under pc, resolved without binding anything. It is the same value Listen
+// resolves, so `tommy providers` and the running listener cannot disagree.
+func (p *Provider) ListenPort(pc plugin.ProviderConfig) plugin.ListenPort {
+	return plugin.ListenPort{Port: LoadConfig(pc).Port, Network: "udp"}
+}
+
 // RegisterIngress implements plugin.Provider. Nothing is mounted: this
 // provider speaks SNMP on a port of its own.
 func (p *Provider) RegisterIngress(mux plugin.Mux, d plugin.Deps) {}
 
 // Snippets implements plugin.Provider.
 func (p *Provider) Snippets() []plugin.Snippet {
-	// The listener address is rendered from the live SnippetCtx, with the
-	// package default as the fallback - not a hardcoded port in disguise:
-	// when the configuration names no port, Listen binds this very constant.
-	addr := fmt.Sprintf(`{{with .Addr "snmp" "trap"}}{{.}}{{else}}{{.Host}}:%d{{end}}`, DefaultPort)
+	// The address comes from the SnippetCtx, which carries this provider's
+	// port whether or not anything is listening: the core asks ListenPort
+	// when nothing has bound. There is nothing left to hardcode here.
+	addr := `{{.Addr "snmp" "trap"}}`
 
 	return []plugin.Snippet{
 		{

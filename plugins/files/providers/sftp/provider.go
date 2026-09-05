@@ -125,6 +125,7 @@ var (
 	_ plugin.Provider            = (*Provider)(nil)
 	_ plugin.ListenerProvider    = (*Provider)(nil)
 	_ plugin.AddressableProvider = (*Provider)(nil)
+	_ plugin.PortProvider        = (*Provider)(nil)
 	_ files.VFSBinder            = (*Provider)(nil)
 )
 
@@ -158,16 +159,23 @@ func (p *Provider) Description() string {
 // and mounts no HTTP routes.
 func (p *Provider) Endpoints() []plugin.Endpoint { return nil }
 
+// ListenPort implements plugin.PortProvider: where this listener would bind
+// under pc, resolved without binding anything. It is the same value Listen
+// resolves, so `tommy providers` and the running listener cannot disagree.
+func (p *Provider) ListenPort(pc plugin.ProviderConfig) plugin.ListenPort {
+	return plugin.ListenPort{Port: LoadConfig(pc).Port, Network: "tcp"}
+}
+
 // RegisterIngress implements plugin.Provider. Nothing is mounted: this provider
 // speaks SFTP on a port of its own.
 func (p *Provider) RegisterIngress(mux plugin.Mux, d plugin.Deps) {}
 
 // Snippets implements plugin.Provider.
 func (p *Provider) Snippets() []plugin.Snippet {
-	// The port is rendered from the live SnippetCtx, with the package default
-	// as the fallback. That fallback is not a hardcoded port in disguise: when
-	// the configuration names no port, Listen binds this very constant.
-	port := fmt.Sprintf(`{{with .Port "files" "sftp"}}{{.}}{{else}}%d{{end}}`, DefaultPort)
+	// The port comes from the SnippetCtx, which carries this provider's port
+	// whether or not anything is listening: the core asks ListenPort when
+	// nothing has bound. There is nothing left to hardcode here.
+	port := `{{.Port "files" "sftp"}}`
 	// Host-key checking is turned off on purpose: the key is a throwaway
 	// identity for a local fake, and prompting would break a copy-pasted
 	// command.

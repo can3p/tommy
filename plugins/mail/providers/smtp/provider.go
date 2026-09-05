@@ -109,6 +109,7 @@ type Provider struct {
 var (
 	_ plugin.Provider         = (*Provider)(nil)
 	_ plugin.ListenerProvider = (*Provider)(nil)
+	_ plugin.PortProvider     = (*Provider)(nil)
 )
 
 // New returns the SMTP provider. The port comes from the configuration at
@@ -131,15 +132,20 @@ func (p *Provider) Description() string {
 // port and mounts no HTTP routes.
 func (p *Provider) Endpoints() []plugin.Endpoint { return nil }
 
+// ListenPort implements plugin.PortProvider: where this listener would bind
+// under pc, resolved without binding anything. It is the same value Listen
+// resolves, so `tommy providers` and the running listener cannot disagree.
+func (p *Provider) ListenPort(pc plugin.ProviderConfig) plugin.ListenPort {
+	return plugin.ListenPort{Port: LoadConfig(pc).Port, Network: "tcp"}
+}
+
 // Snippets implements plugin.Provider.
 func (p *Provider) Snippets() []plugin.Snippet {
-	// The listener address is rendered from the live SnippetCtx, with the
-	// package default as the fallback. That fallback is not a hardcoded port in
-	// disguise: the core can only publish an address it was configured with, so
-	// when the configuration says nothing the snippet and Listen fall back to
-	// the very same constant.
-	addr := fmt.Sprintf(`{{with .SMTPAddr}}{{.}}{{else}}{{.Host}}:%d{{end}}`, DefaultPort)
-	port := fmt.Sprintf(`{{with .Port "mail" "smtp"}}{{.}}{{else}}%d{{end}}`, DefaultPort)
+	// The address comes from the SnippetCtx, which carries this provider's
+	// port whether or not anything is listening: the core asks ListenPort
+	// when nothing has bound. There is nothing left to hardcode here.
+	addr := `{{.SMTPAddr}}`
+	port := `{{.Port "mail" "smtp"}}`
 
 	return []plugin.Snippet{
 		{

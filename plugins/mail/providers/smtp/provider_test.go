@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -79,8 +80,9 @@ func TestLoadConfig(t *testing.T) {
 }
 
 // TestSnippetsCarryTheLiveAddress proves a copied snippet points at the port
-// this instance actually bound, and falls back to the same default Listen does
-// when the core has no address to publish.
+// this instance actually bound, and - when nothing is bound - at the port this
+// provider reports it would bind, which is what the core fills the context
+// with. Nothing in the snippet names a port of its own.
 func TestSnippetsCarryTheLiveAddress(t *testing.T) {
 	live := plugin.SnippetCtx{Host: "example.test"}
 	live.SetAddr(mail.PluginName, ProviderName, "example.test:2500")
@@ -98,14 +100,22 @@ func TestSnippetsCarryTheLiveAddress(t *testing.T) {
 		}
 	}
 
-	bare := plugin.SnippetCtx{Host: "localhost"}
+	// With no listener running the core asks the provider where it would
+	// bind (plugin.PortProvider) and publishes that, so the snippet still
+	// carries a usable address without a literal port in its template.
+	lp := New().ListenPort(plugin.ProviderConfig{})
+	if lp.Port != DefaultPort || lp.Network != "tcp" {
+		t.Fatalf("ListenPort() with no configuration = %+v, want port %d over tcp", lp, DefaultPort)
+	}
+	cold := plugin.SnippetCtx{Host: "localhost"}
+	cold.SetAddr(mail.PluginName, ProviderName, net.JoinHostPort("localhost", strconv.Itoa(lp.Port)))
 	for _, s := range New().Snippets() {
-		out, err := s.Render(bare)
+		out, err := s.Render(cold)
 		if err != nil {
 			t.Fatalf("render %q: %v", s.Title, err)
 		}
 		if !strings.Contains(out, "1025") {
-			t.Errorf("snippet %q has no address at all when the core published none:\n%s", s.Title, out)
+			t.Errorf("snippet %q has no address at all when nothing is bound:\n%s", s.Title, out)
 		}
 	}
 }

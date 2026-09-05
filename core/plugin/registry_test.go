@@ -251,3 +251,115 @@ func providersOf(refs []plugin.Ref) []plugin.Provider {
 	}
 	return out
 }
+
+// portListener is a listener provider that can say where it would bind before
+// it binds - the whole point of plugin.PortProvider. Nothing in these tests
+// listens on anything: the well-known ports below are only ever reported.
+type portListener struct {
+	listenerProvider
+	defaultPort int
+	network     string
+}
+
+func (p *portListener) ListenPort(pc plugin.ProviderConfig) plugin.ListenPort {
+	return plugin.ListenPort{Port: pc.Int("port", p.defaultPort), Network: p.network}
+}
+
+func newPortListener(owner, name string, port int, network string) *portListener {
+	return &portListener{
+		listenerProvider: listenerProvider{stubProvider{
+			name:     name,
+			owner:    owner,
+			snippets: []plugin.Snippet{{Title: "connect", Lang: "bash", Code: `nc {{.Addr "hl7" "mllp"}}`}},
+		}},
+		defaultPort: port,
+		network:     network,
+	}
+}
+
+func TestRegistryReportsAListenerPortWithoutBinding(t *testing.T) {
+	build := func(t *testing.T, toml string) *plugin.Registry {
+		t.Helper()
+		cfg := config.Default()
+		if toml != "" {
+			var err error
+			cfg, err = config.Parse([]byte(toml))
+			if err != nil {
+				t.Fatalf("config: %v", err)
+			}
+			cfg.ApplyDefaults()
+		}
+		p := &stubPlugin{name: "hl7", title: "HL7", providers: []plugin.Provider{
+			newPortListener("hl7", "mllp", 2575, "tcp"),
+		}}
+		reg, err := plugin.New(cfg, p)
+		if err != nil {
+			t.Fatalf("registry: %v", err)
+		}
+		return reg
+	}
+
+	t.Run("the package default when the configuration names no port", func(t *testing.T) {
+		lp, ok := build(t, "").ListenPort("hl7", "mllp")
+		if !ok || lp.Port != 2575 || lp.Network != "tcp" {
+			t.Errorf("ListenPort = %+v, %v; want the provider's own default", lp, ok)
+		}
+		if lp.String() != "2575/tcp" {
+			t.Errorf("String() = %q, want the docker EXPOSE form", lp.String())
+		}
+	})
+
+	t.Run("the configured port when it names one", func(t *testing.T) {
+		lp, _ := build(t, "[plugins.hl7.providers.mllp]\nport = 9999\n").ListenPort("hl7", "mllp")
+		if lp.Port != 9999 {
+			t.Errorf("ListenPort = %+v, want the configured port", lp)
+		}
+	})
+
+	t.Run("nothing at all for an ephemeral port", func(t *testing.T) {
+		reg := build(t, "[plugins.hl7.providers.mllp]\nport = 0\n")
+		lp, _ := reg.ListenPort("hl7", "mllp")
+		if !lp.Ephemeral() {
+			t.Errorf("ListenPort = %+v; port = 0 is only knowable once bound", lp)
+		}
+		ctx := plugin.NewSnippetCtx("localhost", "127.0.0.1:8811", "127.0.0.1:8811", "127.0.0.1:8822")
+		reg.ConfiguredAddrs(&ctx)
+		if addr := ctx.Addr("hl7", "mllp"); addr != "" {
+			t.Errorf("ConfiguredAddrs published %q for an ephemeral port; only a bound listener knows it", addr)
+		}
+	})
+
+	t.Run("Describe carries it, and the snippets render against it", func(t *testing.T) {
+		reg := build(t, "")
+		ctx := plugin.NewSnippetCtx("localhost", "127.0.0.1:8811", "127.0.0.1:8811", "127.0.0.1:8822")
+		reg.ConfiguredAddrs(&ctx)
+
+		info, err := reg.Describe(ctx)
+		if err != nil {
+			t.Fatalf("describe: %v", err)
+		}
+		prov := info[0].Providers[0]
+		if !prov.Listener || prov.Port != 2575 || prov.Network != "tcp" {
+			t.Errorf("ProviderInfo = %+v, want the listener's own port reported", prov)
+		}
+		if prov.Addr != "localhost:2575" {
+			t.Errorf("Addr = %q, want the address this configuration would bind", prov.Addr)
+		}
+		if want := "nc localhost:2575"; prov.Snippets[0].Code != want {
+			t.Errorf("snippet = %q, want %q", prov.Snippets[0].Code, want)
+		}
+	})
+}
+
+func TestRegistryListenPortIgnoresNonListeners(t *testing.T) {
+	reg, err := plugin.New(config.Default(), newStub("mail", "mailjet"))
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	if _, ok := reg.ListenPort("mail", "mailjet"); ok {
+		t.Error("an HTTP provider is path-routed onto the shared ingress and has no port of its own")
+	}
+	if _, ok := reg.ListenPort("mail", "nosuch"); ok {
+		t.Error("an unknown provider must report nothing")
+	}
+}

@@ -220,6 +220,14 @@ func (l *LineProvider) RegisterIngress(mux plugin.Mux, d plugin.Deps) {
 	// Nothing: this provider speaks its own protocol on its own port.
 }
 
+// ListenPort implements plugin.PortProvider. Unlike a shipped provider this
+// one has no well-known default: a test fixture that grabbed a fixed port
+// would collide with whatever else is running, so an unconfigured LineProvider
+// is ephemeral and says so by reporting port 0.
+func (l *LineProvider) ListenPort(pc plugin.ProviderConfig) plugin.ListenPort {
+	return plugin.ListenPort{Port: pc.Int("port", 0), Network: "tcp"}
+}
+
 // Addr blocks until the listener is bound and returns its address. The channel
 // is created up front rather than lazily, so Addr and Listen never race.
 func (l *LineProvider) Addr(timeout time.Duration) (string, error) {
@@ -235,6 +243,12 @@ func (l *LineProvider) Addr(timeout time.Duration) (string, error) {
 		return "", fmt.Errorf("fakeplugin: listener did not bind within %s", timeout)
 	}
 }
+
+var (
+	_ plugin.ListenerProvider    = (*LineProvider)(nil)
+	_ plugin.AddressableProvider = (*LineProvider)(nil)
+	_ plugin.PortProvider        = (*LineProvider)(nil)
+)
 
 // Listen reads its port from the provider config, exactly as an FTP or SMTP
 // provider would, and returns when ctx is done.
