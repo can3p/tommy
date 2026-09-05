@@ -182,6 +182,9 @@ message says `openssl pkey -in key.pem -out key-plain.pem`.
 
 Under `/api/v1/as2/`:
 
+These routes, their filters and their response schemas are also in the machine-readable
+description at `GET /api/v1/openapi.json` (checked in as `docs/openapi.json`).
+
 | Route | What |
 |---|---|
 | `GET /messages` | Captured messages, newest first. Filters: `from`, `to`, `message_id`, `format`, `security`, `issue`, plus the core's `search`/`since`/`limit`/`offset`. |

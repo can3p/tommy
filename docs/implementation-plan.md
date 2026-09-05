@@ -56,9 +56,11 @@ and fifteen providers, each capturing one more thing. Waves 9–12 build the
 only wave 11 adds a provider. The protocol backlog is still there, renumbered,
 behind them.
 
-**Wave 9 is built** and is on `feat/event-page`: every event has a page at
-`/ui/events/{id}`, every API representation of an event carries its `url`, and
-an ingress response names what it captured in `X-Tommy-Event-URL`.
+**Waves 9 and 10 are built**, on `feat/event-page` and `feat/openapi-spec`:
+every event has a page at `/ui/events/{id}`, every API representation of an
+event carries its `url`, an ingress response names what it captured in
+`X-Tommy-Event-URL`, and `/api/v1` has a generated OpenAPI 3.1 description that
+CI holds to the code.
 
 ## 2. The scoping rule
 
@@ -105,30 +107,21 @@ reasoning; `CLAUDE.md` has the rules.
 Model guidance: contract-defining and subtle-parsing work to the stronger model;
 well-specified translation against a fixed contract to the cheaper one.
 
-## 4. The order of the remaining surface waves
+## 4. What is left of the surface work
 
-Waves 10–12 are what is left of the surface work; **wave 9 is built** and is in
-`docs/archive/history.md`. The couplings that remain:
+Waves 11 and 12 are what is left of the surface work; **waves 9 and 10 are
+built** and are in `docs/archive/history.md`. What they leave behind:
 
-- **Wave 10 before wave 12.** The website renders the API reference from the
-  spec. Without it, wave 12 either omits the API or hand-writes it, and
-  hand-writing it is the thing wave 10 exists to prevent.
-- **Wave 10 now has more surface to describe than it did.** Wave 9 added a
-  `url` field to every event the API returns and to both SSE streams, a
-  `url` on every plugin's read-back resource, and the ingress response header
-  `X-Tommy-Event-URL`. The first two belong in the spec; the header does not,
-  since it rides on the fake vendor endpoints the spec deliberately excludes —
-  say so rather than leaving a reader to wonder.
-- **Wave 11 is independent** of both and can run in parallel on its own branch.
-  It touches `plugins/mail/**`, `cmd/mail.go`, `plugins/all/all.go` and
-  `test/integration/**` — with one exception to watch: wave 10 may add an
-  `APIEndpoints()` method to the `Plugin` interface, which touches
-  `plugins/mail/plugin.go`. A provider does not implement `Plugin`, so the
-  collision is a rebase at worst. Note that a new provider now gets the event
-  link for free: it is the ingress that adds the header, not the provider.
+- **Wave 12 has its API reference already.** `docs/openapi.json` is generated
+  and CI-checked, so the website renders it rather than hand-writing anything.
+- **Wave 11 is unaffected by wave 10's contract change.** `Plugin` gained
+  `APIEndpoints()`, and a *provider* does not implement `Plugin` — so a new
+  mail provider needs no declaration of its own, and the mail plugin's existing
+  one already covers the routes it will be read back through. A new *plugin*,
+  on the other hand, now has one more method to implement, and
+  `plugintest.Conformance` will say so.
 - **Nothing here blocks waves 13 and 14**, and nothing there blocks these. If a
-  protocol is wanted sooner than the surface work, take it; the ordering above
-  is internal to waves 10–12.
+  protocol is wanted sooner than the surface work, take it.
 
 Each of these waves also has a *keep it true* half — a generated artifact plus a
 test that fails when it stops matching the code. That half is the deliverable,
@@ -136,92 +129,6 @@ not the polish: a spec or a website that is updated by remembering to update it
 is one that is wrong within two waves. Where a wave adds such a gate, it also
 adds the `CLAUDE.md` rule that names it, because the rule is what survives into
 the next session.
-
----
-
-## Wave 10 — the OpenAPI spec, and the gate that keeps it true
-
-**Goal.** `/api/v1` gets a published OpenAPI description, and the description
-cannot drift from the code without CI saying so. The second half is the whole
-point: a spec that is hand-maintained is a spec that is wrong by wave 12.
-
-**Scope.** This describes **tommy's own API** — the generic event, blob,
-plugin-discovery and stream routes, and every plugin's `/api/v1/<plugin>/`
-routes. It deliberately does **not** describe the fake vendor endpoints on the
-ingress: those are Mailjet's, SendGrid's, Twilio's and Resend's specifications,
-not tommy's, and re-publishing a partial copy of somebody else's API invites
-exactly the "looks complete, is not" failure `Endpoints()` and the snippets
-already avoid. Say this in the spec's own description so nobody has to guess.
-
-### The drift gate is the design
-
-The mechanism, not the document, is what this wave is really building. Three
-parts, in dependency order:
-
-1. **Capture the routes.** `core/server/ingress/mux.go` already proves the
-   pattern: hand plugins a recording `plugin.Mux` and you see every registration
-   before it happens. `api.New` currently passes a bare `*http.ServeMux` to
-   `RegisterAPI`; wrap it the same way and the core knows every mounted API
-   route, plugin routes included, without asking anyone to declare anything.
-2. **Assert both directions.** A route with no spec entry fails; a spec entry
-   with no route fails. This is rule 7 — *every mounted route must be declared
-   in `Endpoints()` and vice versa* — extended from the ingress to the API,
-   and it should read as the same rule to anyone who meets it.
-3. **Assert the schemas.** Full JSON-Schema generation by reflection is more
-   machinery than this needs. Walk the Go types instead (`event.Event`,
-   `event.Summary`, `event.Raw`, `blob.Ref`, `plugin.PluginInfo`,
-   `mail.Message`, …) and assert every JSON field name appears in the
-   corresponding component schema. Cheap, and it catches the drift that actually
-   happens: a field added to a struct and forgotten in the spec.
-
-### Where the descriptions live
-
-The routes come from the mux; the prose does not. Two options, and the
-recommendation is the first:
-
-- **A plugin describes its own API routes** — an `APIEndpoints() []plugin.Endpoint`
-  on the `Plugin` interface, enforced by `plugintest.Conformance` the way
-  `Endpoints()` is for providers. Ownership stays next to the code, and a new
-  plugin cannot ship an undocumented API by accident. Cost: a change to the
-  `Plugin` interface, so all eight plugins and `core/testutil/fakeplugin` move
-  in the same wave, and `docs/contracts.md` changes.
-- One core file holding every description. Cheaper now; it is the arrangement
-  that goes stale, because the person adding a route is not the person editing
-  that file.
-
-### Artifacts
-
-- **Canonical, checked in: `docs/openapi.json`.** JSON rather than YAML on
-  purpose — `encoding/json` is in the standard library and no OpenAPI-shaped
-  dependency enters the root `go.mod` for it. A YAML rendering is nicer to read
-  in a diff; if it is wanted, generate it where a dependency is free (wave 12's
-  website module, or a CI step), never by hand.
-- **Served from the binary**: `GET /api/v1/openapi.json`, generated at request
-  time from the live route table rather than served from an embedded copy — a
-  running tommy then describes *itself*, including only the plugins that
-  instance actually enabled, which is more useful than a fixed document and
-  cannot go stale at all. The checked-in file is the same generator run with
-  every plugin enabled. Link it from the UI's discovery panel and from
-  `README.md`.
-- **`make openapi`** regenerates it; `make check` and CI fail when regenerating
-  changes the file. The generator is Go code in `core/server/api` — the spec is
-  *generated from the route table*, and the checked-in file is a build product
-  kept in the repo so it can be linked, diffed and reviewed.
-- **OpenAPI 3.1**, so the schemas are JSON Schema proper. Note in the wave that
-  some older tooling still only reads 3.0; if that turns out to matter for the
-  wave 12 rendering, it is a reason to reconsider, not a reason to hand-write.
-- The SSE endpoint is described as `text/event-stream` with the event envelope
-  as its schema. It cannot be exercised by a generated client, and the spec
-  should say so rather than pretend.
-
-### Done when
-
-The wave's own ritual, plus a new `CLAUDE.md` rule to the effect of: *the
-OpenAPI description is generated, never edited — any change to an `/api/v1`
-route or to a type it serves is finished only when `make openapi` has been run
-and the result committed*, and a line in *Finishing a wave* saying the same. It
-is the rule, not this document, that keeps the spec current after this wave
-ends.
 
 ---
 
