@@ -153,6 +153,12 @@ is greedy rather than a division: 153 `€` characters are 306 septets but need
 
 Mounted under `/api/v1/sms/`.
 
+These routes have their own OpenAPI description, generated from the server's
+route table: `GET /api/v1/sms/openapi.json` from a running tommy, or
+[`docs/openapi-sms.json`](../../docs/openapi-sms.json) in the repository.
+The generic event routes are described separately, in
+[`docs/openapi.json`](../../docs/openapi.json).
+
 | Route | Notes |
 |---|---|
 | `GET /messages` | newest first; `search`, `provider`, `type`, `since`, `limit`, `offset`, plus `to`, `from`, `status`, `direction`, `encoding`, `mms` |

@@ -150,6 +150,12 @@ err := d.Append(ctx, ev)
 Mounted under `/api/v1/mail`; every route reads from the store, so a client that
 sends and immediately fetches sees its own write.
 
+These routes have their own OpenAPI description, generated from the server's
+route table: `GET /api/v1/mail/openapi.json` from a running tommy, or
+[`docs/openapi-mail.json`](../../docs/openapi-mail.json) in the repository.
+The generic event routes are described separately, in
+[`docs/openapi.json`](../../docs/openapi.json).
+
 | Route | Notes |
 |---|---|
 | `GET /messages` | newest first. `?provider=&search=&since=&limit=&offset=` plus the mail-specific `?to=&from=&subject=&has_attachments=` |

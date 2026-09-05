@@ -1,0 +1,362 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tommy files API",
+    "version": "v1",
+    "description": "Accepts the files your application uploads over FTP, SFTP or TFTP instead of shipping them anywhere, and keeps them in a virtual filesystem you can browse, download from and assert against. Every upload, mkdir, delete and rename is also recorded as an event, so the tree shows what is there now and the log shows how it got that way.\n\nThese routes read back what tommy captured, in the shape this content type\nwants: filters that only mean something here, and the parts that are bytes\nrather than JSON. They read from the same store as the events API, so a\nclient that sends and immediately fetches sees its own write, and every\nentry carries the id of the event behind it.\n\nThe events API - /api/v1/events, described in its own document - is the\ngeneric view of the same captures, and is the one to use when what you are\nasserting does not depend on the content type. The fake vendor endpoints are\ndescribed nowhere here: they are the vendors' specifications, not tommy's.\n\nThis document is generated from the server's route table. It cannot describe\na route that does not exist, and CI fails if the checked-in copy stops\nmatching the code."
+  },
+  "servers": [
+    {
+      "url": "/api/v1/files",
+      "description": "This tommy's files API."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/content/{path}": {
+      "get": {
+        "operationId": "getContentByPath",
+        "summary": "A file's bytes, streamed from the blob store with range support.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "description": "Path inside the shared virtual filesystem. It may contain slashes: this is the whole remaining path, not one segment.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteContentByPath",
+        "summary": "Delete one file, or a directory with ?recursive=1.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "description": "Path inside the shared virtual filesystem. It may contain slashes: this is the whole remaining path, not one segment.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recursive",
+            "in": "query",
+            "description": "Required to delete a directory, so a mistyped path cannot take a subtree with it.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stat/{path}": {
+      "get": {
+        "operationId": "getStatByPath",
+        "summary": "One entry's metadata: size, mode, times, and which provider wrote it.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "description": "Path inside the shared virtual filesystem. It may contain slashes: this is the whole remaining path, not one segment.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/files.EntryView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tree": {
+      "get": {
+        "operationId": "getTree",
+        "summary": "One directory of the shared virtual filesystem, or the whole subtree.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "description": "The directory to list; the root when omitted.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recursive",
+            "in": "query",
+            "description": "List the whole subtree rather than one level.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/files.TreeView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteTree",
+        "summary": "Empty the virtual filesystem.",
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "api.Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "blob.Ref": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "size"
+        ]
+      },
+      "files.Crumb": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "url"
+        ]
+      },
+      "files.EntryLinks": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "self": {
+            "type": "string"
+          },
+          "tree": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "self"
+        ]
+      },
+      "files.EntryView": {
+        "type": "object",
+        "properties": {
+          "blob": {
+            "$ref": "#/components/schemas/blob.Ref"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "dir": {
+            "type": "boolean"
+          },
+          "links": {
+            "$ref": "#/components/schemas/files.EntryLinks"
+          },
+          "mod_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blob",
+          "dir",
+          "links",
+          "mod_time",
+          "name",
+          "path",
+          "size"
+        ]
+      },
+      "files.Stats": {
+        "type": "object",
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "dirs": {
+            "type": "integer"
+          },
+          "files": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "dirs",
+          "files"
+        ]
+      },
+      "files.TreeView": {
+        "type": "object",
+        "properties": {
+          "breadcrumb": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/files.Crumb"
+            }
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/files.EntryView"
+            }
+          },
+          "parent": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "recursive": {
+            "type": "boolean"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/files.Stats"
+          }
+        },
+        "required": [
+          "breadcrumb",
+          "entries",
+          "path",
+          "stats"
+        ]
+      }
+    }
+  }
+}

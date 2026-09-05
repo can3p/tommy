@@ -276,6 +276,24 @@ assumes a scheme was forgotten. Both were invisible to every test in the repo,
 because the tests knew only what the generator knew. Warnings that would need an
 invented response to silence were left standing instead.
 
+**One document per surface beats one document for everything.** The same
+correction arrived twice: first that the OpenAPI description should be the
+events API rather than every route under `/api/v1`, then that the plugin APIs
+still deserved descriptions of their own. Both are true, and the resolution is
+not a compromise between them - it is a document per audience. Somebody
+asserting about mail wants seven paths in the mail document; somebody streaming
+events wants six in the events document; nobody wants thirty-five in one.
+Cutting the scope is only half the answer, and the half that gets forgotten is
+asking what happened to what you cut.
+
+**An interface that only some implementers need should be optional.** The first
+version made `APIEndpoints()` a member of `Plugin`, so a plugin that mounts no
+API had to implement it to say so, along with every test double. As an optional
+interface it says the same thing better: implement it if you have routes, and
+conformance fails you if you have routes and did not. The codebase already had
+the pattern in `AddressableProvider`; it was worth copying rather than
+re-deciding.
+
 **Ask what a document is a contract *for* before deciding what goes in it.** The
 OpenAPI description first covered every route under `/api/v1` — the events API,
 the operational routes, and all 28 of the plugins' read-back routes — on the

@@ -182,6 +182,12 @@ message says `openssl pkey -in key.pem -out key-plain.pem`.
 
 Under `/api/v1/as2/`:
 
+These routes have their own OpenAPI description, generated from the server's
+route table: `GET /api/v1/as2/openapi.json` from a running tommy, or
+[`docs/openapi-as2.json`](../../docs/openapi-as2.json) in the repository.
+The generic event routes are described separately, in
+[`docs/openapi.json`](../../docs/openapi.json).
+
 | Route | What |
 |---|---|
 | `GET /messages` | Captured messages, newest first. Filters: `from`, `to`, `message_id`, `format`, `security`, `issue`, plus the core's `search`/`since`/`limit`/`offset`. |

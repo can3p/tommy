@@ -22,8 +22,9 @@ make test           # go test -race -coverprofile=coverage.out ./...
 make lint           # golangci-lint run ./...
 go run . serve      # boot with defaults: UI :8811, ingress :8822, smtp :1025, ftp :2121, sftp :2222
 go run . providers  # every provider's description, endpoints and runnable snippets
-go run . openapi    # the OpenAPI 3.1 description of the events API
-make openapi        # regenerate docs/openapi.json; required whenever an events route changes
+go run . openapi         # the OpenAPI 3.1 description of the events API
+go run . openapi mail    # one plugin's own read-back API
+make openapi             # regenerate every checked-in description; required when a route changes
 ```
 
 Set `TOMMY_NO_UPDATE_CHECK=1` when running the binary in tests, CI or scripts.
@@ -53,7 +54,7 @@ compiles the import that fails.
 | `docs/lessons.md` | What this codebase taught us. Read before orchestrating more work. |
 | `docs/clients.md` | Pointing official vendor SDKs at tommy. |
 | `docs/catalogue.md` | **Index of every plugin and provider**, what each is for, and a link to its own README. Start here when asking whether tommy covers something. |
-| `docs/openapi.json` | The OpenAPI 3.1 description of the **events API**. **Generated — never edit it**; run `make openapi`. |
+| `docs/openapi.json` | The OpenAPI 3.1 description of the **events API**, with `docs/openapi-<plugin>.json` for each plugin's own. **Generated — never edit them**; run `make openapi`. |
 | `core/` | Event, store, blob, plugin contracts, config, server (ui/api/ingress), testutil. |
 | `plugins/` | One directory per content type; providers nested under each. |
 | `plugins/all/all.go` | The single shared wiring file. Every plugin and provider is registered here explicitly. |
@@ -92,8 +93,11 @@ them be built in parallel.
 6. **Ship a `Description()` and at least one working `Snippet()`.** Snippets are Go
    templates over `SnippetCtx` — use `{{.IngressURL}}` / `{{.Addr "files" "ftp"}}`,
    never a hardcoded port. Enforced by `plugintest.Conformance`.
-7. **Every mounted route must be declared in `Endpoints()` and vice versa.** A
-   mismatch fails conformance *and* server startup.
+7. **Every mounted route must be declared and vice versa.** A provider declares
+   its ingress routes in `Endpoints()`; a plugin that mounts API routes declares
+   them in `APIEndpoints()` (the optional `plugin.APIDescriber`), which is what
+   its own OpenAPI description is generated from. A mismatch fails conformance
+   *and* server startup.
 8. **Never import another provider's package.**
 9. **Bytes go in the blob store**, never inline in an event.
 10. **Keep the CLI level with the config.** Anything expressible in `tommy.toml`
@@ -132,16 +136,19 @@ them be built in parallel.
     while the next *user* is never told what the thing is for: the coverage
     looks complete and the useful half is missing.
 
-13. **The OpenAPI description is generated, never edited.** `docs/openapi.json`
-    describes the **events API** — `/events`, `/events/{id}`, `/events/stream`,
-    `/blobs/{id}` — which is the surface every consumer of tommy programs
-    against, whatever it is capturing. It is the output of `tommy openapi`, so a
-    change to one of those routes or to a Go type it serves is finished only
-    when `make openapi` has been run and the result committed. A test fails
-    otherwise, and it names the line. Deliberately not in it: the fake vendor
-    endpoints (the vendors' specifications, not tommy's), each plugin's own
-    read-back routes (documented in that plugin's README), and the operational
-    routes `/health` and `/plugins`.
+13. **OpenAPI descriptions are generated, never edited — one per surface.**
+    `docs/openapi.json` is the **events API** (`/events`, `/events/{id}`,
+    `/events/stream`, `/blobs/{id}`), the surface every consumer programs
+    against whatever it is capturing. `docs/openapi-<plugin>.json` is that
+    plugin's own read-back API, generated from its `APIEndpoints()`. They are
+    separate because a reader asserting about mail wants the mail document, not
+    everything tommy mounts. **A plugin that mounts API routes owes a
+    description**, and `plugintest.Conformance` fails it otherwise. Any change
+    to a described route, or to a Go type it serves, is finished only when
+    `make openapi` has been run and the result committed; a test fails
+    otherwise and names the line. Deliberately described nowhere: the fake
+    vendor endpoints (the vendors' specifications, not tommy's) and the
+    operational routes `/health` and `/plugins`.
 
 ## Security invariants — do not weaken these
 
@@ -194,9 +201,11 @@ reported, and stale docs cost the next session more than they cost you.
 4. **`docs/lessons.md`** — add anything that generalises beyond this wave. A
    finding that would change how someone works, not a fact about one provider.
 5. **`CLAUDE.md`** — update if a rule, invariant, command or convention changed.
-6. **`docs/openapi.json`** — run `make openapi` and commit the result if an
-   events route, or any Go type one of them serves, changed. A test fails
-   otherwise, so this is a matter of when you find out, not whether.
+6. **The OpenAPI descriptions** — run `make openapi` and commit the result if
+   any described route, or any Go type one of them serves, changed. A test fails
+   otherwise, so this is a matter of when you find out, not whether. A new
+   plugin with an API of its own also needs its name in the Makefile's list and
+   in `plugins/all/openapi_test.go`.
 7. **Update the documentation of every plugin and provider the wave touched** —
    rule 12's three sections, plus anything the wave changed underneath them. A
    new plugin or provider needs its `README.md` written in the same wave, and a

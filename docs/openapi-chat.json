@@ -1,0 +1,425 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tommy chat API",
+    "version": "v1",
+    "description": "Captures the Slack and Microsoft Teams messages your application posts instead of delivering them, keeping each one's Block Kit blocks or Adaptive Card exactly as it was sent. The chat tab groups them by channel and nests replies under the message they answer.\n\nThese routes read back what tommy captured, in the shape this content type\nwants: filters that only mean something here, and the parts that are bytes\nrather than JSON. They read from the same store as the events API, so a\nclient that sends and immediately fetches sees its own write, and every\nentry carries the id of the event behind it.\n\nThe events API - /api/v1/events, described in its own document - is the\ngeneric view of the same captures, and is the one to use when what you are\nasserting does not depend on the content type. The fake vendor endpoints are\ndescribed nowhere here: they are the vendors' specifications, not tommy's.\n\nThis document is generated from the server's route table. It cannot describe\na route that does not exist, and CI fails if the checked-in copy stops\nmatching the code."
+  },
+  "servers": [
+    {
+      "url": "/api/v1/chat",
+      "description": "This tommy's chat API."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/channels": {
+      "get": {
+        "operationId": "getChannels",
+        "summary": "The derived channel index: message, thread, reply and orphan counts, and the last message. Computed on every request, so it always agrees with the tab.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/chat.ChannelSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messages": {
+      "get": {
+        "operationId": "getMessages",
+        "summary": "Every captured chat message, newest first.",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "description": "Only entries captured by this provider, such as mailjet.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only entries of this event type, such as mail.message.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive substring over the summary and type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp, a duration such as 5m, or unix milliseconds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many entries to skip.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "description": "The provider's channel id, its display name, or the derived key - all three appear in responses.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "description": "Substring of the author's name or id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "thread",
+            "in": "query",
+            "description": "Only messages in this thread, by derived thread key.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "The payload format the provider sent, such as blocks or text.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bot",
+            "in": "query",
+            "description": "Only messages posted by a bot, or only those that were not.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "replies",
+            "in": "query",
+            "description": "Include or exclude thread replies.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/chat.MessageEnvelope"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMessages",
+        "summary": "Clear every captured chat message.",
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/messages/{id}": {
+      "get": {
+        "operationId": "getMessagesById",
+        "summary": "One message, with its derived channel, thread and root identifiers.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The event id, as returned by any listing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/chat.MessageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "api.Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "chat.Author": {
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "boolean"
+          },
+          "icon_url": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "chat.ChannelRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "chat.ChannelSummary": {
+        "type": "object",
+        "properties": {
+          "display": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "last_author": {
+            "type": "string"
+          },
+          "last_message_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_message_id": {
+            "type": "string"
+          },
+          "last_preview": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "integer"
+          },
+          "messages_url": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "orphans": {
+            "type": "integer"
+          },
+          "replies": {
+            "type": "integer"
+          },
+          "threads": {
+            "type": "integer"
+          },
+          "ui_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "display",
+          "id",
+          "key",
+          "last_message_at",
+          "messages",
+          "messages_url",
+          "orphans",
+          "replies",
+          "threads",
+          "ui_url"
+        ]
+      },
+      "chat.Content": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "format": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "format"
+        ]
+      },
+      "chat.Message": {
+        "type": "object",
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/chat.Author"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/chat.ChannelRef"
+          },
+          "contents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/chat.Content"
+            }
+          },
+          "text": {
+            "type": "string"
+          },
+          "thread_ts": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "author",
+          "channel",
+          "text"
+        ]
+      },
+      "chat.MessageEnvelope": {
+        "type": "object",
+        "properties": {
+          "channel_key": {
+            "type": "string"
+          },
+          "formats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/chat.Message"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "provider": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reply": {
+            "type": "boolean"
+          },
+          "root_id": {
+            "type": "string"
+          },
+          "thread_key": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_key",
+          "id",
+          "message",
+          "provider",
+          "received_at",
+          "reply",
+          "root_id",
+          "thread_key",
+          "type"
+        ]
+      }
+    }
+  }
+}

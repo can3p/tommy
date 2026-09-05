@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/can3p/tommy/core/plugin"
 	"github.com/can3p/tommy/core/server/ui"
 )
 
@@ -117,75 +118,42 @@ type SpecOptions struct {
 	ServerURL string
 }
 
-// endpoint documents one route of the events API. It is local to this package
-// on purpose: plugin.Endpoint is the *discovery* surface a provider advertises,
-// and this is the input to a generated document. Sharing one struct between the
-// two would put schema and response-code fields on a type that half its users
-// have no use for.
-type endpoint struct {
-	Method      string
-	Path        string
-	Description string
-	// Query documents the query parameters. Never exhaustive by contract: an
-	// undeclared parameter is ignored, not rejected.
-	Query []param
-	// Response is a zero value of the JSON body; the schema is generated from
-	// its type. Nil for a route whose body is not JSON.
-	Response any
-	// Produces is the media type when it is not application/json.
-	Produces string
-	// Status is the success status when it is not 200.
-	Status int
-}
-
-// param is one query parameter. Three fields is all this API needs: every
-// filter is an optional string, an integer or a flag.
-type param struct {
-	Name        string
-	Description string
-	// Type is "string" (the default), "integer" or "boolean".
-	Type string
-}
-
-// listParams are the filters both listing routes share, declared once so the
-// two cannot drift apart.
-func listParams() []param {
-	return []param{
+// listParams are the filters both listing routes share: the common ones, plus
+// `plugin`, which only means anything on a route that is not already scoped to
+// one plugin.
+func listParams() []plugin.APIParam {
+	return append([]plugin.APIParam{
 		{Name: "plugin", Description: "Only events from this plugin, such as mail."},
-		{Name: "provider", Description: "Only events captured by this provider, such as mailjet."},
-		{Name: "type", Description: "Only events of this type, such as mail.message."},
-		{Name: "search", Description: "Case-insensitive substring over the summary and type."},
-		{Name: "since", Description: "RFC3339 timestamp, a duration such as 5m, or unix milliseconds."},
-		{Name: "limit", Description: "Maximum number of events to return.", Type: "integer"},
-		{Name: "offset", Description: "How many events to skip.", Type: "integer"},
-	}
+	}, plugin.CommonListParams()...)
 }
 
-// eventEndpoints is the whole document: the event surface and the blobs its
-// events point at.
+// eventEndpoints is the whole of this document: the event surface and the blobs
+// its events point at.
 //
 // Nothing else is here, and that is the scope decision this file exists to
-// record. /health, /plugins and this document's own route are operational
-// details of one server rather than a contract to program against, and a
-// plugin's read-back routes are shaped by its content type - the events API is
-// the one surface every consumer of tommy uses, whatever it is capturing.
-func eventEndpoints() []endpoint {
-	return []endpoint{
+// record. The events API is the one surface every consumer of tommy programs
+// against, whatever it is capturing. /health, /plugins and this document's own
+// route are operational details of one server rather than a contract, and each
+// plugin's read-back routes are shaped by its content type - so they get a
+// document of their own at /api/v1/<plugin>/openapi.json rather than crowding
+// this one.
+func eventEndpoints() []plugin.APIEndpoint {
+	return []plugin.APIEndpoint{
 		{Method: "GET", Path: "/events", Description: "Every captured event, newest first, whatever plugin captured it. Raw request bodies are omitted unless asked for: they can be megabytes each.",
 			Query: append(listParams(),
-				param{Name: "include_raw", Description: "Include each event's raw request body.", Type: "boolean"}),
+				plugin.APIParam{Name: "include_raw", Description: "Include each event's raw request body.", Type: "boolean"}),
 			Response: []ui.EventJSON{}},
 		{Method: "GET", Path: "/events/{id}", Description: "One event in full, raw request body included.",
 			Response: ui.EventJSON{}},
 		{Method: "GET", Path: "/events/stream", Description: "The same events as they arrive, as Server-Sent Events. Each event produces a JSON frame carrying the event without its raw body, and a frame named after the event type carrying just the id, so an htmx page can trigger on it.",
 			Query: listParams(), Produces: "text/event-stream"},
 		{Method: "DELETE", Path: "/events", Description: "Clear captured events, all of them or one plugin's. Stored payloads deliberately survive, so a link to one already handed out keeps working.",
-			Query:  []param{{Name: "plugin", Description: "Clear only this plugin's events."}},
+			Query:  []plugin.APIParam{{Name: "plugin", Description: "Clear only this plugin's events."}},
 			Status: http.StatusNoContent},
 		{Method: "DELETE", Path: "/events/{id}", Description: "Delete one captured event.",
 			Status: http.StatusNoContent},
 		{Method: "GET", Path: "/blobs/{id}", Description: "The bytes an event carried - a mail attachment, an uploaded file - streamed with range support. Events reference these by the id in their payload rather than inlining them.",
-			Query:    []param{{Name: "inline", Description: "Serve with an inline Content-Disposition rather than as a download.", Type: "boolean"}},
+			Query:    []plugin.APIParam{{Name: "inline", Description: "Serve with an inline Content-Disposition rather than as a download.", Type: "boolean"}},
 			Produces: "application/octet-stream"},
 	}
 }
@@ -215,7 +183,7 @@ func BuildSpec(opts SpecOptions) *Spec {
 }
 
 // add mounts one endpoint on the document.
-func (s *Spec) add(e endpoint, b *schemaBuilder) {
+func (s *Spec) add(e plugin.APIEndpoint, b *schemaBuilder) {
 	path := specPath(e.Path)
 
 	op := &Operation{
