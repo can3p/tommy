@@ -172,9 +172,6 @@ func (p *Provider) BindVFS(v *files.VFS) { p.vfs = v }
 
 Mounted under `/api/v1/files/`.
 
-These routes, their filters and their response schemas are also in the machine-readable
-description at `GET /api/v1/openapi.json` (checked in as `docs/openapi.json`).
-
 | Route | Notes |
 |---|---|
 | `GET /tree?path=&recursive=` | one directory listing plus breadcrumb, parent and whole-tree counts; `recursive=1` walks the subtree |

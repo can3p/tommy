@@ -150,9 +150,6 @@ err := d.Append(ctx, ev)
 Mounted under `/api/v1/mail`; every route reads from the store, so a client that
 sends and immediately fetches sees its own write.
 
-These routes, their filters and their response schemas are also in the machine-readable
-description at `GET /api/v1/openapi.json` (checked in as `docs/openapi.json`).
-
 | Route | Notes |
 |---|---|
 | `GET /messages` | newest first. `?provider=&search=&since=&limit=&offset=` plus the mail-specific `?to=&from=&subject=&has_attachments=` |

@@ -276,12 +276,16 @@ assumes a scheme was forgotten. Both were invisible to every test in the repo,
 because the tests knew only what the generator knew. Warnings that would need an
 invented response to silence were left standing instead.
 
-**Extend a rule before inventing a second one.** The plugin API needed exactly
-what rule 7 already said about provider ingress routes — declared and mounted
-must match — so it became the same rule applied to a second surface rather than
-a new concept. It found three real defects in the first run, one of which was a
-core helper (`Pattern.Key()` drops the method) being right for the ingress and
-wrong here.
+**Ask what a document is a contract *for* before deciding what goes in it.** The
+OpenAPI description first covered every route under `/api/v1` — the events API,
+the operational routes, and all 28 of the plugins' read-back routes — on the
+reasoning that a description should be complete. It should not: a description is
+for the surface somebody programs against, and here that is the events API,
+which is the same whatever the plugin captured. The wide version needed a new
+method on the `Plugin` interface to carry its prose; the narrow one needs an
+unexported table beside the handlers. **A contract addition that exists only to
+feed one document dies with that document's scope** — worth checking before
+adding the method, not after.
 
 
 **Ask who the reader is, not whether the file exists.** Every component but one

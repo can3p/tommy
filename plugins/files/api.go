@@ -63,32 +63,6 @@ type TreeView struct {
 	Stats Stats `json:"stats"`
 }
 
-// APIEndpoints documents what RegisterAPI mounts, and is what the OpenAPI
-// description is generated from.
-//
-// These routes describe the filesystem rather than the event log: what is in
-// the tree right now is what a test wants to assert on, and the operations
-// that produced it are events on the generic surface.
-func (p *Plugin) APIEndpoints() []plugin.Endpoint {
-	return []plugin.Endpoint{
-		{Method: "GET", Path: "/tree", Description: "One directory of the shared virtual filesystem, or the whole subtree.",
-			Query: []plugin.Param{
-				{Name: "path", Description: "The directory to list; the root when omitted."},
-				{Name: "recursive", Description: "List the whole subtree rather than one level.", Type: "boolean"},
-			},
-			Response: TreeView{}},
-		{Method: "DELETE", Path: "/tree", Description: "Empty the virtual filesystem.",
-			Status: http.StatusNoContent},
-		{Method: "GET", Path: "/stat/{path...}", Description: "One entry's metadata: size, mode, times, and which provider wrote it.",
-			Response: EntryView{}},
-		{Method: "GET", Path: "/content/{path...}", Description: "A file's bytes, streamed from the blob store with range support.",
-			Produces: "application/octet-stream"},
-		{Method: "DELETE", Path: "/content/{path...}", Description: "Delete one file, or a directory with ?recursive=1.",
-			Query:  []plugin.Param{{Name: "recursive", Description: "Required to delete a directory, so a mistyped path cannot take a subtree with it.", Type: "boolean"}},
-			Status: http.StatusNoContent},
-	}
-}
-
 // RegisterAPI mounts the files read-back API. The core strips /api/v1/files,
 // so the patterns here are relative to it.
 func (p *Plugin) RegisterAPI(mux plugin.Mux, d plugin.Deps) {

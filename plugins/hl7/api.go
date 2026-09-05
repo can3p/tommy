@@ -64,30 +64,6 @@ type apiHandler struct {
 	base string
 }
 
-// APIEndpoints documents what RegisterAPI mounts, and is what the OpenAPI
-// description is generated from.
-func (p *Plugin) APIEndpoints() []plugin.Endpoint {
-	list := append(plugin.CoreListParams(),
-		plugin.Param{Name: "message_type", Description: "The whole type (ADT^A01), just the code (ADT) or just the trigger event (A01)."},
-		plugin.Param{Name: "control_id", Description: "MSH-10, the message control id."},
-		plugin.Param{Name: "sending_application", Description: "MSH-3, the sending application."},
-		plugin.Param{Name: "receiving_application", Description: "MSH-5, the receiving application."},
-		plugin.Param{Name: "segment", Description: "Only messages carrying this segment, such as PID."},
-	)
-	return []plugin.Endpoint{
-		{Method: "GET", Path: "/messages", Description: "Every captured HL7 message, newest first.",
-			Query: list, Response: []MessageEnvelope{}},
-		{Method: "GET", Path: "/messages/{id}", Description: "One message: the parsed header and the segment tree.",
-			Response: MessageEnvelope{}},
-		{Method: "GET", Path: "/messages/{id}/raw", Description: "The bytes exactly as they arrived, served inert as text/plain.",
-			Produces: "text/plain"},
-		{Method: "DELETE", Path: "/messages", Description: "Clear every captured HL7 message.",
-			Status: http.StatusNoContent},
-		{Method: "DELETE", Path: "/messages/{id}", Description: "Delete one captured message.",
-			Status: http.StatusNoContent},
-	}
-}
-
 func (h *apiHandler) mount(mux plugin.Mux) {
 	if h.base == "" {
 		h.base = APIBase

@@ -144,9 +144,6 @@ editor, a heredoc or an HTTP client will not have one.
 
 Mounted at `/api/v1/hl7/`.
 
-These routes, their filters and their response schemas are also in the machine-readable
-description at `GET /api/v1/openapi.json` (checked in as `docs/openapi.json`).
-
 | Route | Notes |
 |---|---|
 | `GET /messages` | `?message_type=&control_id=&sending_application=&receiving_application=&segment=` plus the core's `search`, `since`, `limit`, `offset` |
