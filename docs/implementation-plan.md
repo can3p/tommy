@@ -59,8 +59,8 @@ behind them.
 **Waves 9 and 10 are built**, on `feat/event-page` and `feat/openapi-spec`:
 every event has a page at `/ui/events/{id}`, every API representation of an
 event carries its `url`, an ingress response names what it captured in
-`X-Tommy-Event-URL`, and `/api/v1` has a generated OpenAPI 3.1 description that
-CI holds to the code.
+`X-Tommy-Event-URL`, and the events API has a generated OpenAPI 3.1 description
+that CI holds to the code.
 
 ## 2. The scoping rule
 
@@ -114,12 +114,11 @@ built** and are in `docs/archive/history.md`. What they leave behind:
 
 - **Wave 12 has its API reference already.** `docs/openapi.json` is generated
   and CI-checked, so the website renders it rather than hand-writing anything.
-- **Wave 11 is unaffected by wave 10's contract change.** `Plugin` gained
-  `APIEndpoints()`, and a *provider* does not implement `Plugin` — so a new
-  mail provider needs no declaration of its own, and the mail plugin's existing
-  one already covers the routes it will be read back through. A new *plugin*,
-  on the other hand, now has one more method to implement, and
-  `plugintest.Conformance` will say so.
+  It covers the events API alone; the plugin read-back routes reach the site
+  through each plugin's `README.md`, like everything else there.
+- **Wave 11 is unaffected by wave 10.** The description covers the events API
+  only, and `core/plugin` came out of that wave unchanged — a new provider, and
+  a new plugin, have exactly the contract they had before.
 - **Nothing here blocks waves 13 and 14**, and nothing there blocks these. If a
   protocol is wanted sooner than the surface work, take it.
 

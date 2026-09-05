@@ -176,23 +176,15 @@ type plug struct {
 	title     string
 	desc      string
 	providers []plugin.Provider
-	api       []plugin.Endpoint
-	mount     func(plugin.Mux)
 }
 
-func (p plug) Name() string                       { return p.name }
-func (p plug) Title() string                      { return p.title }
-func (p plug) Description() string                { return p.desc }
-func (p plug) Providers() []plugin.Provider       { return p.providers }
-func (p plug) APIEndpoints() []plugin.Endpoint    { return p.api }
-func (p plug) RegisterUI(plugin.Mux, plugin.Deps) {}
-func (p plug) Templates() fs.FS                   { return nil }
-
-func (p plug) RegisterAPI(mux plugin.Mux, _ plugin.Deps) {
-	if p.mount != nil {
-		p.mount(mux)
-	}
-}
+func (p plug) Name() string                        { return p.name }
+func (p plug) Title() string                       { return p.title }
+func (p plug) Description() string                 { return p.desc }
+func (p plug) Providers() []plugin.Provider        { return p.providers }
+func (p plug) RegisterAPI(plugin.Mux, plugin.Deps) {}
+func (p plug) RegisterUI(plugin.Mux, plugin.Deps)  {}
+func (p plug) Templates() fs.FS                    { return nil }
 
 func TestCheckPlugin(t *testing.T) {
 	base := func() plug {

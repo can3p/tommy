@@ -181,7 +181,6 @@ type Plugin interface {
     RegisterAPI(mux Mux, d Deps) // mounted under /api/v1/<name>/
     RegisterUI(mux Mux, d Deps)  // mounted under /ui/<name>/
     Templates() fs.FS            // may be nil
-    APIEndpoints() []Endpoint    // every route RegisterAPI mounts, paths relative to /api/v1/<name>
 }
 
 type Provider interface {
@@ -219,24 +218,7 @@ type AddressableProvider interface {
     Addr(timeout time.Duration) (string, error)
 }
 
-type Endpoint struct {
-    Method, Path, Description string
-    Query    []Param // query parameters; optional, never exhaustive by contract
-    Response any     // zero value of the JSON response; the OpenAPI schema comes from it
-    Produces string  // response media type when it is not application/json
-    Status   int     // success status when it is not 200
-}
-
-type Param struct{ Name, Description, Type string } // Type: "string" (default), "integer", "boolean"
-
-func CoreListParams() []Param // the six filters every listing inherits from api.ParseQuery
-
-// A Mux that remembers what was registered on it. The ingress needs it to name
-// both claimants of a colliding route; the API needs it to check a plugin's
-// declarations against what it actually mounted.
-type RecordingMux struct{ ... }
-func NewRecordingMux() *RecordingMux
-func (m *RecordingMux) Patterns() []string // "METHOD /path", sorted
+type Endpoint struct{ Method, Path, Description string }
 
 type Snippet struct{ Title, Lang, Code string } // Code is a template over SnippetCtx
 func (s Snippet) Render(ctx SnippetCtx) (string, error)
@@ -337,8 +319,7 @@ Fails on: empty or boilerplate descriptions (also on `Endpoint.Description`),
 descriptions under 24 characters, a name that is not URL-safe, zero snippets, a
 snippet without a title or language, a snippet that fails to parse or render, a
 **declared endpoint that is never mounted**, and a **mounted route that is not
-declared** — the last two for a provider's ingress routes *and* for a plugin's
-API routes, which are checked against a `RecordingMux` the same way. A `ListenerProvider` with no endpoints is exempt from the route
+declared**. A `ListenerProvider` with no endpoints is exempt from the route
 checks. **A task is not done until this passes.**
 
 ## `core/config`
@@ -489,8 +470,8 @@ are left untouched.
 | `DELETE /events` | `?plugin=` to narrow; 204 |
 | `DELETE /events/{id}` | 204, or 404 |
 | `GET /blobs/{id}` | streams a blob with range support |
-| `GET /openapi.json` | this server's own OpenAPI 3.1 description |
-| `/api/v1/<plugin>/…` | whatever the plugin mounted in `RegisterAPI`, and declared in `APIEndpoints()` |
+| `GET /openapi.json` | the OpenAPI 3.1 description of the events API |
+| `/api/v1/<plugin>/…` | whatever the plugin mounted in `RegisterAPI` |
 
 `since` accepts an RFC3339 timestamp, a duration (`5m` = "in the last five
 minutes"), or unix milliseconds. **Listings omit `Raw.Body`** — they can be
@@ -528,34 +509,46 @@ field**, built from `api.EventURL`. All six that have one do.
 ### The OpenAPI description
 
 ```go
-func BuildSpec(opts SpecOptions) *Spec // Registry + ServerURL
+func BuildSpec(opts SpecOptions) *Spec // ServerURL only
 func (s *Spec) JSON() ([]byte, error)  // indented, trailing newline: the checked-in form
-func (a *API) Routes() []string        // every mounted route, "METHOD /path"
+func (a *API) Routes() []string        // every core route mounted, "METHOD /path"
 ```
+
+**It describes the events API, and only that**: `GET/DELETE /events`,
+`GET/DELETE /events/{id}`, `GET /events/stream`, `GET /blobs/{id}`. That is the
+surface every consumer of tommy programs against, whatever it is capturing, and
+it is the one worth generating a client from. Out of scope, deliberately and
+stated in the document itself:
+
+- **the fake vendor endpoints** — Mailjet's, Twilio's, Slack's specifications
+  rather than tommy's, and a partial copy of somebody else's API is worse than
+  none;
+- **each plugin's read-back routes** (`/api/v1/mail/messages` and its kin) — a
+  convenience shaped by the content type, documented in each plugin's README;
+- **`/health` and `/plugins`** — operational details of one server rather than a
+  contract.
 
 It is **generated**, never edited:
 
-- **Routes** come from `coreEndpoints()` in `core/server/api/openapi.go` and
-  from each plugin's `APIEndpoints()`. `Routes()` reports what is actually
-  mounted, and the tests in `plugins/all` compare the two in both directions —
-  a route nobody declared, or a declaration nobody mounted, fails.
+- **Routes** come from `eventEndpoints()` in `core/server/api/openapi.go`, an
+  unexported table beside the handlers. `Routes()` reports what the core
+  actually mounted, and a test asserts every described route is one of them —
+  a described route that is not mounted is a promise the server does not keep.
 - **Schemas** come from the Go types by reflection (`core/server/api/schema.go`),
   so a field added to a response cannot be missing from the document. Embedded
   structs are inlined the way `encoding/json` inlines them, `[]byte` is base64,
   `any` is unconstrained, and named struct types become components qualified by
-  package (`chat.MessageEnvelope`, `sms.MessageEnvelope`).
+  package.
 - **The checked-in copy** is `docs/openapi.json`, produced by `make openapi`
   (which runs `tommy openapi`). A test regenerates it and fails when the file
   differs, naming the first differing line. **Run `make openapi` and commit the
-  result whenever an `/api/v1` route or a type it serves changes.**
-- `tommy openapi` describes **every plugin the binary ships**, ignoring the
-  local configuration, because the checked-in file describes tommy rather than
-  one deployment. `GET /api/v1/openapi.json` describes **only what that
-  instance enabled**.
+  result whenever an events route or a type it serves changes.**
+- `GET /api/v1/openapi.json` serves the same document with this server's own
+  absolute URL, so a request can be pasted out of a rendered page and run.
 - `info.version` is the API version (`v1`), not the build version: the latter
   would rewrite the file on every release for no change a reader can act on.
-- The **fake vendor endpoints are deliberately absent** — they are the vendors'
-  specifications, not tommy's — and the document says so.
+- `security` is an explicit empty list. The API has no authentication, and
+  saying so is what stops a reader assuming a scheme was forgotten.
 
 ### SSE frame format
 

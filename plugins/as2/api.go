@@ -77,39 +77,6 @@ type apiHandler struct {
 	base string
 }
 
-// APIEndpoints documents what RegisterAPI mounts, and is what the OpenAPI
-// description is generated from.
-func (p *Plugin) APIEndpoints() []plugin.Endpoint {
-	list := append(plugin.CoreListParams(),
-		plugin.Param{Name: "from", Description: "The partner's AS2-From identifier."},
-		plugin.Param{Name: "to", Description: "The AS2-To identifier the message was addressed to."},
-		plugin.Param{Name: "message_id", Description: "The AS2 Message-ID."},
-		plugin.Param{Name: "format", Description: "The business document's format, such as edifact or x12."},
-		plugin.Param{Name: "security", Description: "Which layers were used: signed, encrypted, compressed."},
-		plugin.Param{Name: "issue", Description: "Only messages tommy recorded a problem with, such as a signature it could not verify."},
-	)
-	return []plugin.Endpoint{
-		{Method: "GET", Path: "/messages", Description: "Every captured AS2 message, newest first.",
-			Query: list, Response: []MessageEnvelope{}},
-		{Method: "GET", Path: "/messages/{id}", Description: "One message, unwrapped through every layer it arrived in.",
-			Response: MessageEnvelope{}},
-		{Method: "GET", Path: "/messages/{id}/raw", Description: "The request exactly as it arrived, ciphertext included.",
-			Produces: "text/plain"},
-		{Method: "GET", Path: "/messages/{id}/payload", Description: "The business document after every layer was peeled.",
-			Produces: "application/octet-stream"},
-		{Method: "GET", Path: "/messages/{id}/mdn", Description: "The MDN receipt tommy returned, byte for byte.",
-			Produces: "text/plain"},
-		{Method: "GET", Path: "/certificate", Description: "Tommy's certificate as PEM, for a trading partner to import.",
-			Produces: "application/x-pem-file"},
-		{Method: "GET", Path: "/identity", Description: "Which certificate is in use, where it came from, and its fingerprint.",
-			Response: IdentityInfo{}},
-		{Method: "DELETE", Path: "/messages", Description: "Clear every captured AS2 message.",
-			Status: http.StatusNoContent},
-		{Method: "DELETE", Path: "/messages/{id}", Description: "Delete one captured message.",
-			Status: http.StatusNoContent},
-	}
-}
-
 func (h *apiHandler) mount(mux plugin.Mux) {
 	if h.base == "" {
 		h.base = APIBase

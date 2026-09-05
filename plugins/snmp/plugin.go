@@ -57,11 +57,6 @@ func (p *Plugin) Templates() fs.FS { return nil }
 // included, with no code of this plugin's own.
 func (p *Plugin) RegisterAPI(mux plugin.Mux, d plugin.Deps) {}
 
-// APIEndpoints is empty for the same reason: this plugin mounts nothing of its
-// own, so there is nothing of its own to describe. Traps appear in the OpenAPI
-// description under the generic /events routes, like every other event.
-func (p *Plugin) APIEndpoints() []plugin.Endpoint { return nil }
-
 // RegisterUI mounts nothing, on purpose: the plugin gets the generic event
 // view for free (core/server/ui's fallback, probed route by route).
 //

@@ -71,33 +71,6 @@ type apiHandler struct {
 	base string
 }
 
-// APIEndpoints documents what RegisterAPI mounts, and is what the OpenAPI
-// description is generated from.
-func (p *Plugin) APIEndpoints() []plugin.Endpoint {
-	list := append(plugin.CoreListParams(),
-		plugin.Param{Name: "displays", Description: "Only pushes that would show something on a lock screen, or only those that would not.", Type: "boolean"},
-		plugin.Param{Name: "kind", Description: "alert, silent or background."},
-		plugin.Param{Name: "target_kind", Description: "How the push was addressed: token, topic or condition."},
-		plugin.Param{Name: "target", Description: "Substring of the target itself."},
-		plugin.Param{Name: "app", Description: "The application or Firebase project the push was sent to."},
-		plugin.Param{Name: "push_type", Description: "The APNs push type: alert, background, voip and the rest."},
-		plugin.Param{Name: "priority", Description: "The priority, by level or by its raw value."},
-		plugin.Param{Name: "data_key", Description: "Only pushes whose data payload carries this key."},
-	)
-	return []plugin.Endpoint{
-		{Method: "GET", Path: "/messages", Description: "Every captured push, newest first. Paging is applied after the filters, so a limit never counts what a filter excluded.",
-			Query: list, Response: []MessageEnvelope{}},
-		{Method: "GET", Path: "/messages/{id}", Description: "One push, with the displays/explain verdict alongside the model.",
-			Response: MessageEnvelope{}},
-		{Method: "GET", Path: "/messages/{id}/raw", Description: "The request body exactly as it arrived, as text/plain with nosniff.",
-			Produces: "text/plain"},
-		{Method: "DELETE", Path: "/messages", Description: "Clear every captured push.",
-			Status: http.StatusNoContent},
-		{Method: "DELETE", Path: "/messages/{id}", Description: "Delete one captured push.",
-			Status: http.StatusNoContent},
-	}
-}
-
 func (h *apiHandler) mount(mux plugin.Mux) {
 	if h.base == "" {
 		h.base = APIBase
