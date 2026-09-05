@@ -230,8 +230,26 @@ reported, and stale docs cost the next session more than they cost you.
    fails; it is also the one a user notices first.
 8. **Commit the documentation** as its own commit, so the history shows the plan
    moving in step with the code.
-9. **Hand the branch over.** Report what landed and stop; merging is the user's
-   call. The next wave starts from a fresh branch off whatever they merged.
+9. **Push the branch and open a pull request.** Not optional, and not something
+   to ask about first: a wave that lives only in a local branch is invisible,
+   and the PR is where it gets reviewed. `git push -u origin <branch>`, then
+   `gh pr create` with a body that says what the wave built and what it
+   deliberately did not.
+
+   **Base the PR on what the wave was branched from**, which is not always
+   `main`. A wave branched off `main` targets `main`; a wave branched off an
+   unmerged predecessor targets *that branch*, so its diff stays limited to the
+   one wave it builds. That is what makes a stack of waves reviewable instead of
+   one PR that re-shows everything below it. Read the chain from GitHub rather
+   than assuming it — `gh pr list --json number,headRefName,baseRefName` — since
+   each PR's base is the authoritative statement of what sits on what.
+
+   When anything in the chain moves — a base branch merged, rebased or amended —
+   **rebase every branch above it**, in order from the bottom of the stack
+   upward, and force-push with `--force-with-lease`. Do not wait to be asked.
+10. **Hand the branch over.** Report what landed, link the PR, and stop; merging
+    is the user's call. The next wave starts from a fresh branch off whatever
+    they merged, or off this one if it is still open.
 
 A useful test for step 2: if a new session read only your archive entry, would it
 avoid repeating the mistakes this wave made? If not, it is an inventory, not a
@@ -267,4 +285,6 @@ independently-ownable chunks. If you continue that way:
 - **Start each wave on its own branch**, named for what it builds
   (`feat/hl7-plugin`, `feat/push-plugin`). A wave is a reviewable unit: one
   branch keeps its diff readable and lets it be inspected, or abandoned, without
-  disturbing anything else. Do not run two waves on one branch.
+  disturbing anything else. Do not run two waves on one branch. It ends as a
+  pull request based on whatever it branched from — see *Finishing a wave*
+  step 9.
