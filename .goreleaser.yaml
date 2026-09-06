@@ -49,6 +49,44 @@ archives:
       - goos: windows
         formats: [zip]
 
+# The container image. dockers_v2 (GoReleaser 2.12+, free distribution) rather
+# than the deprecated dockers + docker_manifests pair: it drives `docker buildx
+# build --push` once and produces the multi-architecture manifest itself, during
+# the publish phase.
+#
+# The binaries are the ones built above - there is no `go build` inside the
+# image. buildx stages each one under a directory named for its platform, which
+# is what the Dockerfile's `COPY $TARGETPLATFORM/tommy` picks up. LICENSE and
+# tommy.toml have to be named as extra_files or they are not in that context,
+# and the Dockerfile copies both.
+#
+# GoReleaser does not log in to any registry itself; the release workflow does
+# that before calling it.
+dockers_v2:
+  - images:
+      - can3p/tommy
+      - ghcr.io/can3p/tommy
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    extra_files:
+      - LICENSE
+      - tommy.toml
+    # Empty tags are ignored, which is what makes the conditionals work: a
+    # prerelease publishes its exact version and nothing else, so a v0.2.0-rc1
+    # can never become what `docker pull can3p/tommy` gives you.
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
+      - "{{ if not .Prerelease }}{{ .Major }}{{ end }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    # The static half of these lives in the Dockerfile (title, description,
+    # source, url, documentation, licenses). Only what needs the build is here.
+    labels:
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .Date }}"
+
 changelog:
   sort: asc
   filters:
