@@ -185,7 +185,9 @@ func TestLinksToUnpublishedFilesAreKnown(t *testing.T) {
 		"LICENSE",    // linked from the README; GitHub renders it better than we would
 		"clienthelp", // a Go package, explained by docs/clients.md
 		"clienthelp/clienthelp.go",
-		"tommy.toml", // the commented example config, read as a file
+		"docker-compose.yml", // the compose stack, read as a file like tommy.toml
+		"docker/tommy.toml",  // the tiny config that stack mounts over the image's
+		"tommy.toml",         // the commented example config, read as a file
 	}
 	var got []string
 	for repoPath := range site.Unpublished() {
