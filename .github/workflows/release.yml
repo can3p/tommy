@@ -42,10 +42,15 @@ jobs:
 
       # GoReleaser does not log in to registries itself, so both logins have to
       # happen before it runs or the push fails at the very end of a release.
+      # The account name is not a credential, so a repository variable is the
+      # natural home for it - but it is just as reasonable to keep it beside the
+      # token as a secret, which is how this repository has it. Accept either,
+      # because the failure otherwise is a bare "Username required" at the end
+      # of a release with nothing pointing at the cause.
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
+          username: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Log in to GHCR
@@ -97,7 +102,7 @@ jobs:
       - name: Publish it
         uses: peter-evans/dockerhub-description@v4
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
+          username: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: can3p/tommy
           short-description: ${{ steps.short.outputs.value }}
