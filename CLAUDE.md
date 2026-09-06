@@ -166,6 +166,20 @@ them be built in parallel.
     a generated source (`tommy providers --json`, the OpenAPI documents) over
     anything hand-maintained.
 
+15. **The container image is a supported surface, not a build artefact.** A
+    change to a listener port, a default, a flag or the config schema is not
+    finished until the `Dockerfile`, `docker-compose.yml` and `docs/docker.md`
+    reflect it. The failure this prevents is a user whose `docker run` line
+    stopped working two releases ago and who has no way to tell whether the
+    image or their own setup is wrong. Three tests hold most of it — the
+    image's `EXPOSE` set and the compose file against the registry's own
+    listener ports, the shipped config against the checked-in one, and the
+    Docker Hub page against its byte caps (`plugins/all/image_test.go`) — and
+    the CI job executes the commands `docs/docker.md` documents rather than a
+    copy of them, so a documented command that stops working fails the build.
+    What no test covers is prose: if you change what the image *does*, say so
+    in `docs/docker.md` yourself.
+
 ## Security invariants — do not weaken these
 
 - **Untrusted content never enters the page DOM.** A captured HTML mail body is
@@ -228,9 +242,14 @@ reported, and stale docs cost the next session more than they cost you.
    changed endpoint, flag or default needs it corrected there too. This is the
    step most easily skipped, because the code works without it and nothing
    fails; it is also the one a user notices first.
-8. **Commit the documentation** as its own commit, so the history shows the plan
+8. **Update the Docker surface** if the wave touched anything the image
+   publishes or configures — `docker-compose.yml`, `docs/docker.md`, and
+   `docs/dockerhub.md` if what that page claims has changed. Rule 15 says why.
+   The Docker Hub page needs no manual publish: the release workflow pushes it
+   on every tag. What needs this step is the file it is pushed from.
+9. **Commit the documentation** as its own commit, so the history shows the plan
    moving in step with the code.
-9. **Push the branch and open a pull request.** Not optional, and not something
+10. **Push the branch and open a pull request.** Not optional, and not something
    to ask about first: a wave that lives only in a local branch is invisible,
    and the PR is where it gets reviewed. `git push -u origin <branch>`, then
    `gh pr create` with a body that says what the wave built and what it
@@ -247,7 +266,7 @@ reported, and stale docs cost the next session more than they cost you.
    When anything in the chain moves — a base branch merged, rebased or amended —
    **rebase every branch above it**, in order from the bottom of the stack
    upward, and force-push with `--force-with-lease`. Do not wait to be asked.
-10. **Hand the branch over.** Report what landed, link the PR, and stop; merging
+11. **Hand the branch over.** Report what landed, link the PR, and stop; merging
     is the user's call. The next wave starts from a fresh branch off whatever
     they merged, or off this one if it is still open.
 
