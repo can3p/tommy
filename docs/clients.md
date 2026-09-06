@@ -5,6 +5,14 @@ Every snippet below is written against the ports in the repo's own
 Run `tommy providers` (or check your own config) if you have moved a port —
 every value here is otherwise exactly what a fresh `tommy serve` binds.
 
+Running tommy in a container changes only one thing here, and it is the
+address: point the SDK at the **published** port on the docker host, not at the
+port inside the container, and remember that only the ports you published exist
+as far as the client is concerned. The exception is FTP, whose passive mode
+tells the client where to connect next — that address is the one value tommy
+cannot work out for itself, so it has to be configured. [`docs/docker.md`](./docker.md)
+has both, with the compose stack that wires them up.
+
 Four SDKs, four different amounts of cooperation:
 
 | SDK | Base URL support | What you do |
