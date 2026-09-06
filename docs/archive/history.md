@@ -1025,6 +1025,85 @@ builds into a fresh checkout).
 in the repository settings before the first deploy can succeed. Nothing in the
 repository can do that for itself.
 
+## Wave 13 — distribution and first release · 3 agents, then inline
+
+**Built:** an MIT licence; a multi-architecture container image published to
+Docker Hub and GHCR on every tag; a Docker Hub page pushed from the repository;
+`docs/docker.md` and a compose stack; and four tests that hold the image to the
+binary rather than to anybody's memory.
+
+The wave was planned as seven tasks and run as three rounds. Rounds one and two
+went to agents. Round three — the release workflow, the Docker Hub page, the
+documentation and the tests — was dispatched to three agents that all died
+within a minute of each other on a session rate limit, and was finished inline.
+One of them had written a good README paragraph before it stopped, which was
+kept; the rest of the work was redone rather than resumed, because a cold agent
+re-deriving the same context is what had just been rate-limited.
+
+**What the plan got wrong, and the code corrected.**
+
+The plan assumed the ports could be published from a list. They could not:
+`tommy providers --json` reported **no address at all** for any of the seven
+listener providers, because `ProviderInfo.Addr` was filled only when the
+configuration named a port, and a provider with no configured port falls back to
+its own package-level `DefaultPort` at registration. tommy's default ports lived
+in seven Go constants and nowhere a program could reach, so every Docker port
+claim would have been hand-maintained. That became task 13·0, landing first and
+alone: `PortProvider.ListenPort(pc)` answers "where would this bind under this
+configuration" without binding anything, which `AddressableProvider.Addr` cannot
+do because it needs a running listener. The precedence follows from the
+difference — a bound address always wins. A side effect worth the change on its
+own: the eight hardcoded default-port fallbacks in provider snippets became dead
+and were removed, so rule 6's "never hardcode a port" is now true rather than
+aspirational.
+
+`--bind` reached three listeners out of ten. Every listener provider resolves
+`pc.String("bind", DefaultBind)` against its own package constant, and `cfg.Bind`
+was never offered to a provider section — so `tommy serve --bind 0.0.0.0` left
+SMTP, FTP, SFTP, TFTP, NFS, MLLP and the trap receiver on loopback. In a
+container that means publishing nine ports and answering on three. This had been
+latent since the first listener provider; nothing before the image cared, because
+on a laptop the default is right. `Config.Provider` now fills `bind` into a
+section that names none of its own, and an explicit per-provider `bind` still
+wins.
+
+The plan's own default command was not runnable: `--as2-cert-dir` existed only on
+`tommy as2`, not on `serve`. With `--config /etc/tommy/tommy.toml` the AS2
+identity lands beside the config file, which the image's non-root user cannot
+write, so it would have been regenerated on every restart. It is now the one
+provider option `serve` carries a flag for.
+
+`tommy.toml` was not default-equivalent, which is the whole reason the plan asked
+for a test: `blob_limit = "256MB"` is 256,000,000 bytes against a default of
+256MiB, so the shipped example quietly gave 4.6% less blob storage than the
+binary's own default — while its header claimed the two were identical. Nothing
+had ever checked a claim the file made about itself.
+
+**Deliberate non-implementation.** There is no test that `docs/dockerhub.md`
+stays a thin pointer page. The obvious heuristic — counting how many plugins and
+providers it names — fires on the port table, where naming every listener is the
+point. A test that has to be worked around is worse than the judgement it
+replaces, so the page carries the reason it is thin instead. The short
+description lives in an HTML comment rather than YAML front matter, which the
+Docker Hub renderer would have displayed as text.
+
+**What made the documentation checkable.** The CI job does not repeat the
+commands in `docs/docker.md`; it extracts them. A block claims itself with a
+`# ci: <name>` line, and the extractor fails when a required name disappears, so
+deleting or renaming a documented command breaks the build rather than silently
+skipping a check. That is the pattern to reuse: the cheapest way to keep a
+document true is to make the build execute it.
+
+**Process.** The wave-closing ritual gained a step: a wave now ends with a pushed
+branch and an open pull request, based on whatever the wave branched from rather
+than always on `main`. Rule 15 makes the image a supported surface, so a later
+wave that moves a port fails its build until the image follows.
+
+**Also fixed:** the NFS listener tests failed roughly one run in four because
+`go-nfs-client` gates its own "source port in use" retry on the privileged flag,
+and reseeds `math/rand` from the clock on every attempt. The test retries the
+dial itself rather than dropping to a privileged dial, which would need root.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project
