@@ -4,13 +4,21 @@ on:
   push:
     tags:
       - "v*"
+  # The Docker Hub page can be corrected without cutting a release.
+  workflow_dispatch:
 
 permissions:
   contents: write
+  # The GHCR mirror pushes as the workflow itself; Docker Hub uses the PAT
+  # below. That is the only reason there is no second registry secret.
+  packages: write
 
 jobs:
   goreleaser:
     name: GoReleaser
+    # A manual run exists to refresh the Docker Hub description; there is no
+    # tag to release from.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,6 +32,29 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # dockers_v2 builds a linux/amd64 + linux/arm64 manifest with buildx, so
+      # the runner needs emulation for the architecture it is not.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # GoReleaser does not log in to registries itself, so both logins have to
+      # happen before it runs or the push fails at the very end of a release.
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -33,3 +64,41 @@ jobs:
         env:
           BUILD_ENV: production
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dockerhub-description:
+    name: Docker Hub description
+    runs-on: ubuntu-latest
+    # On a tag the page is refreshed with the release it describes, so nobody
+    # has to remember. needs: the description should not claim a version the
+    # push failed to produce.
+    needs: [goreleaser]
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.goreleaser.result == 'success')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Docker Hub caps the short description at 100 bytes and the full one at
+      # 25,000, and the action truncates silently past either. Both live in
+      # docs/dockerhub.md - the short one in its front matter - and a test in
+      # the repository holds them under the caps, so this step only has to read
+      # the file, not police it.
+      - name: Read the short description
+        id: short
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import pathlib, re
+          text = pathlib.Path("docs/dockerhub.md").read_text()
+          m = re.search(r"^<!--\s*short_description:\s*(.*?)\s*-->\s*$", text, re.M)
+          if not m:
+              raise SystemExit("docs/dockerhub.md has no <!-- short_description: ... --> line")
+          print(f"value={m.group(1).strip()}")
+          PY
+
+      - name: Publish it
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: can3p/tommy
+          short-description: ${{ steps.short.outputs.value }}
+          readme-filepath: ./docs/dockerhub.md
