@@ -1094,6 +1094,16 @@ deleting or renaming a documented command breaks the build rather than silently
 skipping a check. That is the pattern to reuse: the cheapest way to keep a
 document true is to make the build execute it.
 
+**What the first tag found.** The release workflow failed at the Docker Hub
+login with a bare `Username required`, because it read the account name from
+`vars.DOCKERHUB_USERNAME` while the repository had it set as a *secret* — the
+plan had said a variable "is enough" and nobody reconciled that with how it was
+actually configured. The workflow now reads
+`vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME` so either works. The
+general shape: a credential the plan describes and a credential the repository
+holds are two different facts, and the first thing that compares them is a
+release.
+
 **Process.** The wave-closing ritual gained a step: a wave now ends with a pushed
 branch and an open pull request, based on whatever the wave branched from rather
 than always on `main`. Rule 15 makes the image a supported surface, so a later
