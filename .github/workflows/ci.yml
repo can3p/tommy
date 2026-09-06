@@ -210,7 +210,10 @@ jobs:
       - name: Fetch the AS2 certificate
         run: |
           bash ci-docker/as2.sh | tee /tmp/as2.txt
-          grep -q 'CN=tommy AS2' /tmp/as2.txt
+          # OpenSSL 3 prints "CN = tommy AS2" and LibreSSL prints "CN=tommy AS2",
+          # so the assertion tolerates both rather than the documented command
+          # growing a -nameopt nobody running it by hand would want.
+          grep -qE 'CN *= *tommy AS2' /tmp/as2.txt
           bash ci-docker/stop.sh
 
       # The same image, narrowed by one read-only bind mount: what a team that
