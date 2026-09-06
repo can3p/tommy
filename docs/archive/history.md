@@ -1104,6 +1104,17 @@ general shape: a credential the plan describes and a credential the repository
 holds are two different facts, and the first thing that compares them is a
 release.
 
+`v0.1.0-rc2` then published the image and manifest correctly and failed on the
+Docker Hub *description*, with a bare `403 Forbidden`. Editing a repository's
+description is repository management rather than a registry write, so it needs a
+token with **read/write/delete** scope; a Read & Write token pushes images
+perfectly well and fails only there. The plan had said read/write/delete for
+exactly this reason and the reason had not survived into anything a reader of the
+workflow would see, so it is now a comment beside the step, and a failure step
+writes the fix into the job summary — the action's own error says only
+"Forbidden". The job deliberately stays red: a description that silently stops
+being refreshed is the drift this arrangement exists to prevent.
+
 **Process.** The wave-closing ritual gained a step: a wave now ends with a pushed
 branch and an open pull request, based on whatever the wave branched from rather
 than always on `main`. Rule 15 makes the image a supported surface, so a later

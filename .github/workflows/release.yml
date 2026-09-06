@@ -99,7 +99,13 @@ jobs:
           print(f"value={m.group(1).strip()}")
           PY
 
+      # DOCKERHUB_TOKEN must be a Personal Access Token with **read/write/delete**
+      # scope. Pushing an image needs only read/write, so a narrower token
+      # releases perfectly well and then fails here - which is exactly what
+      # happened on v0.1.0-rc2. Docker Hub treats editing a repository's
+      # description as repository management rather than as a registry write.
       - name: Publish it
+        id: publish
         uses: peter-evans/dockerhub-description@v4
         with:
           username: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
@@ -107,3 +113,33 @@ jobs:
           repository: can3p/tommy
           short-description: ${{ steps.short.outputs.value }}
           readme-filepath: ./docs/dockerhub.md
+
+      # The action reports a bare "Forbidden", which says nothing about what to
+      # do. This job stays red when it fails - a page that silently stops being
+      # refreshed is the drift the whole arrangement exists to prevent - but the
+      # log should at least name the fix.
+      - name: Explain a failure
+        if: failure() && steps.publish.outcome == 'failure'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'MD'
+          ### Docker Hub description was not updated
+
+          The image published; only the description call failed.
+
+          `PATCH /v2/repositories/can3p/tommy/` is repository *management*, not a
+          registry write, and Docker Hub answers `403 Forbidden` unless the token
+          carries the delete scope as well. A token with **Read & Write** pushes
+          images perfectly well and fails here.
+
+          **Fix:** create a Personal Access Token with **Read, Write, Delete**
+          scope (Docker Hub → Account settings → Personal access tokens), replace
+          the `DOCKERHUB_TOKEN` repository secret with it, and re-run this
+          workflow from the Actions tab — `workflow_dispatch` refreshes the page
+          without cutting another release.
+
+          Other things that produce the same status: the `can3p/tommy` repository
+          does not exist yet (push-to-create runs after this job on a first
+          release), or the account is not an owner of it.
+          MD
+          echo "::error::Docker Hub description not updated - DOCKERHUB_TOKEN likely lacks read/write/delete scope. See the job summary."
+          exit 1
