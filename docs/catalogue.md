@@ -16,6 +16,9 @@ rule 12: **what it is**, **what it's for**, and **how to test it for real** —
 the last one being commands that have been run rather than commands that look
 plausible.
 
+Everything indexed here ships in one binary, and that binary ships as a
+container image too: [`docs/docker.md`](./docker.md).
+
 ## Plugins
 
 A *plugin* owns a content type: a canonical model, API routes and a UI tab.

@@ -14,6 +14,23 @@ captured is one API call or one browser tab away.
 
 ## 30-second quickstart
 
+Nothing to build and no Go toolchain — one line is the whole of the setup:
+
+```bash
+docker run --rm -p 8811:8811 -p 8822:8822 can3p/tommy
+```
+
+That publishes the two ports everything HTTP needs: the UI and the API on
+8811, the fake vendor ingress on 8822. Anything that speaks a protocol of its
+own — SMTP, FTP, SFTP, TFTP, NFS, MLLP, SNMP traps — has a listener to publish
+as well, and FTP additionally needs to be told an address it can hand back to
+a client. [`docker-compose.yml`](./docker-compose.yml) is that stack already
+wired up, and [`docs/docker.md`](./docs/docker.md) is the reference for both:
+every port, the `/data` volume, and how to narrow the image down to one
+plugin with a mounted config.
+
+A binary you installed or built yourself is the same server:
+
 ```bash
 tommy serve
 ```
@@ -346,6 +363,27 @@ sent anything.
   same description and snippets `tommy providers` prints.
 
 ## Installation
+
+Three routes, and they all give you the same binary. The Docker image is the
+only one that needs nothing installed first.
+
+### Docker
+
+```bash
+docker run --rm -p 8811:8811 -p 8822:8822 can3p/tommy
+```
+
+Published on Docker Hub as `can3p/tommy` and on GHCR as
+`ghcr.io/can3p/tommy`, multi-architecture, one static binary on a distroless
+base. [`docs/docker.md`](./docs/docker.md) covers publishing the protocol
+listeners as well, the `/data` volume, and narrowing tommy to one plugin with a
+mounted configuration.
+
+### go install
+
+```bash
+go install github.com/can3p/tommy@latest
+```
 
 ### Install Script
 

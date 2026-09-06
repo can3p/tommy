@@ -160,6 +160,7 @@ var docPages = []struct {
 	{"docs/contracts.md", "docs/contracts.html", "Core contracts"},
 	{"docs/implementation-plan.md", "docs/implementation-plan.html", "Implementation plan"},
 	{"docs/lessons.md", "docs/lessons.html", "Lessons"},
+	{"docs/docker.md", "docs/docker.html", "Docker"},
 	{"docs/clients.md", "docs/clients.html", "Official SDKs"},
 	{"docs/archive/history.md", "docs/history.html", "History"},
 }
