@@ -1105,15 +1105,25 @@ holds are two different facts, and the first thing that compares them is a
 release.
 
 `v0.1.0-rc2` then published the image and manifest correctly and failed on the
-Docker Hub *description*, with a bare `403 Forbidden`. Editing a repository's
-description is repository management rather than a registry write, so it needs a
-token with **read/write/delete** scope; a Read & Write token pushes images
-perfectly well and fails only there. The plan had said read/write/delete for
-exactly this reason and the reason had not survived into anything a reader of the
-workflow would see, so it is now a comment beside the step, and a failure step
-writes the fix into the job summary — the action's own error says only
-"Forbidden". The job deliberately stays red: a description that silently stops
-being refreshed is the drift this arrangement exists to prevent.
+Docker Hub *description*, with a bare `403 Forbidden`. The description call
+needs a token with **read/write/delete** scope, while pushing an image needs
+only read/write — so a narrower token releases perfectly and fails on that one
+call.
+
+Worth separating what is known from what is inferred here, because the first
+write-up of this conflated them. Known: the action documents read/write/delete,
+and the observed split matches it exactly. Not known: *why* a scope named for
+deletion governs an edit. Docker's access-token documentation describes the
+scopes purely in terms of pulling, pushing and deleting images and never
+mentions this endpoint, so the tidy-sounding explanation — "editing a
+description is repository management, not a registry write" — is a guess dressed
+as a fact. The likeliest reading is that Docker Hub's scopes are cumulative
+tiers and repository administration sits in the top one. It is recorded as an
+observation, in the workflow and here.
+
+A failure step now writes the fix into the job summary, since the action's own
+error says only "Forbidden". The job deliberately stays red: a description that
+silently stops being refreshed is the drift this arrangement exists to prevent.
 
 **Process.** The wave-closing ritual gained a step: a wave now ends with a pushed
 branch and an open pull request, based on whatever the wave branched from rather

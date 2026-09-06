@@ -102,8 +102,16 @@ jobs:
       # DOCKERHUB_TOKEN must be a Personal Access Token with **read/write/delete**
       # scope. Pushing an image needs only read/write, so a narrower token
       # releases perfectly well and then fails here - which is exactly what
-      # happened on v0.1.0-rc2. Docker Hub treats editing a repository's
-      # description as repository management rather than as a registry write.
+      # happened on v0.1.0-rc2.
+      #
+      # Why the delete scope unlocks an *edit* is not documented anywhere by
+      # Docker: their access-token documentation describes the scopes purely in
+      # terms of pulling, pushing and deleting images, and does not mention this
+      # endpoint at all. What is documented is the action's own requirement, and
+      # Docker Hub's scopes are offered as cumulative tiers rather than
+      # independent permissions, so the likeliest reading is that repository
+      # administration simply sits in the top tier. Recorded as an observation
+      # rather than an explanation, because that is what it is.
       - name: Publish it
         id: publish
         uses: peter-evans/dockerhub-description@v4
@@ -126,10 +134,11 @@ jobs:
 
           The image published; only the description call failed.
 
-          `PATCH /v2/repositories/can3p/tommy/` is repository *management*, not a
-          registry write, and Docker Hub answers `403 Forbidden` unless the token
-          carries the delete scope as well. A token with **Read & Write** pushes
-          images perfectly well and fails here.
+          `PATCH /v2/repositories/can3p/tommy/` answers `403 Forbidden` unless the
+          token carries the delete scope as well - a token with **Read & Write**
+          pushes images perfectly well and fails only here. Docker does not
+          document why; the action requires it and the scopes are cumulative
+          tiers, so repository administration appears to sit in the top one.
 
           **Fix:** create a Personal Access Token with **Read, Write, Delete**
           scope (Docker Hub → Account settings → Personal access tokens), replace
