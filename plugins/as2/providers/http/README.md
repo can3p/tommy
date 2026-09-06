@@ -166,6 +166,12 @@ Every setting is optional. With none of them, a key pair is generated on first
 start and kept beside the config file, or in `os.UserConfigDir()/tommy/as2` when
 the config was built in memory.
 
+`cert_dir` is the one provider setting `tommy serve` carries a flag for
+(`--as2-cert-dir`), as well as `tommy as2`. "Beside the config file" is a
+read-only path in the container image, and its non-root user cannot create
+anything there, so the image's default command points this at its `/data`
+volume — see [`docs/docker.md`](../../../../docs/docker.md).
+
 `cert_file` and `key_file` must be given together and the key must be
 **unencrypted** — tommy is a background process with no terminal to prompt on,
 and a passphrase in a config file is worse than no passphrase. Convert one with
