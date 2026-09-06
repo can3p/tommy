@@ -370,6 +370,50 @@ written, wrong within the hour, and now a false statement in a shipped
 document. When a task reports a blocker and the blocker gets fixed, the prose
 about it is part of the fix.
 
+**Make the build execute the documentation rather than mirror it.** The Docker
+CI job does not contain a single command of its own: blocks in `docs/docker.md`
+claim themselves with a `# ci: <name>` line, the job extracts them to scripts,
+and the extractor *fails* when a required name is missing. So a documented
+command that stops working breaks the build, and deleting one breaks it too.
+The alternative — a workflow that runs its own copy of what the document shows
+— is the ordinary way documentation and CI drift apart while both look healthy.
+This is cheaper to build than it sounds and generalises to any document whose
+value is that its commands run.
+
+**A claim a file makes about itself is still an unchecked claim.** The
+repository's `tommy.toml` opened by saying "every value below already matches
+tommy's built-in default", and it had been wrong since it was written:
+`blob_limit = "256MB"` is 256,000,000 bytes against a default of 256MiB. Nobody
+noticed because the sentence reads like a test result. It only mattered once the
+container image started shipping that exact file, which is the general shape —
+a decorative claim becomes load-bearing when something new depends on it, and
+the moment to test it is then, not before.
+
+**Publishing a thing is the fastest audit of the layer beneath it.** Building
+the site found four stale documentation claims; building the image found three
+real defects in the binary, all latent for waves. `--bind` reached three
+listeners out of ten. `serve` could not point the AS2 identity anywhere
+writable, so the documented command was not runnable. The example config was not
+what it claimed. None of these were visible from a laptop, where the loopback
+default is right and the config directory is writable — a container is simply
+the first caller that does not share the developer's environment.
+
+**Some facts live in constants and nowhere a program can reach.** tommy's seven
+default listener ports existed only as package-level `DefaultPort` values; the
+discovery surface reported them only when a configuration happened to name the
+same number. Anything that wanted to publish them — an image, a compose file, a
+port table — would have had to keep a hand-maintained list, which is a list
+somebody eventually forgets. Teaching the registry to answer was a small change
+that turned four documents into derived output. When a wave is about to
+hand-maintain a list, check whether the binary could be asked instead.
+
+**Do not respawn agents that just hit a rate limit.** Three parallel agents died
+within a minute of each other on a session cap. Finishing the work inline was
+faster than retrying, because a fresh agent starts cold and re-derives the
+context the coordinator already has. The salvage rule that worked: keep whatever
+partial edit is coherent on its own, discard the rest, and do not try to resume
+a dead agent's half-formed plan.
+
 ## On orchestrating agents
 
 **Stage deliberately while an agent is running.** The rule that subagents run no
