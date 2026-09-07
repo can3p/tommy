@@ -35,7 +35,7 @@ jobs:
       # dockers_v2 builds a linux/amd64 + linux/arm64 manifest with buildx, so
       # the runner needs emulation for the architecture it is not.
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
