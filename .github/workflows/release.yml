@@ -38,7 +38,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # GoReleaser does not log in to registries itself, so both logins have to
       # happen before it runs or the push fails at the very end of a release.
