@@ -9,7 +9,8 @@
 # exact same bootstrap (core/server) - nothing below is TOML-only, and every
 # setting here has a CLI equivalent on `tommy serve` or one of the
 # single-plugin shortcuts (`tommy mail`, `tommy sms`, `tommy files`,
-# `tommy chat`, `tommy hl7`, `tommy snmp`, `tommy push`, `tommy as2`). A
+# `tommy chat`, `tommy hl7`, `tommy snmp`, `tommy push`, `tommy s3`,
+# `tommy as2`). A
 # handful of provider tuning knobs - noted where they appear
 # below - are deliberately file-only; everything else has a flag. See
 # docs/contracts.md ("core/config") for the full field reference and
@@ -90,8 +91,8 @@ blob_limit = "256MiB"
 # [plugins.<x>.providers.<y>] section is missing, or present with no `enabled`
 # key of its own. true (the default, shown here) means "unmentioned means
 # on". The single-plugin CLI shortcuts (tommy mail, tommy sms, tommy files,
-# tommy chat, tommy hl7, tommy snmp, tommy push, tommy as2) build a config with
-# this flipped to false in memory and then
+# tommy chat, tommy hl7, tommy snmp, tommy push, tommy s3, tommy as2) build a
+# config with this flipped to false in memory and then
 # enable only the plugin and providers that were actually asked for - see
 # cmd/mail.go.
 default_enabled = true
@@ -100,8 +101,11 @@ default_enabled = true
 # apns, and as2's http) shares the one [ingress] listener above and is told
 # apart by path - there is no per-provider listener for an HTTP provider, so
 # none of their sections below has a `port` key. Only the real protocol servers
-# - smtp, ftp, sftp, tftp, nfs, mllp and trap - get a listener and a port of
-# their own.
+# - smtp, ftp, sftp, tftp, nfs, mllp, trap and s3's http - get a listener and a
+# port of their own. s3's http provider speaks HTTP but deliberately does not
+# share [ingress]: S3's bucket/object paths (`/{bucket}/{key...}`) would
+# collide with the other fake vendor APIs mounted there, so it gets a
+# dedicated listener the same way the protocol servers do.
 
 # -----------------------------------------------------------------------------
 # mail - captures the email your application sends, whether it went out
@@ -347,6 +351,42 @@ enabled = true
                                 # else gets APNs' real 400/TopicDisallowed. CLI: --apns-topic
 # key_id = "8YL3G3RRX7"         # pin the key id expected in the token's kid header;
                                 # a mismatch gets 403/InvalidProviderToken. CLI: --apns-key-id
+
+# -----------------------------------------------------------------------------
+# s3 - captures S3-compatible bucket and object operations without sending
+# data to cloud storage, and keeps the resulting catalog available for
+# inspection and download. Shortcut: `tommy s3`.
+# -----------------------------------------------------------------------------
+
+[plugins.s3]
+enabled = true
+
+[plugins.s3.providers.http]
+# A dedicated path-style S3-compatible HTTP server on its own port - not the
+# shared ingress, since S3 bucket/object paths would collide with it. Point
+# the AWS CLI or an AWS SDK at it with UsePathStyle/path addressing; any
+# credentials and SigV4 signature are accepted and recorded, never verified.
+enabled = true
+port = 9000               # the provider's own listener, not the shared ingress. CLI: --s3-port
+#
+# The rest are tuning knobs nobody needs to flip per test run, so they stay
+# file-only (no CLI flag):
+# bind                = "127.0.0.1"  # this listener's own interface; unset, it inherits the top-level `bind`
+# max_buckets         = 1000         # catalog limits; exceeding one answers S3's own error shape
+# max_objects         = 50000
+# max_active_uploads  = 1000
+# max_parts           = 10000
+# max_bucket_bytes    = 255          # longest accepted bucket name
+# max_key_bytes       = 1024         # longest accepted object key
+# max_metadata_bytes  = 16384        # 16KiB of x-amz-meta-* headers per object
+# max_object_bytes    = 67108864     # 64MiB, caps one PUT/part body
+# max_xml_bytes       = 1048576      # 1MiB, caps one request's XML body (bulk delete, complete-multipart, ...)
+# max_header_bytes    = 1048576      # 1MiB, Go's http.Server MaxHeaderBytes
+# read_header_timeout = 10           # seconds
+# read_timeout        = 300          # seconds
+# write_timeout       = 300          # seconds
+# idle_timeout        = 120          # seconds
+# shutdown_timeout    = 10           # seconds allowed to drain in-flight requests on shutdown
 
 # -----------------------------------------------------------------------------
 # as2 - captures AS2 (RFC 4130) EDIINT exchanges: signed, encrypted and/or

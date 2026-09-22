@@ -30,7 +30,8 @@ services:
       # `tommy providers --json` plus the two core listeners; a test holds it
       # to that answer, so add a listener provider and this file has to follow.
       - "8811:8811"           # ui + api
-      - "8822:8822"           # ingress: every fake vendor HTTP API
+      - "8822:8822"           # ingress: every path-routed fake vendor HTTP API
+      - "9000:9000"           # s3/http
       - "1025:1025"           # mail/smtp
       - "2121:2121"           # files/ftp   (control connection)
       - "50000-50009:50000-50009" # files/ftp: the passive data range pinned in

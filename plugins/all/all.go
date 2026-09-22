@@ -26,6 +26,8 @@ import (
 	"github.com/can3p/tommy/plugins/push"
 	"github.com/can3p/tommy/plugins/push/providers/apns"
 	"github.com/can3p/tommy/plugins/push/providers/fcm"
+	"github.com/can3p/tommy/plugins/s3"
+	s3http "github.com/can3p/tommy/plugins/s3/providers/http"
 	"github.com/can3p/tommy/plugins/sms"
 	"github.com/can3p/tommy/plugins/sms/providers/twilio"
 	"github.com/can3p/tommy/plugins/snmp"
@@ -63,6 +65,9 @@ func Plugins() []plugin.Plugin {
 		push.New(
 			fcm.New(),
 			apns.New(),
+		),
+		s3.New(
+			s3http.New(),
 		),
 		as2.New(
 			as2http.New(),
