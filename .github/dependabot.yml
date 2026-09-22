@@ -1,14 +1,27 @@
 version: 2
 updates:
+  # test/integration is a separate Go module (it `replace`s the root module
+  # so the vendor SDKs it drives never enter tommy's own go.mod) but it still
+  # shares most of its dependency graph with root. Listing both directories
+  # under one grouped update keeps their bumps in the same PR, so a shared
+  # dependency's version moves in both go.mod files at once instead of
+  # root drifting ahead and failing test/integration's build until someone
+  # runs `go mod tidy` there by hand.
   - package-ecosystem: gomod
-    directory: "/"
+    directories:
+      - "/"
+      - "/test/integration"
     schedule:
       interval: weekly
     groups:
       go-deps:
         patterns: ["*"]
+        group-by: dependency-name
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      actions-deps:
+        patterns: ["*"]
