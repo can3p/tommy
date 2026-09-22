@@ -562,3 +562,12 @@ is worth it for the same reason.
   tests reach the providers through `plugins/all` from a `_test.go` file, so a
   missing requirement only surfaces under `go test -tags integration ./...`.
   That is the command to run when verifying it, and the one CI runs.
+- The danger in serving captured bytes lies in who chose the response headers,
+  not in the content type. `s3`'s download route echoed the uploader's
+  `Content-Type` and `Content-Disposition`, so a stored `text/html` object
+  rendered inline on the UI's origin. Any route that returns captured bytes
+  forces `attachment` and a sandbox CSP, whatever the protocol claims.
+- A client's defaults can depend on the transport. AWS SDKs send upload
+  checksums as `aws-chunked` trailers over HTTPS and as plain headers over HTTP,
+  so a fake that works against the default SDK today can stop working when TLS
+  is switched on. Re-run the vendor-SDK tests whenever the transport changes.

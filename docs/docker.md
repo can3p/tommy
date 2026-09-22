@@ -62,7 +62,7 @@ serve both paths, instead of a second one that drifts.
 ```bash
 # ci: run
 docker run -d --rm --name tommy \
-  -p 8811:8811 -p 8822:8822 \
+  -p 8811:8811 -p 8822:8822 -p 9000:9000 \
   -p 1025:1025 -p 2121:2121 -p 2222:2222 -p 2049:2049 -p 2575:2575 \
   -p 6969:6969/udp -p 1162:1162/udp \
   -v tommy-data:/data \
@@ -81,6 +81,7 @@ tommy is running
   plugin   hl7 ([mllp])
   plugin   snmp ([trap])
   plugin   push ([fcm apns])
+  plugin   s3 ([http])
   plugin   as2 ([http])
 run `tommy providers` for copy-paste examples
 ```

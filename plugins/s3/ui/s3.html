@@ -1,0 +1,176 @@
+{{/*
+The S3 tab is a current-state bucket/prefix browser plus recent logical history.
+Every bucket, key, prefix, ETag, content type, and metadata value came from an
+untrusted client. They are rendered only as plain strings; all URLs are built
+and escaped in Go before reaching this template.
+*/}}
+
+{{define "s3-tab"}}
+{{template "s3-style"}}
+<div class="s3-tab">
+  {{template "how-to-test" .HowToTest}}
+  <div id="s3-body">{{template "s3-body" .}}</div>
+</div>
+{{end}}
+
+{{define "s3-body"}}
+<div id="s3-refresh"
+     hx-get="{{.ListURL}}"
+     hx-trigger="{{.RefreshTrigger}}"
+     hx-target="#s3-body"
+     hx-swap="innerHTML">
+  <div class="s3-head">
+    <div>
+      <strong>S3 catalogue</strong>
+      <span class="muted s3-stats">{{.Stats.Buckets}} bucket{{if ne .Stats.Buckets 1}}s{{end}} · {{.Stats.Objects}} object{{if ne .Stats.Objects 1}}s{{end}} · {{bytesHuman .Stats.Bytes}}</span>
+    </div>
+    {{if gt .Stats.Buckets 0}}
+    <button type="button" class="danger"
+            hx-delete="{{.ClearURL}}" hx-target="#s3-body" hx-swap="innerHTML"
+            hx-confirm="Delete every S3 bucket and object?">Clear all</button>
+    {{end}}
+  </div>
+
+  {{if .MissingBucket}}
+  <p class="s3-missing muted">Bucket <span class="mono">{{.Requested}}</span> is gone or does not exist. Showing the first available bucket instead.</p>
+  {{end}}
+
+  {{if .Empty}}
+    {{template "empty-state" .EmptyState}}
+  {{else}}
+  <div class="s3-browser">
+    <aside class="s3-buckets" aria-label="Buckets">
+      <h3>Buckets</h3>
+      <ul>
+      {{range .Buckets}}
+        <li class="{{if .Selected}}selected{{end}}">
+          <a class="s3-bucket-name mono" href="{{.URL}}"
+             hx-get="{{.FetchURL}}" hx-target="#s3-body" hx-swap="innerHTML" hx-push-url="{{.URL}}">{{.Name}}</a>
+          <span class="muted nowrap">{{.Objects}} · {{bytesHuman .Bytes}}</span>
+        </li>
+      {{end}}
+      </ul>
+    </aside>
+
+    <section class="s3-objects">
+    {{with .Selected}}
+      <div class="s3-selected-head">
+        <div>
+          <h3 class="mono">{{.Name}}</h3>
+          <span class="muted">{{.Objects}} object{{if ne .Objects 1}}s{{end}} · {{bytesHuman .Bytes}}</span>
+        </div>
+        <button type="button" class="danger"
+                hx-delete="{{$.DeleteBucketURL}}" hx-target="#s3-body" hx-swap="innerHTML"
+                hx-confirm="Delete bucket {{.Name}} and every object in it?">Delete bucket</button>
+      </div>
+
+      <form class="s3-filter" method="get" action="{{$.Base}}/">
+        <input type="hidden" name="bucket" value="{{.Name}}">
+        <label>Prefix <input class="mono" type="text" name="prefix" value="{{$.Prefix}}" placeholder="orders/"></label>
+        <label>Delimiter <input class="mono s3-delimiter" type="text" name="delimiter" value="{{$.Delimiter}}"></label>
+        <button type="submit">Browse</button>
+      </form>
+
+      <nav class="s3-crumbs" aria-label="Prefix breadcrumb">
+      {{range $.Crumbs}}
+        {{if .Last}}
+        <span class="s3-crumb current mono" aria-current="page">{{.Name}}</span>
+        {{else}}
+        <a class="s3-crumb mono" href="{{.URL}}"
+           hx-get="{{.FetchURL}}" hx-target="#s3-body" hx-swap="innerHTML" hx-push-url="{{.URL}}">{{.Name}}</a>
+        <span class="muted">/</span>
+        {{end}}
+      {{end}}
+      </nav>
+
+      <table class="data s3-object-table">
+        <thead><tr><th scope="col">Key</th><th scope="col">Size</th><th scope="col">Modified</th><th scope="col">ETag / type</th><th scope="col"></th></tr></thead>
+        <tbody>
+        {{range $.Prefixes}}
+          <tr class="s3-prefix-row">
+            <td colspan="5"><a class="s3-prefix mono" href="{{.URL}}"
+              hx-get="{{.FetchURL}}" hx-target="#s3-body" hx-swap="innerHTML" hx-push-url="{{.URL}}">{{.Prefix}}</a></td>
+          </tr>
+        {{end}}
+        {{range $.Objects}}
+          <tr class="s3-object-row">
+            <td><a class="s3-key mono" href="{{.DownloadURL}}" download>{{.Key}}</a>
+              {{with .Metadata}}<dl class="s3-metadata">{{range $key, $value := .}}<dt class="mono">{{$key}}</dt><dd>{{$value}}</dd>{{end}}</dl>{{end}}
+            </td>
+            <td class="mono nowrap">{{.SizeText}}</td>
+            <td class="mono nowrap" title="{{timeFull .Modified}}">{{timeShort .Modified}}</td>
+            <td>{{if .ETag}}<span class="mono s3-etag">{{.ETag}}</span>{{else}}<span class="muted">—</span>{{end}}
+              {{with .ContentType}}<br><span class="muted mono s3-type">{{.}}</span>{{end}}</td>
+            <td class="nowrap s3-row-actions">
+              <a class="muted s3-download" href="{{.DownloadURL}}" download>download</a>
+              <button type="button" class="danger s3-delete"
+                      hx-delete="{{.DeleteURL}}" hx-target="#s3-body" hx-swap="innerHTML"
+                      hx-confirm="Delete s3://{{$.Selected.Name}}/{{.Key}}?">delete</button>
+            </td>
+          </tr>
+        {{else}}
+          {{if not $.Prefixes}}<tr><td class="muted" colspan="5">No objects match this prefix.</td></tr>{{end}}
+        {{end}}
+        </tbody>
+      </table>
+      {{if $.Truncated}}<p><a href="{{$.NextURL}}" hx-get="{{$.NextFetchURL}}" hx-target="#s3-body" hx-swap="innerHTML" hx-push-url="{{$.NextURL}}">Next page</a></p>{{end}}
+    {{end}}
+    </section>
+  </div>
+  {{end}}
+
+  <section class="s3-activity">
+    <h3>Recent S3 activity</h3>
+    <table class="data">
+      <thead><tr><th scope="col">Time</th><th scope="col">What</th><th scope="col">Via</th><th scope="col"></th></tr></thead>
+      <tbody>
+      {{range .Activity}}
+        <tr>
+          <td class="mono nowrap" title="{{timeFull .At}}">{{timeShort .At}}</td>
+          <td class="s3-activity-text">{{.Text}}</td>
+          <td class="nowrap">{{if .Provider}}{{template "badge" (badge .Provider "info")}}{{else}}<span class="muted">tommy</span>{{end}}</td>
+          <td class="nowrap"><a class="muted s3-event" href="{{.EventURL}}">event</a></td>
+        </tr>
+      {{else}}
+        <tr><td class="muted" colspan="4">Nothing has happened yet.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+</div>
+{{end}}
+
+{{define "s3-style"}}
+<style>
+.s3-tab .s3-head, .s3-tab .s3-selected-head { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; justify-content: space-between; margin-bottom: .7rem; }
+.s3-tab .s3-stats { margin-left: .5rem; font-size: .88em; }
+.s3-tab .s3-missing { margin: 0 0 .7rem; }
+.s3-tab .s3-browser { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 1rem; }
+.s3-tab .s3-buckets, .s3-tab .s3-objects { min-width: 0; }
+.s3-tab .s3-buckets h3, .s3-tab .s3-selected-head h3 { margin: 0; }
+.s3-tab .s3-buckets ul { list-style: none; padding: 0; margin: .5rem 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.s3-tab .s3-buckets li { display: flex; justify-content: space-between; gap: .5rem; padding: .45rem .6rem; border-bottom: 1px solid var(--line); }
+.s3-tab .s3-buckets li:last-child { border-bottom: 0; }
+.s3-tab .s3-buckets li.selected { background: var(--panel); font-weight: 600; }
+.s3-tab .s3-bucket-name, .s3-tab .s3-key, .s3-tab .s3-prefix { overflow-wrap: anywhere; }
+.s3-tab .s3-filter { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin: .5rem 0; }
+.s3-tab .s3-filter label { display: grid; gap: .2rem; font-size: .85em; }
+.s3-tab .s3-filter input { width: min(28rem, 60vw); }
+.s3-tab .s3-filter .s3-delimiter { width: 5rem; }
+.s3-tab .s3-crumbs { display: flex; flex-wrap: wrap; gap: .25rem; margin: .7rem 0; }
+.s3-tab .s3-crumb.current { font-weight: 600; }
+.s3-tab table.data { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.s3-tab .s3-prefix-row td { background: color-mix(in srgb, var(--panel), var(--line) 18%); }
+.s3-tab .s3-prefix::after { content: " /"; }
+.s3-tab .s3-type { font-size: .78em; }
+.s3-tab .s3-etag { font-size: .85em; overflow-wrap: anywhere; }
+.s3-tab .s3-row-actions { display: flex; justify-content: flex-end; gap: .5rem; align-items: center; }
+.s3-tab .s3-delete { font-size: .8em; padding: 2px 8px; }
+.s3-tab .s3-download, .s3-tab .s3-event { text-decoration: underline dotted; font-size: .85em; }
+.s3-tab .s3-metadata { display: grid; grid-template-columns: max-content 1fr; gap: 0 .4rem; margin: .25rem 0 0; font-size: .78em; color: var(--muted); }
+.s3-tab .s3-metadata dt::after { content: ":"; }
+.s3-tab .s3-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.s3-tab .s3-activity { margin-top: 1.2rem; }
+@media (max-width: 760px) { .s3-tab .s3-browser { grid-template-columns: 1fr; } }
+</style>
+{{end}}

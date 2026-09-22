@@ -47,6 +47,7 @@ tommy is running
   plugin   hl7 ([mllp])
   plugin   snmp ([trap])
   plugin   push ([fcm apns])
+  plugin   s3 ([http])
   plugin   as2 ([http])
 run `tommy providers` for copy-paste examples
 ```
@@ -96,6 +97,7 @@ configuration actually bound — useful before you've sent anything at all.
 | `hl7`   | `mllp` | A real MLLP listener that parses HL7 v2 and answers with a mechanical ACK |
 | `chat`  | `slack`, `msteams` | Slack incoming webhooks + `chat.postMessage`, and both generations of Teams incoming webhook |
 | `snmp`  | `trap` | A real UDP trap receiver: v1/v2c traps and informs, every varbind decoded by its wire type |
+| `s3`    | `http` | A path-style S3-compatible object store on its own listener: buckets, objects, multipart uploads |
 | `as2`   | `http` | RFC 4130 EDIINT over HTTP: unwraps signed/encrypted/compressed messages and answers with a real MDN receipt |
 
 Every plugin and provider describes itself: `Description()`, the endpoints it
@@ -234,16 +236,18 @@ tommy chat  --ui-port 8811 --in-port 8822 --enabled-providers slack
 tommy hl7   --ui-port 8811 --in-port 8822 --mllp-port 2575
 tommy push  --ui-port 8811 --in-port 8822 --enabled-providers fcm
 tommy snmp  --ui-port 8811 --in-port 8822 --trap-port 1162
+tommy s3    --ui-port 8811 --in-port 8822 --s3-port 9000
 tommy as2   --ui-port 8811 --in-port 8822
 ```
 
 `tommy mail`, `tommy sms`, `tommy files`, `tommy chat`, `tommy hl7`,
-`tommy snmp` and `tommy as2` are shortcuts that build a `Config` with every other plugin
-switched off in memory, then run through that identical bootstrap — there is
-no second, lighter-weight server. `--enabled-providers` narrows which of that
-plugin's providers run; leave it off and every provider the plugin ships is
-enabled. An unknown provider name is rejected up front, naming the valid
-ones:
+`tommy snmp`, `tommy s3` and `tommy as2` are shortcuts that build a `Config`
+with every other plugin switched off in memory, then run through that
+identical bootstrap — there is no second, lighter-weight server.
+`--enabled-providers` narrows which of that plugin's providers run — for `s3`
+that means its sole provider, `http`; leave it off and every provider the
+plugin ships is enabled. An unknown provider name is rejected up front, naming
+the valid ones:
 
 ```
 $ tommy mail --enabled-providers bogus
@@ -275,18 +279,20 @@ response:
 | `trap` (`tommy snmp`)     | `--trap-port` |
 | `ftp` (`tommy files`)     | `--ftp-port`, `--ftp-passive-host`, `--ftp-passive-ports`, `--ftp-username`, `--ftp-password` |
 | `sftp` (`tommy files`)    | `--sftp-port`, `--sftp-host-key`, `--sftp-authorized-keys`, `--sftp-username`, `--sftp-password` |
+| `http` (`tommy s3`)       | `--s3-port` |
 | `http` (`tommy as2`)      | `--as2-cert-file`, `--as2-key-file`, `--as2-partner-cert-file`, `--as2-cert-dir`, `--as2-common-name`, `--as2-in-memory`, `--as2-to`, `--as2-max-body` |
 
 `slack` and `msteams` take no provider-specific flags at all: neither reads
 any option beyond `enabled`.
 
-Only the real protocol servers get a `--<provider>-port`, because only they
-have a listener of their own: smtp, ftp, sftp, tftp, nfs, mllp and trap.
-Every HTTP provider — mailjet, sendgrid, twilio, slack, msteams, fcm, apns and
-as2's http — shares the one `--in-port` / `[ingress]` listener and is told
-apart by path. There is no per-provider listener for an HTTP provider (that
-would be real core work, not this shortcut), so none of them gets a
-`--<provider>-port` flag.
+Only the providers with a listener of their own get a `--<provider>-port`:
+smtp, ftp, sftp, tftp, nfs, mllp, trap, and s3's http. Every *other* HTTP
+provider — mailjet, sendgrid, twilio, slack, msteams, fcm, apns and as2's
+http — shares the one `--in-port` / `[ingress]` listener and is told apart by
+path, so none of them gets a `--<provider>-port` flag. s3's http provider is
+the odd one out: it speaks HTTP but gets a dedicated port like the protocol
+servers, because S3's own `/{bucket}/{key}` paths would collide with the
+other fake vendor APIs mounted on the shared ingress.
 
 An unset flag never overrides a provider's own default, and setting one for a
 provider `--enabled-providers` excludes is a clear error rather than a flag

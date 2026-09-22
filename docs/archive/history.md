@@ -1135,6 +1135,58 @@ wave that moves a port fails its build until the image follows.
 and reseeds `math/rand` from the clock on every attempt. The test retries the
 dial itself rather than dropping to a privileged dial, which would need root.
 
+## Wave 13·1 — the S3 plugin · 1 session, then 2 agents in parallel
+
+**Built.** An `s3` plugin with one provider, `s3/http`: a path-style,
+S3-compatible HTTP server on its own listener (port 9000), not a route on the
+shared ingress. It covers bucket create/head/delete/list/location, object
+put/get/head/delete with ranges and conditional requests, bulk delete, copy,
+`ListObjectsV2` with prefix/delimiter/continuation, multipart uploads, presigned
+URLs and `Content-MD5`/`x-amz-checksum-*` validation. The shape is the one
+`files` proved: a shared in-memory catalogue is the *state*, and each successful
+mutation (`s3.bucket.create|delete`, `s3.object.put|copy|delete`) is an *event*.
+Object bytes live in the blob store. The plugin has a read-back API
+(`docs/openapi-s3.json`), a bucket-and-prefix browser tab, and a `tommy s3`
+command with `--s3-port`. `test/integration` drives it with the official AWS SDK
+for Go v2 and its multipart uploader, on the SDK's default configuration.
+
+**Why a dedicated listener rather than an ingress route.** An S3 client puts
+the bucket at the root of the path (`/bucket/key`), and object keys may contain
+`//`, `..` and trailing slashes. The shared ingress is a `ServeMux` under a
+prefix, and a `ServeMux` canonicalises exactly those paths. The provider
+therefore serves the raw request itself. Virtual-host addressing is not
+implemented, so clients must set path-style addressing (`UsePathStyle`,
+`--endpoint-url`), which every S3-compatible local server requires anyway.
+
+**What the review caught.**
+- *Stored XSS on the UI origin.* The content route echoed the uploader's
+  `Content-Type` and `Content-Disposition`. An object stored as `text/html` with
+  `inline` therefore rendered as a page on the same origin as the UI and the
+  mutating API. It is now always served as an attachment under
+  `Content-Security-Policy: sandbox`. `files` already forced `attachment`, but
+  its `?inline=1` rendered uploaded HTML on the same origin, so it gained the
+  same CSP. Any new route that returns captured bytes needs the same check: the
+  security invariants name mail bodies, but the risk lies in *who chose the
+  headers*, not in the content type.
+- *The AWS SDK's checksum default is not the risk it looks like.* SDKs since
+  early 2025 compute a CRC32 on every upload, and send it as an `aws-chunked`
+  trailer, which this provider rejects with `NotImplemented`. The integration
+  test was written expecting to hit that. It did not: the Go SDK only uses the
+  trailer over **HTTPS**
+  (`service/internal/checksum/middleware_compute_input_checksum.go`), and
+  otherwise sends the checksum as a plain header. That holds because tommy's
+  listener is plaintext. **Wave 14's TLS ingress will change it**: once S3 is
+  reachable over HTTPS, default-configured SDKs will send `aws-chunked` bodies
+  and the provider must decode them rather than refuse.
+- The linter enforces US spelling in Go source, so the code says "catalog" while
+  the prose here keeps "catalogue".
+
+**Deliberately not built.** Virtual-host addressing, versioning, ACLs, bucket
+policies, lifecycle, object lock, SSE, and SigV4 *verification*. The provider
+records the access key, region and signed headers, but checking signatures is
+policy. Reads are not events: the plugin captures what was sent, and a GET
+sends nothing.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project
