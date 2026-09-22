@@ -145,6 +145,29 @@ to exist, and push-to-create leaves its visibility at the account default.
 
 ---
 
+## Wave 13·2 — S3 from the browser
+
+This is next. Wave 13·1 covers an application whose *server* talks to S3: SDK
+uploads, then presigned GET or plain URLs to serve the result. Many websites
+upload straight from the browser instead, and that path fails today before a
+request reaches tommy. The target to test against is a page that uploads an
+image with a presigned PUT or POST, then displays it. All of this goes in
+`plugins/s3/providers/http`, driven by a real client: a browser-shaped
+preflight, and the JS SDK's or boto3's presigned-POST helper.
+
+| Task | Notes |
+|---|---|
+| **CORS** | The blocker. Answer `OPTIONS` preflights and add `Access-Control-Allow-*` / `Expose-Headers` (`ETag`, `x-amz-*`) to every response. Permissive by default: echo the request's origin, method and headers, since a local fake has no bucket CORS configuration to enforce. Leave `PutBucketCors` unimplemented unless a client refuses to proceed without it. |
+| **Presigned POST** | `POST /{bucket}` with a `multipart/form-data` body: `key` (including `${filename}`), `Content-Type`, `x-amz-meta-*`, `policy`, `success_action_status` / `success_action_redirect`. Record the policy in `Meta`, but do not enforce its conditions. Enforcing them is policy (§2), just as SigV4 is recorded and not verified. Today this route only serves bulk delete (`?delete`). |
+| **Response overrides** | `response-content-type`, `response-content-disposition`, `response-cache-control` and friends on GET. They matter for "download as" links on presigned URLs. |
+
+Deferred, not in this wave:
+- **Credential pinning**: an optional expected access key that answers 403 on a mismatch, as the mail providers do. Pinning the key is cheap; verifying SigV4 is not, and neither is needed yet.
+- **Virtual-host addressing**: `bucket.localhost:9000`.
+- **HTTPS**: needed for `https://` pages that embed images. It comes with wave 14's TLS work, which also owes the `aws-chunked` decoder.
+
+---
+
 ## Wave 13 — tier 2 protocols
 
 Bigger, still worth doing, roughly in this order. Each is a self-contained agent
