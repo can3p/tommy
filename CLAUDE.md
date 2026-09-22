@@ -185,6 +185,10 @@ them be built in parallel.
 - **Untrusted content never enters the page DOM.** A captured HTML mail body is
   served from its own API route under a restrictive CSP and framed in a fully
   sandboxed iframe. Tests assert the markup is absent from the page.
+- **Captured bytes are downloaded, never rendered on tommy's origin.** A route
+  that returns them (`files`, `s3` content) sets `Content-Disposition:
+  attachment`, `X-Content-Type-Options: nosniff` and a sandbox CSP itself,
+  and never echoes a disposition the client stored.
 - **All captured text is interpolated as plain strings** through `html/template`,
   never `template.HTML`. Message bodies, author names, filenames, subjects.
 - **`plugins/chat/ui/blocks` is the one exception and the one danger.** Its output

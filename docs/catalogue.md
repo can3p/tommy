@@ -32,6 +32,7 @@ A *plugin* owns a content type: a canonical model, API routes and a UI tab.
 | `hl7` | HL7 v2 clinical messages sent to a hospital interface engine you cannot get a test instance of. | [`plugins/hl7`](../plugins/hl7/README.md) |
 | `snmp` | Your own agent's or device's *outbound* traps — whether the alert fires, and what varbinds it really carries. | [`plugins/snmp`](../plugins/snmp/README.md) |
 | `push` | Mobile push, answering the question most silent-push debugging comes down to: would this have displayed anything at all? | [`plugins/push`](../plugins/push/README.md) |
+| `s3` | An S3-compatible object store — bucket and object operations, kept in an inspectable, downloadable catalog instead of a cloud account. | [`plugins/s3`](../plugins/s3/README.md) |
 | `as2` | An EDI trading partner's AS2 endpoint, including the certificate exchange and the MDN receipt your integration blocks on. | [`plugins/as2`](../plugins/as2/README.md) |
 
 ## Providers
@@ -56,6 +57,7 @@ plugin's model. Providers never import each other.
 | `snmp/trap` | Checking a trap fires and says what you think it says. v1, v2c and informs. | [`trap`](../plugins/snmp/providers/trap/README.md) |
 | `push/fcm` | Your backend pushes through Firebase, and you want the targeting and payload shown without a device or project. | [`fcm`](../plugins/push/providers/fcm/README.md) |
 | `push/apns` | Your backend pushes through Apple. HTTP/2 only — there is no HTTP/1.1 form. | [`apns`](../plugins/push/providers/apns/README.md) |
+| `s3/http` | Your app writes to S3 (or anything S3-compatible) through the AWS CLI or an AWS SDK, path-style. | [`http`](../plugins/s3/providers/http/README.md) |
 | `as2/http` | AS2 over HTTP (RFC 4130), the transport binding a partner points a URL at. | [`as2/http`](../plugins/as2/providers/http/README.md) |
 
 ## What tommy deliberately will not do

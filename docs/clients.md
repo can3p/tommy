@@ -13,7 +13,7 @@ tells the client where to connect next — that address is the one value tommy
 cannot work out for itself, so it has to be configured. [`docs/docker.md`](./docker.md)
 has both, with the compose stack that wires them up.
 
-Four SDKs, four different amounts of cooperation:
+Five SDKs, five different amounts of cooperation:
 
 | SDK | Base URL support | What you do |
 |---|---|---|
@@ -21,6 +21,7 @@ Four SDKs, four different amounts of cooperation:
 | **mailjet-apiv3-go** (`github.com/mailjet/mailjet-apiv3-go/v4`) | First class | Pass the base URL as the third argument to `NewMailjetClient`, or call `SetBaseURL`/`SetURL` after construction |
 | **sendgrid-go** (`github.com/sendgrid/sendgrid-go`) | First class, via a different entry point | Build the request with `sendgrid.GetRequest(key, endpoint, host)` instead of `sendgrid.NewSendClient(key)`, which hardcodes the real host |
 | **twilio-go** (`github.com/twilio/twilio-go`) | **None** | There is no field, flag or env var that lets `api.twilio.com` become anything else. Inject a custom `*http.Client` instead, via [`clienthelp`](../clienthelp) |
+| **aws-sdk-go-v2** (`github.com/aws/aws-sdk-go-v2/service/s3`) | First class, plus a second setting | Set `s3.Options.BaseEndpoint` **and** `UsePathStyle: true` — tommy's `s3` plugin has no virtual-host addressing, only `/bucket/key` |
 
 Reading the captures back is a different job from sending them, and it has its
 own description: `GET /api/v1/openapi.json`, or `docs/openapi.json` in this
@@ -260,6 +261,74 @@ no idea its requests are landing on tommy instead of `api.twilio.com`.
 The same `tc.HTTPClient` swap is the general answer for any other twilio-go
 resource (Verify, Lookups, Voice, …) once tommy grows a fake for it — nothing
 about the wiring above is specific to Messages.
+
+## S3 — `aws-sdk-go-v2`
+
+The AWS SDK's `s3.Options` has first-class base-URL support (`BaseEndpoint`),
+same as Resend and Mailjet, but S3 has a second setting a base URL alone does
+not cover: the SDK defaults to **virtual-host** addressing
+(`bucket.s3.amazonaws.com`), and tommy's `s3` plugin only routes **path-style**
+(`/bucket/key` — see [`plugins/s3`](../plugins/s3/README.md)). Set both.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+func main() {
+	// Any access key / secret is accepted; tommy just records it.
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion("us-east-1"),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("tommy", "tommy", "")),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String("http://localhost:9000")
+		o.UsePathStyle = true // the setting virtual-host addressing needs turned off
+	})
+
+	ctx := context.Background()
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String("example")}); err != nil {
+		panic(err)
+	}
+	if _, err := client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String("example"), Key: aws.String("hello.txt"),
+		Body: strings.NewReader("captured by tommy\n"),
+	}); err != nil {
+		panic(err)
+	}
+
+	out, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String("example"), Key: aws.String("hello.txt")})
+	if err != nil {
+		panic(err)
+	}
+	defer out.Body.Close()
+	buf := make([]byte, 64)
+	n, _ := out.Body.Read(buf)
+	fmt.Printf("read back: %q\n", string(buf[:n]))
+}
+```
+
+Run against a `tommy s3`, this prints `read back: "captured by tommy\n"` —
+the SDK's own `GetObject` sees exactly what its own `PutObject` sent, same as
+every other read-back path in this document. The AWS CLI needs the matching
+setting, spelled `--endpoint-url` plus path addressing (which
+`aws --endpoint-url` already implies): see
+[`plugins/s3/providers/http/README.md`](../plugins/s3/providers/http/README.md)
+for a full `aws s3`/`s3api` walkthrough, including multipart upload, presigned
+URLs and bulk delete.
 
 ## Non-Go SDKs
 
