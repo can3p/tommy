@@ -558,6 +558,16 @@ is worth it for the same reason.
   leg stays green. Four consecutive waves shipped this bug — tftp, nfs, snmp and
   as2 — because it is invisible from the root module and each was fixed by
   accident in a later wave rather than caught in its own.
+- Dependabot hit the same bug a fifth time, and it cannot read CLAUDE.md: its
+  root-only `directory: "/"` entry bumped a shared transitive dependency
+  (`golang.org/x/crypto` et al.) without touching `test/integration/go.mod`,
+  which failed CI the same way an agent-authored wave would have. The fix is
+  `directories: ["/", "/test/integration"]` plus `groups.<name>.group-by:
+  dependency-name` in `.github/dependabot.yml`, which makes Dependabot bump the
+  same dependency in both modules in one coordinated PR instead of drifting one
+  ahead of the other. `directories` (plural, globs allowed) and `group-by`
+  are both newer than `directory`/`groups.<name>.patterns` and easy to miss
+  when skimming older examples.
 - `go build` in `test/integration` does not prove that module compiles. The
   tests reach the providers through `plugins/all` from a `_test.go` file, so a
   missing requirement only surfaces under `go test -tags integration ./...`.
