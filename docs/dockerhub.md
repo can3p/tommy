@@ -29,7 +29,7 @@ documentation here would only give it somewhere to drift.
 
 ```bash
 docker run -d --rm --name tommy \
-  -p 8811:8811 -p 8822:8822 \
+  -p 8811:8811 -p 8822:8822 -p 9000:9000 \
   -p 1025:1025 -p 2121:2121 -p 2222:2222 -p 2049:2049 -p 2575:2575 \
   -p 6969:6969/udp -p 1162:1162/udp \
   -v tommy-data:/data \
@@ -62,6 +62,7 @@ captured, so the link is already in your application's log.
 |---|---|
 | 8811/tcp | UI and JSON API |
 | 8822/tcp | ingress — every fake vendor HTTP API |
+| 9000/tcp | S3 (path-style) |
 | 1025/tcp | SMTP |
 | 2121/tcp | FTP |
 | 2222/tcp | SFTP |

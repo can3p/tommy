@@ -16,6 +16,8 @@ import (
 	"github.com/can3p/tommy/plugins/mail/providers/mailjet"
 	"github.com/can3p/tommy/plugins/mail/providers/sendgrid"
 	"github.com/can3p/tommy/plugins/mail/providers/smtp"
+	"github.com/can3p/tommy/plugins/s3"
+	s3http "github.com/can3p/tommy/plugins/s3/providers/http"
 	"github.com/can3p/tommy/plugins/sms/providers/twilio"
 	"github.com/spf13/cobra"
 )
@@ -187,6 +189,38 @@ func TestMailSMTPFlagsLandInSMTPSection(t *testing.T) {
 	}
 }
 
+// TestS3PortFlagLandsInHTTPSection drives the S3 command's shared provider
+// selector and sole provider-specific flag through Cobra, then verifies the
+// integer override lands only at plugins.s3.providers.http.port.
+func TestS3PortFlagLandsInHTTPSection(t *testing.T) {
+	cmd := &cobra.Command{Use: "test"}
+	var common singlePluginFlags
+	var provider s3HTTPOptionFlags
+	registerSinglePluginFlags(cmd, &common)
+	registerS3HTTPOptionFlags(cmd, &provider)
+
+	if err := cmd.ParseFlags([]string{"--enabled-providers", "http", "--s3-port", "9100"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+
+	opts := newProviderOptionBuilder(cmd)
+	opts.set(s3http.ProviderName, "s3-port", "port", provider.port)
+	if len(opts.options) != 1 || len(opts.options[s3http.ProviderName]) != 1 {
+		t.Fatalf("s3 options = %+v, want exactly http.port", opts.options)
+	}
+	if got := opts.options[s3http.ProviderName]["port"]; got != 9100 {
+		t.Fatalf("s3 http port = %v, want int 9100", got)
+	}
+
+	cfg, err := singlePluginConfig(s3.PluginName, []string{s3http.ProviderName}, common, opts.options)
+	if err != nil {
+		t.Fatalf("singlePluginConfig with --enabled-providers http: %v", err)
+	}
+	if got := cfg.Provider(s3.PluginName, s3http.ProviderName).Port; got != 9100 {
+		t.Errorf("configured s3 http port = %d, want 9100", got)
+	}
+}
+
 // TestSinglePluginConfigUnknownProviderNamesValid checks that an unknown
 // --enabled-providers name is rejected before anything is built, and that the
 // error names the valid providers so the user does not have to go read the
@@ -321,6 +355,7 @@ func TestSinglePluginCommandsRejectStrayArgs(t *testing.T) {
 		"sms":   smsCmd,
 		"files": filesCmd,
 		"chat":  chatCmd,
+		"s3":    s3Cmd,
 		"serve": serveCmd,
 	}
 	for name, cmd := range cmds {

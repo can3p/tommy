@@ -209,6 +209,9 @@ func (h *apiHandler) content(w http.ResponseWriter, r *http.Request) {
 	// The bytes are whatever a client uploaded, so the browser must not be
 	// allowed to decide they are something more interesting than they are.
 	head.Set("X-Content-Type-Options", "nosniff")
+	// ?inline=1 lets a browser display the file, and it does so on the UI's
+	// origin, so uploaded HTML must not be able to run script there.
+	head.Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	kind := "attachment"
 	if boolParam(r, "inline") {
 		kind = "inline"

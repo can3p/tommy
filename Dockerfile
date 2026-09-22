@@ -49,6 +49,7 @@ VOLUME /data
 # binary's own answer parses it.
 EXPOSE 8811/tcp
 EXPOSE 8822/tcp
+EXPOSE 9000/tcp
 EXPOSE 1025/tcp
 EXPOSE 2121/tcp
 EXPOSE 2222/tcp

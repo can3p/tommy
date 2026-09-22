@@ -38,15 +38,15 @@ wave you expected, look in the history.
 | `snmp` | trap | done |
 | `push` | fcm, apns | done |
 | `as2` | http | done |
+| `s3` | http | done |
 
 Every plugin has a `tommy <plugin>` subcommand, and every provider option worth
 setting has a flag. Every plugin and provider carries user-facing documentation
 — what it is, what it is for, and commands that have been run — indexed in
 `docs/catalogue.md` and required from here on by `CLAUDE.md` rule 12.
 
-Everything through wave 8·1 is merged to `main`; waves 9–13 are built, with
-wave 13 on `feat/distribution` (stacked on `docs/distribution-plan`) awaiting
-review.
+Everything through wave 13 is merged to `main`. Wave 13·1, the `s3` plugin, is
+on `feat/s3-plugin` awaiting review.
 **Start each wave on its own branch**, named for what it builds, so a wave stays
 a reviewable unit — and merge it before starting the next, because a wave
 branched off an unreviewed tip inherits every diff below it.
@@ -145,6 +145,29 @@ to exist, and push-to-create leaves its visibility at the account default.
 
 ---
 
+## Wave 13·2 — S3 from the browser
+
+This is next. Wave 13·1 covers an application whose *server* talks to S3: SDK
+uploads, then presigned GET or plain URLs to serve the result. Many websites
+upload straight from the browser instead, and that path fails today before a
+request reaches tommy. The target to test against is a page that uploads an
+image with a presigned PUT or POST, then displays it. All of this goes in
+`plugins/s3/providers/http`, driven by a real client: a browser-shaped
+preflight, and the JS SDK's or boto3's presigned-POST helper.
+
+| Task | Notes |
+|---|---|
+| **CORS** | The blocker. Answer `OPTIONS` preflights and add `Access-Control-Allow-*` / `Expose-Headers` (`ETag`, `x-amz-*`) to every response. Permissive by default: echo the request's origin, method and headers, since a local fake has no bucket CORS configuration to enforce. Leave `PutBucketCors` unimplemented unless a client refuses to proceed without it. |
+| **Presigned POST** | `POST /{bucket}` with a `multipart/form-data` body: `key` (including `${filename}`), `Content-Type`, `x-amz-meta-*`, `policy`, `success_action_status` / `success_action_redirect`. Record the policy in `Meta`, but do not enforce its conditions. Enforcing them is policy (§2), just as SigV4 is recorded and not verified. Today this route only serves bulk delete (`?delete`). |
+| **Response overrides** | `response-content-type`, `response-content-disposition`, `response-cache-control` and friends on GET. They matter for "download as" links on presigned URLs. |
+
+Deferred, not in this wave:
+- **Credential pinning**: an optional expected access key that answers 403 on a mismatch, as the mail providers do. Pinning the key is cheap; verifying SigV4 is not, and neither is needed yet.
+- **Virtual-host addressing**: `bucket.localhost:9000`.
+- **HTTPS**: needed for `https://` pages that embed images. It comes with wave 14's TLS work, which also owes the `aws-chunked` decoder.
+
+---
+
 ## Wave 13 — tier 2 protocols
 
 Bigger, still worth doing, roughly in this order. Each is a self-contained agent
@@ -180,7 +203,7 @@ Independent of each other and of the protocol work; each is one agent.
 
 | Task | Owns | Notes |
 |---|---|---|
-| **TLS ingress** | `core/server/**`, config | `--tls` with a self-signed certificate generated on first run and written beside the config so it can be trusted once. Print the fingerprint. **Wave 8 already built the half you need**: `Deps.ConfigDir` is the directory of the config file (empty for a config built in memory), and `plugins/as2/identity.go` is a worked example of loading-or-generating a key pair with the paths configurable — which they must be, because tommy may run in a cluster that already has its own CA. Generate on **first use, not at startup**: doing it eagerly is what put a private key in the user's own config directory during `make check`. This is the documented route for non-Go SDKs that will not take a base URL (see `docs/clients.md`). **The seam already exists**: Wave 7 built `newHTTPServer` + `listenerOptions` in `core/server/httpserver.go`, and TLS is a field added there rather than a second construction path. Use `net/http`'s `Server.Protocols` for ALPN, not `golang.org/x/net/http2` — that module's `h2c` package is deprecated and would fail the staticcheck gate. |
+| **TLS ingress** | `core/server/**`, config | `--tls` with a self-signed certificate generated on first run and written beside the config so it can be trusted once. Print the fingerprint. **Wave 8 already built the half you need**: `Deps.ConfigDir` is the directory of the config file (empty for a config built in memory), and `plugins/as2/identity.go` is a worked example of loading-or-generating a key pair with the paths configurable — which they must be, because tommy may run in a cluster that already has its own CA. Generate on **first use, not at startup**: doing it eagerly is what put a private key in the user's own config directory during `make check`. This is the documented route for non-Go SDKs that will not take a base URL (see `docs/clients.md`). **The seam already exists**: Wave 7 built `newHTTPServer` + `listenerOptions` in `core/server/httpserver.go`, and TLS is a field added there rather than a second construction path. Use `net/http`'s `Server.Protocols` for ALPN, not `golang.org/x/net/http2` — that module's `h2c` package is deprecated and would fail the staticcheck gate. **It also owes `s3/http` an `aws-chunked` decoder**: that listener is plaintext today, and AWS SDKs send their default CRC32 as an `aws-chunked` trailer only over HTTPS, so the provider's current `NotImplemented` refusal becomes the default path the moment S3 is served over TLS (see wave 13·1 in the history). |
 | **Persistence** | `core/store/**`, `core/blob/**` | Opt-in `--persist <path>` snapshotting events and blobs. The `Store` and `BlobStore` interfaces were built for this; no plugin should need to change. Keep it dependency-free — files on disk, not SQLite — unless a real need appears. |
 | **Search** | `core/server/api`, `core/server/ui` | Full-text across captured bodies. Currently `Query.Search` is a substring match; if that stops being enough, this is where it goes. |
 | **Upstream: kleiner** | — | Fix `MaybeNotifyAboutNewVersion` in `can3p/kleiner`: it prints the error and falls through to dereference a nil version, panicking a released binary at startup when GitHub is unreachable. Second latent deref on the same path. Affects every project scaffolded from kleiner. The container image sets `TOMMY_NO_UPDATE_CHECK=1` so it cannot hit this, which removes the urgency but not the bug. |

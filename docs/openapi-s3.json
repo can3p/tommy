@@ -1,0 +1,657 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tommy s3 API",
+    "version": "v1",
+    "description": "Accepts S3-compatible bucket and object operations without sending data to cloud storage, and keeps the resulting object catalog available for inspection. Logical bucket and object mutations are also captured as searchable events while object bytes remain in the independent blob store.\n\nThese routes read back what tommy captured, in the shape this content type\nwants: filters that only mean something here, and the parts that are bytes\nrather than JSON. They read from the same store as the events API, so a\nclient that sends and immediately fetches sees its own write, and every\nentry carries the id of the event behind it.\n\nThe events API - /api/v1/events, described in its own document - is the\ngeneric view of the same captures, and is the one to use when what you are\nasserting does not depend on the content type. The fake vendor endpoints are\ndescribed nowhere here: they are the vendors' specifications, not tommy's.\n\nThis document is generated from the server's route table. It cannot describe\na route that does not exist, and CI fails if the checked-in copy stops\nmatching the code."
+  },
+  "servers": [
+    {
+      "url": "/api/v1/s3",
+      "description": "This tommy's s3 API."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/buckets": {
+      "get": {
+        "operationId": "getBuckets",
+        "summary": "List current buckets and aggregate S3 catalog statistics.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/s3.BucketsView"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteBuckets",
+        "summary": "Delete every bucket, object, and inactive multipart upload while retaining the event history.",
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          }
+        }
+      }
+    },
+    "/buckets/{bucket}": {
+      "get": {
+        "operationId": "getBucketsByBucket",
+        "summary": "Get one current bucket snapshot and its object-list link.",
+        "parameters": [
+          {
+            "name": "bucket",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/s3.BucketView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteBucketsByBucket",
+        "summary": "Delete an empty bucket, or all of its state when recursive is true.",
+        "parameters": [
+          {
+            "name": "bucket",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recursive",
+            "in": "query",
+            "description": "Delete objects and inactive multipart uploads before deleting the bucket.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/buckets/{bucket}/content/{key}": {
+      "get": {
+        "operationId": "getBucketsByBucketContentByKey",
+        "summary": "Download one object's bytes and recorded representation metadata, with HTTP range support.",
+        "parameters": [
+          {
+            "name": "bucket",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/buckets/{bucket}/objects": {
+      "get": {
+        "operationId": "getBucketsByBucketObjects",
+        "summary": "List one bucket with exact S3 prefix, delimiter, continuation, and maximum-key semantics.",
+        "parameters": [
+          {
+            "name": "bucket",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "prefix",
+            "in": "query",
+            "description": "Only keys beginning with this exact prefix.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "delimiter",
+            "in": "query",
+            "description": "Group keys after the prefix into common prefixes.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_after",
+            "in": "query",
+            "description": "Start strictly after this key or common prefix.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "continuation",
+            "in": "query",
+            "description": "Continue strictly after the token returned by the previous page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "max_keys",
+            "in": "query",
+            "description": "Maximum objects and common prefixes in this page; capped at 1000.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/s3.ObjectsView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter could not be parsed - a malformed since, a negative limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/buckets/{bucket}/objects/{key}": {
+      "get": {
+        "operationId": "getBucketsByBucketObjectsByKey",
+        "summary": "Get metadata for one exact object key, without treating the key as a filesystem path.",
+        "parameters": [
+          {
+            "name": "bucket",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/s3.ObjectView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteBucketsByBucketObjectsByKey",
+        "summary": "Delete one exact object and append an s3.object.delete event.",
+        "parameters": [
+          {
+            "name": "bucket",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "404": {
+            "description": "No such resource, or it belongs to another plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api.Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "api.Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "blob.Ref": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "size"
+        ]
+      },
+      "s3.BucketLinks": {
+        "type": "object",
+        "properties": {
+          "objects": {
+            "type": "string"
+          },
+          "self": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "objects",
+          "self"
+        ]
+      },
+      "s3.BucketView": {
+        "type": "object",
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "creation_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "links": {
+            "$ref": "#/components/schemas/s3.BucketLinks"
+          },
+          "name": {
+            "type": "string"
+          },
+          "objects": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "creation_time",
+          "links",
+          "name",
+          "objects"
+        ]
+      },
+      "s3.BucketsView": {
+        "type": "object",
+        "properties": {
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/s3.BucketView"
+            }
+          },
+          "self": {
+            "type": "string"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/s3.Stats"
+          }
+        },
+        "required": [
+          "buckets",
+          "self",
+          "stats"
+        ]
+      },
+      "s3.Checksums": {
+        "type": "object",
+        "properties": {
+          "crc32": {
+            "type": "string"
+          },
+          "crc32c": {
+            "type": "string"
+          },
+          "sha1": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        }
+      },
+      "s3.CommonPrefixView": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "list",
+          "prefix"
+        ]
+      },
+      "s3.ContentHeaders": {
+        "type": "object",
+        "properties": {
+          "cache_control": {
+            "type": "string"
+          },
+          "content_disposition": {
+            "type": "string"
+          },
+          "content_encoding": {
+            "type": "string"
+          },
+          "content_language": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "expires": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "expires"
+        ]
+      },
+      "s3.ObjectLinks": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "list": {
+            "type": "string"
+          },
+          "self": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "list",
+          "self"
+        ]
+      },
+      "s3.ObjectView": {
+        "type": "object",
+        "properties": {
+          "blob": {
+            "$ref": "#/components/schemas/blob.Ref"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "checksums": {
+            "$ref": "#/components/schemas/s3.Checksums"
+          },
+          "etag": {
+            "type": "string"
+          },
+          "headers": {
+            "$ref": "#/components/schemas/s3.ContentHeaders"
+          },
+          "key": {
+            "type": "string"
+          },
+          "last_modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "links": {
+            "$ref": "#/components/schemas/s3.ObjectLinks"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blob",
+          "bucket",
+          "checksums",
+          "etag",
+          "headers",
+          "key",
+          "last_modified",
+          "links",
+          "size"
+        ]
+      },
+      "s3.ObjectsView": {
+        "type": "object",
+        "properties": {
+          "bucket": {
+            "$ref": "#/components/schemas/s3.BucketView"
+          },
+          "common_prefixes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/s3.CommonPrefixView"
+            }
+          },
+          "continuation_token": {
+            "type": "string"
+          },
+          "delimiter": {
+            "type": "string"
+          },
+          "is_truncated": {
+            "type": "boolean"
+          },
+          "max_keys": {
+            "type": "integer"
+          },
+          "next": {
+            "type": "string"
+          },
+          "next_continuation_token": {
+            "type": "string"
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/s3.ObjectView"
+            }
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "self": {
+            "type": "string"
+          },
+          "start_after": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bucket",
+          "common_prefixes",
+          "is_truncated",
+          "max_keys",
+          "objects",
+          "self"
+        ]
+      },
+      "s3.Stats": {
+        "type": "object",
+        "properties": {
+          "active_uploads": {
+            "type": "integer"
+          },
+          "buckets": {
+            "type": "integer"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "objects": {
+            "type": "integer"
+          },
+          "part_bytes": {
+            "type": "integer"
+          },
+          "parts": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active_uploads",
+          "buckets",
+          "bytes",
+          "objects",
+          "part_bytes",
+          "parts"
+        ]
+      }
+    }
+  }
+}

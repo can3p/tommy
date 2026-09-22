@@ -22,7 +22,7 @@ import (
 // describable is every plugin that mounts an API of its own, and so owes a
 // description. Written out rather than derived, because "the plugins that have
 // documents" is exactly what could silently shrink.
-var describable = []string{"as2", "chat", "files", "hl7", "mail", "push", "sms"}
+var describable = []string{"as2", "chat", "files", "hl7", "mail", "push", "s3", "sms"}
 
 func registry(t *testing.T) *plugin.Registry {
 	t.Helper()

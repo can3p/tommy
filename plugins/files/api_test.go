@@ -194,6 +194,9 @@ func TestAPIContentDownload(t *testing.T) {
 		if cd := resp.Header.Get("Content-Disposition"); !strings.HasPrefix(cd, "inline") {
 			t.Errorf("Content-Disposition = %q, want inline", cd)
 		}
+		if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") {
+			t.Errorf("Content-Security-Policy = %q, want a sandbox for inline display", csp)
+		}
 	})
 
 	t.Run("range request", func(t *testing.T) {
