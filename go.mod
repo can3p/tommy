@@ -9,7 +9,7 @@ require (
 	github.com/emersion/go-smtp v0.25.0
 	github.com/fclairamb/ftpserverlib v0.32.4
 	github.com/go-git/go-billy/v5 v5.9.1
-	github.com/gosnmp/gosnmp v1.44.0
+	github.com/gosnmp/gosnmp v1.45.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pin/tftp/v3 v3.2.0
 	github.com/pkg/errors v0.9.1
