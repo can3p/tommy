@@ -16,7 +16,6 @@ updates:
     groups:
       go-deps:
         patterns: ["*"]
-        group-by: dependency-name
 
   - package-ecosystem: github-actions
     directory: "/"
