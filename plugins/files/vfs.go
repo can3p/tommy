@@ -19,6 +19,7 @@ import (
 
 	"github.com/can3p/tommy/core/blob"
 	blobmem "github.com/can3p/tommy/core/blob/memory"
+	"github.com/can3p/tommy/core/state"
 )
 
 // Errors returned by the VFS. Every one of them is wrapped in an *fs.PathError
@@ -238,9 +239,13 @@ func join(dir, name string) string {
 	return dir + "/" + name
 }
 
-// VFS is the in-memory filesystem every files provider shares: FTP, SFTP and
+// VFS is the virtual filesystem every files provider shares: FTP, SFTP and
 // anything added later all mutate the same tree, so a file uploaded over one
 // protocol is listed and downloadable over the others and in the UI.
+//
+// The tree is held in memory. When it is bound to persistent state (see
+// BindState) every committed change is also saved as a snapshot, so the tree
+// and its bytes survive a restart; unbound, it lives as long as the process.
 //
 // It is the one genuinely concurrency-sensitive component in tommy. Two
 // providers write to it from their own goroutines, so every operation is
@@ -262,6 +267,15 @@ type VFS struct {
 	blobMu   sync.RWMutex
 	blobs    blob.BlobStore
 	attached bool
+
+	// Persistence. state is nil for a VFS that lives only in memory. revision
+	// counts committed mutations and is guarded by mu; persisted is the
+	// revision last saved and is guarded by persistMu, which also serializes
+	// saves so an older snapshot can never overwrite a newer one.
+	state     state.Store
+	persistMu sync.Mutex
+	revision  uint64
+	persisted uint64
 }
 
 // Option configures a VFS.
@@ -337,6 +351,27 @@ func (v *VFS) Attach(b blob.BlobStore) {
 	v.attached = true
 }
 
+// bindBlobs makes b the store the file bytes live in, overriding an earlier
+// Attach or WithBlobs. It is how a persistent scope's store takes over: the
+// snapshot's bytes are there and nowhere else. It refuses once the tree holds
+// files, because switching stores under them would break their downloads.
+func (v *VFS) bindBlobs(b blob.BlobStore) error {
+	if b == nil {
+		return errors.New("files: persistent storage has no blob store")
+	}
+	v.mu.RLock()
+	nodes := v.nodes
+	v.mu.RUnlock()
+	if nodes > 0 {
+		return errors.New("files: cannot bind storage to a tree that already holds entries")
+	}
+	v.blobMu.Lock()
+	defer v.blobMu.Unlock()
+	v.blobs = b
+	v.attached = true
+	return nil
+}
+
 // Blobs returns the blob store the file bytes live in.
 func (v *VFS) Blobs() blob.BlobStore {
 	v.blobMu.RLock()
@@ -370,7 +405,8 @@ func (v *VFS) Limits() Limits { return v.limits }
 // The result always starts with "/", never contains "." or ".." and never ends
 // with "/" (except the root itself). Note that there is no host filesystem
 // underneath any of this: the tree is a map in memory, so even a bug here
-// cannot read or write a real file.
+// cannot read or write a real file. (A persistent tree saves its snapshot and
+// bytes through opaque storage keyed by ids, never by these paths.)
 func (v *VFS) Resolve(name string) (string, error) {
 	if len(name) > v.limits.MaxPathLen {
 		return "", pathErr("resolve", truncateForError(name), ErrPathTooLong)
@@ -621,8 +657,14 @@ func (v *VFS) Mkdir(name string, opt WriteOptions) (Node, error) {
 		return Node{}, pathErr("mkdir", clean, ErrExist)
 	}
 	v.mu.Lock()
-	defer v.mu.Unlock()
+	n, err := v.mkdirLocked(clean, opt)
+	v.mu.Unlock()
+	// A failed Mkdir with Parents may still have created some parents, so the
+	// save runs either way; it is a no-op when nothing changed.
+	return n, firstErr(err, v.persist(context.Background()))
+}
 
+func (v *VFS) mkdirLocked(clean string, opt WriteOptions) (Node, error) {
 	dirPath, base := split(clean)
 	parent, err := v.dirAt(dirPath)
 	if err != nil {
@@ -654,12 +696,21 @@ func (v *VFS) MkdirAll(name string, opt WriteOptions) (Node, error) {
 		return Node{}, err
 	}
 	v.mu.Lock()
-	defer v.mu.Unlock()
+	var n Node
 	d, err := v.mkdirAllLocked(clean, opt)
-	if err != nil {
-		return Node{}, err
+	if err == nil {
+		n = d.node()
 	}
-	return d.node(), nil
+	v.mu.Unlock()
+	return n, firstErr(err, v.persist(context.Background()))
+}
+
+// firstErr returns the operation's own error in preference to a save error.
+func firstErr(opErr, saveErr error) error {
+	if opErr != nil {
+		return opErr
+	}
+	return saveErr
 }
 
 func (v *VFS) mkdirAllLocked(clean string, opt WriteOptions) (*dirNode, error) {
@@ -700,6 +751,7 @@ func (v *VFS) newDirLocked(parent *dirNode, name string, opt WriteOptions) (*dir
 	parent.dirs[name] = d
 	parent.modTime = d.modTime
 	v.nodes++
+	v.changedLocked()
 	return d, nil
 }
 
@@ -752,12 +804,12 @@ func (v *VFS) Put(ctx context.Context, name string, r io.Reader, opt WriteOption
 	if err != nil {
 		return Node{}, pathErr("put", clean, err)
 	}
-	n, err := v.install(ctx, clean, ref, opt)
-	if err != nil {
+	n, installed, err := v.install(ctx, clean, ref, opt)
+	if !installed {
 		v.discard(ctx, ref)
 		return Node{}, err
 	}
-	return n, nil
+	return n, err
 }
 
 // PutBytes is Put for content already in memory.
@@ -783,7 +835,12 @@ func (v *VFS) store(ctx context.Context, base string, r io.Reader, opt WriteOpti
 
 // install puts the finished blob into the tree, replacing any previous file at
 // the same path and freeing its bytes.
-func (v *VFS) install(ctx context.Context, clean string, ref blob.Ref, opt WriteOptions) (Node, error) {
+//
+// installed reports whether the node went into the tree. When it did, the
+// blob belongs to the tree and must not be discarded by the caller, even if
+// err is set: a non-nil err then means the change is visible but the snapshot
+// recording it could not be saved.
+func (v *VFS) install(ctx context.Context, clean string, ref blob.Ref, opt WriteOptions) (n Node, installed bool, err error) {
 	dirPath, base := split(clean)
 
 	// Sniffing reads from the blob store, so it happens before the tree lock
@@ -797,17 +854,17 @@ func (v *VFS) install(ctx context.Context, clean string, ref blob.Ref, opt Write
 	parent, err := v.dirAt(dirPath)
 	if err != nil {
 		v.mu.Unlock()
-		return Node{}, pathErr("put", clean, err)
+		return Node{}, false, pathErr("put", clean, err)
 	}
 	if _, isDir := parent.dirs[base]; isDir {
 		v.mu.Unlock()
-		return Node{}, pathErr("put", clean, ErrIsDir)
+		return Node{}, false, pathErr("put", clean, ErrIsDir)
 	}
 	prev, replacing := parent.files[base]
 	if !replacing {
 		if err := v.roomForLocked(parent); err != nil {
 			v.mu.Unlock()
-			return Node{}, pathErr("put", clean, err)
+			return Node{}, false, pathErr("put", clean, err)
 		}
 		v.nodes++
 	}
@@ -822,8 +879,17 @@ func (v *VFS) install(ctx context.Context, clean string, ref blob.Ref, opt Write
 	f.ref.Filename = base
 	parent.files[base] = f
 	parent.modTime = f.modTime
-	n := f.node(parent)
+	n = f.node(parent)
+	v.changedLocked()
 	v.mu.Unlock()
+
+	// The snapshot naming the new bytes is saved before the old bytes go, so
+	// a crash in between leaves an orphan for the next sweep rather than a
+	// snapshot pointing at nothing. When the save fails the old bytes are
+	// kept for the same reason: the snapshot on disk still names them.
+	if err := v.persist(ctx); err != nil {
+		return n, true, err
+	}
 
 	// Freeing the replaced bytes happens outside the lock, and after the new
 	// node is visible, so no reader is ever pointed at a deleted blob. An
@@ -831,7 +897,7 @@ func (v *VFS) install(ctx context.Context, clean string, ref blob.Ref, opt Write
 	if replacing && prev.ref.ID != "" && prev.ref.ID != ref.ID {
 		v.discard(ctx, prev.ref)
 	}
-	return n, nil
+	return n, true, nil
 }
 
 // sniff decides a media type from the name, then from the first bytes.
@@ -937,8 +1003,12 @@ func (v *VFS) remove(ctx context.Context, name string, recursive bool) (Node, in
 		return Node{}, 0, pathErr(op, clean, ErrNotExist)
 	}
 	parent.modTime = v.now()
+	v.changedLocked()
 	v.mu.Unlock()
 
+	if err := v.persist(ctx); err != nil {
+		return removed, count, err
+	}
 	for _, ref := range refs {
 		v.discard(ctx, ref)
 	}
@@ -964,8 +1034,12 @@ func (v *VFS) Clear(ctx context.Context) (int, error) {
 	v.root.files = map[string]*fileNode{}
 	v.root.modTime = v.now()
 	v.nodes = 0
+	v.changedLocked()
 	v.mu.Unlock()
 
+	if err := v.persist(ctx); err != nil {
+		return count, err
+	}
 	for _, ref := range refs {
 		v.discard(ctx, ref)
 	}
@@ -1063,9 +1137,13 @@ func (v *VFS) Rename(ctx context.Context, oldName, newName string) (Node, error)
 	}
 	srcParent.modTime = v.now()
 	dstParent.modTime = v.now()
+	v.changedLocked()
 	n, err := v.nodeAt(newClean)
 	v.mu.Unlock()
 
+	if saveErr := v.persist(ctx); saveErr != nil {
+		return n, saveErr
+	}
 	if replaced.ID != "" {
 		v.discard(ctx, replaced)
 	}
@@ -1108,9 +1186,18 @@ func (v *VFS) Chtimes(name string, mtime time.Time) error {
 		mtime = v.now()
 	}
 	v.mu.Lock()
-	defer v.mu.Unlock()
+	err = v.chtimesLocked(clean, mtime)
+	v.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return v.persist(context.Background())
+}
+
+func (v *VFS) chtimesLocked(clean string, mtime time.Time) error {
 	if clean == "/" {
 		v.root.modTime = mtime
+		v.changedLocked()
 		return nil
 	}
 	dirPath, base := split(clean)
@@ -1120,10 +1207,12 @@ func (v *VFS) Chtimes(name string, mtime time.Time) error {
 	}
 	if d, ok := parent.dirs[base]; ok {
 		d.modTime = mtime
+		v.changedLocked()
 		return nil
 	}
 	if f, ok := parent.files[base]; ok {
 		f.modTime = mtime
+		v.changedLocked()
 		return nil
 	}
 	return pathErr("chtimes", clean, ErrNotExist)

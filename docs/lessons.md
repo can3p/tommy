@@ -99,6 +99,25 @@ second half here: only providers receive a `ProviderConfig`, so a
 plugin-level credential has to be configured *by* a provider, and a disabled
 provider therefore cannot cause one to exist.
 
+**"Persist it" has to know state from history.** The first persistence design
+sent every writer's blobs to the configured backend. State a plugin owns (the
+S3 catalog) is restored and so stays referenced; history it captured (a mail
+attachment) is not restored, so on disk it becomes garbage nothing will ever
+delete. The same line the separate stores drew in memory had to be drawn for
+durability, and it is safest drawn by construction — only a component that
+restores gets persistent storage — rather than by configuration.
+
+**Only the owner of data can collect its garbage, so give each owner its own
+namespace.** A sweep needs the live set, and only the plugin that restored a
+snapshot knows it. With one shared directory, a sweep by `s3` could not tell
+`files`' bytes from its own orphans, and running `tommy s3` alone would have
+deleted them. A directory per scope made the sweep both possible and safe.
+
+**A setting that silently does nothing is a defect.** `[storage.plugins.mail]
+backend = "filesystem"` parses, validates, and would have changed nothing;
+whoever wrote it would believe their mail survives a restart. Refuse, at
+startup, any setting that cannot take effect, and say why in the message.
+
 ## On the protocols
 
 **A vendor's own SDK is often a better source than its reference.** Resend's
@@ -577,6 +596,10 @@ is worth it for the same reason.
   `Content-Type` and `Content-Disposition`, so a stored `text/html` object
   rendered inline on the UI's origin. Any route that returns captured bytes
   forces `attachment` and a sandbox CSP, whatever the protocol claims.
+- A restart test must prove the old process is gone. `pkill -f` against an
+  absolute path never matches a process started as `./tommy`, so the "restarted"
+  server failed to bind while the original kept answering — and state appeared
+  to survive for the wrong reason. Keep the PID (`$!`) and `wait` on it.
 - A client's defaults can depend on the transport. AWS SDKs send upload
   checksums as `aws-chunked` trailers over HTTPS and as plain headers over HTTP,
   so a fake that works against the default SDK today can stop working when TLS

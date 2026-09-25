@@ -570,3 +570,96 @@ func TestS3SDKChecksumWhenRequiredWorkaroundLifecycle(t *testing.T) {
 	}
 	s3EventPayload(t, inst, tommys3.EventObjectDelete, 1, bucket, key)
 }
+
+// TestS3SDKStateSurvivesRestart is issue #40 as the AWS SDK sees it: objects,
+// their metadata and an unfinished multipart upload outlive a restart over
+// the same storage.path, and the upload can be completed afterwards. The
+// events that recorded the writes are not kept - persistence covers state a
+// plugin owns, never captured history.
+func TestS3SDKStateSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	boot := func() *testutil.Instance {
+		cfg := tommyconfig.Ephemeral()
+		cfg.Storage.Backend = tommyconfig.StorageFilesystem
+		cfg.Storage.Path = dir
+		cfg.SetProvider(tommys3.PluginName, s3http.ProviderName, tommyconfig.NewProviderConfig(map[string]any{"port": 0}))
+		return testutil.Start(t, cfg, tommys3.New(s3http.New()))
+	}
+	ctx := context.Background()
+	const bucket = "uploads"
+	part1 := bytes.Repeat([]byte("a"), 5<<20)
+	part2 := []byte("tail")
+
+	first := boot()
+	client := newS3Client(t, first)
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatalf("CreateBucket: %v", err)
+	}
+	if _, err := client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucket), Key: aws.String("users/1/avatar.png"),
+		Body: bytes.NewReader([]byte("png bytes")), ContentType: aws.String("image/png"),
+		Metadata: map[string]string{"owner": "user-1"},
+	}); err != nil {
+		t.Fatalf("PutObject: %v", err)
+	}
+	created, err := client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{Bucket: aws.String(bucket), Key: aws.String("big.bin")})
+	if err != nil {
+		t.Fatalf("CreateMultipartUpload: %v", err)
+	}
+	uploaded, err := client.UploadPart(ctx, &s3.UploadPartInput{
+		Bucket: aws.String(bucket), Key: aws.String("big.bin"), UploadId: created.UploadId,
+		PartNumber: aws.Int32(1), Body: bytes.NewReader(part1),
+	})
+	if err != nil {
+		t.Fatalf("UploadPart: %v", err)
+	}
+	first.Stop()
+
+	second := boot()
+	if events := second.Events(store.Query{Plugin: tommys3.PluginName}); len(events) != 0 {
+		t.Fatalf("%d s3 events after restart, want none: event history is not persisted", len(events))
+	}
+	client = newS3Client(t, second)
+	head, err := client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String("users/1/avatar.png")})
+	if err != nil {
+		t.Fatalf("HeadObject after restart: %v", err)
+	}
+	if aws.ToString(head.ContentType) != "image/png" || head.Metadata["owner"] != "user-1" {
+		t.Fatalf("after restart: content type %q, metadata %v", aws.ToString(head.ContentType), head.Metadata)
+	}
+	got, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String("users/1/avatar.png")})
+	if err != nil {
+		t.Fatalf("GetObject after restart: %v", err)
+	}
+	body, _ := io.ReadAll(got.Body)
+	_ = got.Body.Close()
+	if string(body) != "png bytes" {
+		t.Fatalf("body after restart = %q", body)
+	}
+
+	second2, err := client.UploadPart(ctx, &s3.UploadPartInput{
+		Bucket: aws.String(bucket), Key: aws.String("big.bin"), UploadId: created.UploadId,
+		PartNumber: aws.Int32(2), Body: bytes.NewReader(part2),
+	})
+	if err != nil {
+		t.Fatalf("UploadPart to an upload started before the restart: %v", err)
+	}
+	if _, err := client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+		Bucket: aws.String(bucket), Key: aws.String("big.bin"), UploadId: created.UploadId,
+		MultipartUpload: &types.CompletedMultipartUpload{Parts: []types.CompletedPart{
+			{PartNumber: aws.Int32(1), ETag: uploaded.ETag},
+			{PartNumber: aws.Int32(2), ETag: second2.ETag},
+		}},
+	}); err != nil {
+		t.Fatalf("CompleteMultipartUpload after restart: %v", err)
+	}
+	got, err = client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String("big.bin")})
+	if err != nil {
+		t.Fatalf("GetObject big.bin: %v", err)
+	}
+	body, _ = io.ReadAll(got.Body)
+	_ = got.Body.Close()
+	if !bytes.Equal(body, append(append([]byte{}, part1...), part2...)) {
+		t.Fatalf("completed object is %d bytes, want %d", len(body), len(part1)+len(part2))
+	}
+}

@@ -796,7 +796,7 @@ func mapStoreError(err error) s3Error {
 	case errors.Is(err, s3.ErrObjectTooLarge):
 		return s3Error{"EntityTooLarge", "Your proposed upload exceeds the maximum allowed object size.", stdhttp.StatusBadRequest, err, ""}
 	case errors.Is(err, s3.ErrBucketLimit), errors.Is(err, s3.ErrObjectLimit), errors.Is(err, s3.ErrUploadLimit), errors.Is(err, s3.ErrPartLimit), errors.Is(err, s3.ErrUploadBusy):
-		return s3Error{"ServiceUnavailable", "The configured in-memory S3 limit has been reached.", stdhttp.StatusServiceUnavailable, err, ""}
+		return s3Error{"ServiceUnavailable", "The configured S3 limit has been reached.", stdhttp.StatusServiceUnavailable, err, ""}
 	default:
 		return s3Error{"InternalError", "We encountered an internal error. Please try again.", stdhttp.StatusInternalServerError, err, ""}
 	}

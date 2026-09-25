@@ -13,7 +13,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/can3p/tommy/core/blob"
 	"github.com/can3p/tommy/core/config"
+	"github.com/can3p/tommy/core/state"
 )
 
 // Mux is the registration surface handed to plugins and providers.
@@ -37,6 +39,32 @@ type Plugin interface {
 	RegisterAPI(mux Mux, d Deps) // mounted under /api/v1/<name>/
 	RegisterUI(mux Mux, d Deps)  // mounted under /ui/<name>/
 	Templates() fs.FS            // embedded templates for the tab; nil is fine
+}
+
+// StorageBinder is an optional interface for a plugin or provider that owns
+// state of its own beyond the events it captures - the S3 catalog, the Files
+// tree. The server calls BindStorage once, before any listener binds, with the
+// storage resolved for that scope; an error aborts startup, so a snapshot that
+// cannot be restored is a complaint rather than a silent reset.
+//
+// Captured events are not state in this sense: they always live in the
+// in-memory event store, whatever storage is configured.
+type StorageBinder interface {
+	BindStorage(context.Context, Storage) error
+}
+
+// Storage is what a StorageBinder is given. It deliberately says nothing about
+// where the data lives: a plugin saves and loads opaque snapshots and stores
+// bytes, and the configured backend decides the rest.
+type Storage struct {
+	// State holds the scope's snapshots. It is nil when the scope is
+	// configured as memory: there is nothing to restore, and nothing a plugin
+	// saves would outlive the process, so it need not save at all.
+	State state.Store
+	// Blobs holds the scope's bytes. For a persistent scope it is the scope's
+	// own store, separate from the in-memory blob store that captured events
+	// use, and it implements blob.Lister so the owner can sweep orphans.
+	Blobs blob.BlobStore
 }
 
 // Provider imitates one vendor API or protocol.

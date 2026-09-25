@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -63,6 +64,9 @@ func (b *providerOptionBuilder) set(provider, flagName, key string, value any) {
 // match the shortcut's own convention (docs/implementation-plan.md §4), and
 // --enabled-providers has no equivalent on `serve` at all, since serve runs
 // every configured plugin's providers rather than picking from one plugin.
+// --persist and --storage are the CLI half of [storage] (core/config), and
+// are shared here rather than duplicated per shortcut so every one of them
+// gets the same persistence controls `tommy serve` has.
 type singlePluginFlags struct {
 	uiPort           int
 	apiPort          int
@@ -72,7 +76,21 @@ type singlePluginFlags struct {
 	logLevel         string
 	enabledProviders string
 	h2c              bool
+	persist          string
+	storage          []string
 }
+
+// persistHelp and storageHelp are shared verbatim between `tommy serve` and
+// every single-plugin shortcut's --persist / --storage flags, so the two
+// surfaces never drift into saying something different about what actually
+// persists.
+const (
+	persistHelp = "keep plugin state (S3 buckets/objects, the Files tree) on disk under PATH across restarts; " +
+		"captured events are never persisted. Shorthand for --storage global=filesystem with this path (same as TOMMY_PERSIST)"
+	storageHelp = "override the storage backend for one scope, repeatable: SCOPE is global, <plugin> or " +
+		"<plugin>/<provider>, e.g. --storage global=filesystem --storage s3=memory. Only plugin state (S3 " +
+		"buckets/objects, the Files tree) is affected; captured events always stay in memory"
+)
 
 // registerSinglePluginFlags wires the shared flag set onto cmd.
 func registerSinglePluginFlags(cmd *cobra.Command, f *singlePluginFlags) {
@@ -87,6 +105,78 @@ func registerSinglePluginFlags(cmd *cobra.Command, f *singlePluginFlags) {
 		"serve cleartext HTTP/2 (h2c) on the ingress alongside HTTP/1.1; --h2c=false disables it")
 	fl.StringVar(&f.enabledProviders, "enabled-providers", "",
 		"comma-separated providers to enable (default: every provider this plugin ships)")
+	fl.StringVar(&f.persist, "persist", "", persistHelp)
+	fl.StringArrayVar(&f.storage, "storage", nil, storageHelp)
+}
+
+// persistEnv is TOMMY_PERSIST, the environment-variable form of --persist -
+// the same env-over-TOML, flag-over-env precedent as TOMMY_S3_BUCKETS
+// (cmd/s3.go), because a container's default command is the one place a flag
+// cannot be added without shipping an altered image.
+const persistEnv = "TOMMY_PERSIST"
+
+// persistPathFromEnv reads TOMMY_PERSIST. An unset or blank value means
+// "unchanged" - unlike TOMMY_S3_BUCKETS, an empty TOMMY_PERSIST has no
+// sensible meaning of its own (there is no such thing as persisting to "").
+func persistPathFromEnv() (string, bool) {
+	raw, ok := os.LookupEnv(persistEnv)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return "", false
+	}
+	return raw, true
+}
+
+// applyPersistFlag applies --persist / TOMMY_PERSIST as shorthand for
+// storage.backend = "filesystem" plus storage.path = PATH, with the flag
+// beating the environment beating whatever cfg already carries (a TOML
+// file's [storage], or nothing for a single-plugin shortcut, which never
+// reads a config file at all). Called before any --storage override, so a
+// later --storage global=memory or a per-plugin override still wins for its
+// own scope.
+//
+// The path is made absolute here, against the working directory: a relative
+// storage.path in a file is read relative to that file, and a path typed on
+// the command line next to --config conf/tommy.toml must not silently land
+// under conf/.
+func applyPersistFlag(cfg *config.Config, flagValue string) error {
+	path := flagValue
+	if path == "" {
+		path, _ = persistPathFromEnv()
+	}
+	if path == "" {
+		return nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("--persist %q: %w", path, err)
+	}
+	cfg.Storage.Backend = config.StorageFilesystem
+	cfg.Storage.Path = abs
+	return nil
+}
+
+// applyStorageOverrides parses each --storage SCOPE=BACKEND entry and applies
+// it through config.SetStorageOverride. A missing '=' is caught here, naming
+// the flag, since that is a CLI-usage mistake rather than a config-shape one;
+// everything else (an unknown scope, an invalid backend name) is
+// SetStorageOverride's and config.Validate's job respectively, so the error
+// message is not duplicated in two places.
+func applyStorageOverrides(cfg *config.Config, entries []string) error {
+	for _, entry := range entries {
+		idx := strings.Index(entry, "=")
+		if idx < 0 {
+			return fmt.Errorf("--storage %q: expected SCOPE=BACKEND, e.g. global=filesystem, s3=memory, files/ftp=filesystem", entry)
+		}
+		scope := strings.TrimSpace(entry[:idx])
+		backend := strings.TrimSpace(entry[idx+1:])
+		if backend == "" {
+			return fmt.Errorf("--storage %q: missing BACKEND after '='", entry)
+		}
+		if err := cfg.SetStorageOverride(scope, config.StorageBackend(backend)); err != nil {
+			return fmt.Errorf("--storage %q: %w", entry, err)
+		}
+	}
+	return nil
 }
 
 // providerNames extracts the Name() of each provider, in order.
@@ -181,6 +271,13 @@ func singlePluginConfig(pluginName string, allProviders []string, f singlePlugin
 	// Unconditional: a shortcut builds its config from scratch, so there is no
 	// file value for the flag's default to clobber.
 	cfg.Ingress.H2C = config.Bool(f.h2c)
+
+	if err := applyPersistFlag(cfg, f.persist); err != nil {
+		return nil, err
+	}
+	if err := applyStorageOverrides(cfg, f.storage); err != nil {
+		return nil, err
+	}
 
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {

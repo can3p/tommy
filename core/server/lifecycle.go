@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	blobmem "github.com/can3p/tommy/core/blob/memory"
 	"github.com/can3p/tommy/core/config"
 	"github.com/can3p/tommy/core/event"
+	"github.com/can3p/tommy/core/persistence"
 	"github.com/can3p/tommy/core/plugin"
 	"github.com/can3p/tommy/core/server/api"
 	"github.com/can3p/tommy/core/server/ingress"
@@ -67,15 +69,16 @@ type Addrs struct {
 
 // Server is a running tommy.
 type Server struct {
-	opts    Options
-	cfg     *config.Config
-	log     *slog.Logger
-	reg     *plugin.Registry
-	store   store.Store
-	blobs   blob.BlobStore
-	ingress *ingress.Ingress
-	api     *api.API
-	ui      *ui.UI
+	opts        Options
+	cfg         *config.Config
+	log         *slog.Logger
+	reg         *plugin.Registry
+	store       store.Store
+	blobs       blob.BlobStore
+	persistence *persistence.Manager
+	ingress     *ingress.Ingress
+	api         *api.API
+	ui          *ui.UI
 
 	addrs   Addrs
 	snippet plugin.SnippetCtx
@@ -179,10 +182,18 @@ func New(opts Options) (*Server, error) {
 		}
 		s.store = storemem.New(cfg.Storage.Capacity, memOpts...)
 	}
-	s.blobs = opts.Blobs
-	if s.blobs == nil {
-		s.blobs = blobmem.New(cfg.Storage.BlobLimit.Bytes())
+	memoryBlobs := opts.Blobs
+	if memoryBlobs == nil {
+		memoryBlobs = blobmem.New(cfg.Storage.BlobLimit.Bytes())
 	}
+	storageConfig := cfg.Storage
+	storageConfig.Path = cfg.StoragePath()
+	persistenceManager, err := persistence.New(storageConfig, memoryBlobs)
+	if err != nil {
+		return nil, err
+	}
+	s.persistence = persistenceManager
+	s.blobs = persistenceManager.Blobs()
 
 	reg, err := plugin.New(cfg, opts.Plugins...)
 	if err != nil {
@@ -198,6 +209,9 @@ func New(opts Options) (*Server, error) {
 		NewID:     opts.NewID,
 		ConfigDir: configDir(cfg.Source),
 	}.Normalize()
+	if err := s.bindStorage(); err != nil {
+		return nil, err
+	}
 
 	if err := s.bind(); err != nil {
 		s.closeListeners()
@@ -210,6 +224,87 @@ func New(opts Options) (*Server, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// bindStorage hands every enabled stateful plugin and provider its storage,
+// letting it restore, before any listener binds - so a client never sees an
+// empty catalog that is about to fill, and a snapshot that cannot be restored
+// stops startup instead of being silently replaced.
+func (s *Server) bindStorage() error {
+	if err := validateStorageScopes(s.cfg.Storage, s.reg); err != nil {
+		return err
+	}
+	ctx := context.Background()
+	for _, p := range s.reg.Plugins() {
+		if binder, ok := p.(plugin.StorageBinder); ok {
+			st, err := s.persistence.Scope(p.Name(), "")
+			if err != nil {
+				return fmt.Errorf("plugin %s storage: %w", p.Name(), err)
+			}
+			if err := binder.BindStorage(ctx, st); err != nil {
+				return fmt.Errorf("plugin %s storage: %w", p.Name(), err)
+			}
+		}
+	}
+	for _, ref := range s.reg.Refs() {
+		if binder, ok := ref.Provider.(plugin.StorageBinder); ok {
+			st, err := s.persistence.Scope(ref.Plugin.Name(), ref.Provider.Name())
+			if err != nil {
+				return fmt.Errorf("provider %s/%s storage: %w", ref.Plugin.Name(), ref.Provider.Name(), err)
+			}
+			if err := binder.BindStorage(ctx, st); err != nil {
+				return fmt.Errorf("provider %s/%s storage: %w", ref.Plugin.Name(), ref.Provider.Name(), err)
+			}
+		}
+	}
+	return nil
+}
+
+// validateStorageScopes refuses an override that could not do anything: one
+// naming a plugin or provider this binary does not have, or one that keeps no
+// state of its own. The second matters most - [storage.plugins.mail] looks
+// like it persists captured mail, and silently ignoring it would let someone
+// believe their mail survives a restart. Disabled plugins are still checked,
+// so enabling one later does not reveal an old typo.
+func validateStorageScopes(cfg config.StorageConfig, reg *plugin.Registry) error {
+	var errs []error
+	for _, name := range sortedKeys(cfg.Plugins) {
+		scope := cfg.Plugins[name]
+		setting := "storage.plugins." + name
+		p, ok := reg.Plugin(name)
+		if !ok {
+			errs = append(errs, fmt.Errorf("%s: no plugin named %q", setting, name))
+			continue
+		}
+		if _, stateful := p.(plugin.StorageBinder); scope.Backend != "" && !stateful {
+			errs = append(errs, fmt.Errorf("%s: plugin %q keeps no state beyond its captured events, which are always held in memory, so a storage backend has no effect", setting, name))
+		}
+		providers := map[string]plugin.Provider{}
+		for _, prov := range p.Providers() {
+			providers[prov.Name()] = prov
+		}
+		for _, provName := range sortedKeys(scope.Providers) {
+			provSetting := setting + ".providers." + provName
+			prov, ok := providers[provName]
+			if !ok {
+				errs = append(errs, fmt.Errorf("%s: plugin %q has no provider named %q", provSetting, name, provName))
+				continue
+			}
+			if _, stateful := prov.(plugin.StorageBinder); !stateful {
+				errs = append(errs, fmt.Errorf("%s: provider %q keeps no state of its own (state %q shares, such as its catalog, belongs to the plugin and follows %s), so a storage backend has no effect", provSetting, provName, name, setting))
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // bind opens the core listeners and records the resolved addresses.

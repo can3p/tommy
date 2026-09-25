@@ -379,6 +379,77 @@ func TestTwilioFlagsLandInTwilioSection(t *testing.T) {
 	}
 }
 
+// TestSinglePluginConfigPersistFlagSetsFilesystemStorage checks that a
+// single-plugin shortcut's --persist behaves exactly like `tommy serve`'s: a
+// shorthand for storage.backend = "filesystem" plus storage.path = PATH, even
+// though a shortcut never reads a TOML file at all.
+func TestSinglePluginConfigPersistFlagSetsFilesystemStorage(t *testing.T) {
+	f := baseSinglePluginFlags()
+	f.persist = "/data/tommy"
+
+	cfg, err := singlePluginConfig(s3.PluginName, []string{s3http.ProviderName}, f, nil)
+	if err != nil {
+		t.Fatalf("singlePluginConfig: %v", err)
+	}
+	if cfg.Storage.Backend != config.StorageFilesystem {
+		t.Errorf("backend = %q, want %q", cfg.Storage.Backend, config.StorageFilesystem)
+	}
+	if cfg.Storage.Path != "/data/tommy" {
+		t.Errorf("path = %q, want /data/tommy", cfg.Storage.Path)
+	}
+}
+
+// TestSinglePluginConfigStorageOverrideWithPersist checks the same
+// --storage s3=memory plus --persist combination as the serve-level test,
+// through the shortcut's own config builder.
+func TestSinglePluginConfigStorageOverrideWithPersist(t *testing.T) {
+	f := baseSinglePluginFlags()
+	f.persist = "/data/tommy"
+	f.storage = []string{"s3=memory"}
+
+	cfg, err := singlePluginConfig(s3.PluginName, []string{s3http.ProviderName}, f, nil)
+	if err != nil {
+		t.Fatalf("singlePluginConfig: %v", err)
+	}
+	if got := cfg.Storage.BackendFor("s3", ""); got != config.StorageMemory {
+		t.Errorf("BackendFor(s3) = %q, want memory (the plugin override)", got)
+	}
+	if cfg.Storage.Backend != config.StorageFilesystem {
+		t.Errorf("global backend = %q, want filesystem from --persist", cfg.Storage.Backend)
+	}
+}
+
+// TestSinglePluginConfigPersistEnvApplies checks that TOMMY_PERSIST reaches a
+// single-plugin shortcut too, not only `tommy serve`.
+func TestSinglePluginConfigPersistEnvApplies(t *testing.T) {
+	t.Setenv(persistEnv, "/data/from-env")
+	f := baseSinglePluginFlags()
+
+	cfg, err := singlePluginConfig(s3.PluginName, []string{s3http.ProviderName}, f, nil)
+	if err != nil {
+		t.Fatalf("singlePluginConfig: %v", err)
+	}
+	if cfg.Storage.Backend != config.StorageFilesystem || cfg.Storage.Path != "/data/from-env" {
+		t.Errorf("storage = %+v, want filesystem at /data/from-env", cfg.Storage)
+	}
+}
+
+// TestSinglePluginConfigStorageMalformedErrors checks that a malformed
+// --storage value is rejected before a shortcut's config is built, naming
+// the flag rather than silently doing nothing.
+func TestSinglePluginConfigStorageMalformedErrors(t *testing.T) {
+	f := baseSinglePluginFlags()
+	f.storage = []string{"nope"}
+
+	_, err := singlePluginConfig(s3.PluginName, []string{s3http.ProviderName}, f, nil)
+	if err == nil {
+		t.Fatal("expected an error for a malformed --storage value")
+	}
+	if !strings.Contains(err.Error(), "--storage") {
+		t.Errorf("err = %v, want it to name --storage", err)
+	}
+}
+
 // TestSinglePluginCommandsRejectStrayArgs is the regression test for the
 // "tommy mail help" papercut: none of the single-plugin shortcuts, nor
 // serve, used to set Args, so cobra silently handed an unrecognized

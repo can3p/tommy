@@ -162,6 +162,83 @@ long as the same `/data` volume is attached — the fingerprint at
 docker rm -f tommy
 ```
 
+### Keeping S3 and Files data across restarts
+
+`/data` above already survives a restart — that is how the AS2 identity keeps
+its fingerprint. `TOMMY_PERSIST` puts a plugin's own state there too: today
+that means the S3 catalog and object bytes, and the Files tree. **Captured
+events (mail, sms, chat, ...) are not persisted** — they stay in memory for
+the life of the process, `TOMMY_PERSIST` or not. That is a deferred decision
+rather than a principle; `docs/implementation-plan.md` → *Deferred: persisting
+captured events* says why. `TOMMY_PERSIST` is shorthand for `[storage] backend
+= "filesystem"`, described in `docs/contracts.md`.
+
+```bash
+# ci: persist
+docker volume create tommy-persist-demo
+docker run -d --rm --name tommy-persist \
+  -p 8811:8811 -p 9000:9000 \
+  -e TOMMY_PERSIST=/data/tommy \
+  -v tommy-persist-demo:/data \
+  can3p/tommy:latest
+```
+
+Create a bucket and put an object in it — a plain `curl`, since tommy's S3
+provider accepts an unsigned request same as any other credentials (see
+`plugins/s3/providers/http/README.md`):
+
+```bash
+# ci: persist-write
+curl -s -X PUT http://127.0.0.1:9000/persisted
+curl -s -X PUT http://127.0.0.1:9000/persisted/hello.txt --data 'kept across restarts'
+```
+
+Recreate the container against the same volume. A plain restart would prove
+nothing, since the process never stopped — this is `docker rm -f` and a fresh
+`docker run`:
+
+```bash
+# ci: persist-restart
+docker rm -f tommy-persist
+docker run -d --rm --name tommy-persist \
+  -p 8811:8811 -p 9000:9000 \
+  -e TOMMY_PERSIST=/data/tommy \
+  -v tommy-persist-demo:/data \
+  can3p/tommy:latest
+```
+
+```bash
+# ci: persist-check
+curl -s http://127.0.0.1:9000/persisted/hello.txt
+echo
+curl -s "http://127.0.0.1:8811/api/v1/events?plugin=s3"
+```
+
+```
+kept across restarts
+[]
+```
+
+The object came back; the event that recorded its upload did not.
+
+```bash
+# ci: persist-down
+docker rm -f tommy-persist
+docker volume rm tommy-persist-demo
+```
+
+In compose, this is the commented `TOMMY_PERSIST` line in
+[`docker-compose.yml`](../docker-compose.yml) — uncomment it to keep the
+`tommy-data` volume's S3 and Files state across `docker compose up`/`down`.
+Compose reuses that named volume across every `up`, so `docker compose down`
+alone leaves it in place; `docker compose down -v` is what gives you a clean
+slate again.
+
+The same precedence as `TOMMY_S3_BUCKETS` applies: an explicit `--persist` (or
+`--storage SCOPE=BACKEND`, for overriding one plugin or provider rather than
+the whole default) on the command line wins over `TOMMY_PERSIST`, which wins
+over whatever a mounted config's own `[storage]` says.
+
 ### Create S3 buckets at startup
 
 Set `TOMMY_S3_BUCKETS` when a compose stack needs buckets before the application

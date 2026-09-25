@@ -454,10 +454,10 @@ func (f *File) CloseContext(ctx context.Context) error {
 	if err != nil {
 		return pathErr("close", f.path, err)
 	}
-	n, err := f.v.install(ctx, f.path, ref, opt)
-	if err != nil {
+	n, installed, saveErr := f.v.install(ctx, f.path, ref, opt)
+	if !installed {
 		f.v.discard(ctx, ref)
-		return err
+		return saveErr
 	}
 
 	f.mu.Lock()
@@ -465,10 +465,14 @@ func (f *File) CloseContext(ctx context.Context) error {
 	f.committed = true
 	f.mu.Unlock()
 
+	// A save failure does not undo the commit: the content is in the tree
+	// and the event still records it, but the caller is told it is not
+	// durable.
+	var commitErr error
 	if f.onCommit != nil {
-		return f.onCommit(ctx, n)
+		commitErr = f.onCommit(ctx, n)
 	}
-	return nil
+	return errors.Join(saveErr, commitErr)
 }
 
 // Abort closes the handle without committing, which is what an FTP transfer

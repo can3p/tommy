@@ -170,6 +170,90 @@ it and reuses its space. `core/blob/memory.New(limit int64)`; extras: `Used()`,
 Generic download route: `GET /api/v1/blobs/{id}` (range requests supported,
 `?inline=1` for an inline `Content-Disposition`).
 
+## Persistent plugin state — `core/state`, `core/persistence`
+
+**What persists, and what never does.** A plugin that owns state beyond the
+events it captures — today the `s3` catalog and the `files` tree — can keep it
+across restarts. **Captured events never persist**, whatever is configured:
+the event store and the core blob store that events write to are always in
+memory. Persisting events was deferred, not forgotten; the reasons and the
+prerequisites are in `docs/implementation-plan.md` → *Deferred: persisting
+captured events*.
+
+```go
+// core/state
+type Store interface {
+    Load(ctx context.Context, key string) ([]byte, error) // ErrNotFound if never saved
+    Save(ctx context.Context, key string, data []byte) error // atomic replace
+    Delete(ctx context.Context, key string) error
+}
+func NewFilesystem(dir string) *Filesystem // created on first Save
+func NewMemory() *Memory                   // tests only; never handed out
+
+// core/plugin
+type StorageBinder interface { BindStorage(context.Context, Storage) error }
+type Storage struct {
+    State state.Store    // nil for a memory scope: nothing to restore or save
+    Blobs blob.BlobStore // the scope's own store; a blob.Lister when persistent
+}
+
+// core/blob
+type Lister interface { List(ctx context.Context) ([]Ref, error) }
+func Sweep(ctx context.Context, s BlobStore, live map[string]struct{}) (int, error)
+```
+
+- **Plugins never see the layout.** They save and load opaque snapshots under
+  keys of their own (lowercase letters, digits, `.`, `-`, `_`; no leading dot)
+  and store bytes through `Storage.Blobs`. The backend decides the rest.
+- **Backends:** `memory` (the default everywhere, including the container
+  image) and `filesystem`. Resolution is provider override > plugin override >
+  global. The filesystem backend gives each scope its own directory:
+  `<storage.path>/plugins/<plugin>[/providers/<provider>]/{state,blobs}`.
+  Nothing is created until a scope first writes; a `storage.path` that exists
+  and is not a directory is a startup error.
+- **Shared state belongs to the plugin.** The `s3` catalog and `files` tree are
+  shared by every provider of their plugin, so they bind at the plugin scope
+  and a provider override cannot split them. No provider owns state today.
+- **Overrides that cannot take effect are refused at startup** — one naming an
+  unknown plugin or provider, or one that keeps no state. `[storage.plugins.mail]`
+  would otherwise look as if it kept captured mail.
+- **Lifecycle:** `server.New` calls `BindStorage` on every enabled binder —
+  plugins, then providers — *before any listener binds*. An error aborts
+  startup, so a snapshot that cannot be decoded, has an unknown version, or
+  names bytes that are missing is a complaint, never a silent reset. A binder
+  must be ready before any API, UI or ingress handler runs, and must make
+  `Storage.Blobs` the store its state uses — not whichever store some handler's
+  deps offered first. `s3` does it through `Attach` (the first attach wins, and
+  binding comes first); `files` replaces any earlier store outright, refusing
+  if its tree already has entries.
+- **Whole snapshots, versioned.** Each stateful plugin rewrites one snapshot
+  per logical change, carrying a version number; an unknown version stops
+  startup. This is deliberately simple — tommy is a development tool, and a
+  snapshot never grows past the plugin's own limits because each one replaces
+  the last. It is O(catalog) per write; if that ever matters, the `state.Store`
+  interface admits a journalling backend without changing a plugin.
+- **Concurrency.** A mutation bumps a revision under the plugin's own lock;
+  the save happens after the lock is released, serialised by a second mutex,
+  and always writes the newest revision — so no disk I/O runs under the
+  catalog lock, and a slow save can never overwrite a newer snapshot. Saves use
+  `context.WithoutCancel`, so a client that disconnects mid-request cannot
+  leave memory and disk diverged. A failed save is returned to the caller: the
+  change is visible in-process but not claimed durable.
+- **Crash ordering.** New bytes are written before the snapshot that names
+  them; replaced or deleted bytes are removed only after a snapshot that no
+  longer names them is saved. A crash can therefore leave unreferenced bytes,
+  never a reference to missing bytes. After restoring, the owner calls
+  `blob.Sweep` with its live set to reclaim them. Only the owner may sweep a
+  store, which is why each scope has its own: a sweep can never touch a plugin
+  that is not running this time.
+- **`storage.blob_limit` caps memory only.** Persistent bytes are bounded by
+  the owning plugin's limits (object count and size for `s3`, entry count and
+  file size for `files`), not by the core cap.
+- **The core blob route still serves persistent bytes.** `Server.Blobs()`
+  writes and deletes in memory, and reads fall through to every persistent
+  scope, because a captured `s3` event links to its object's blob. It never
+  deletes from a persistent store; those bytes belong to their plugin.
+
 ## `core/plugin`
 
 ```go
@@ -405,8 +489,12 @@ host = "localhost"   # hostname used in printed URLs and snippets
 
 [storage]
 capacity   = 500            # events retained per plugin
-blob_limit = "256MB"        # integer bytes or a string like "1.5GiB"
+blob_limit = "256MB"        # integer bytes or a string like "1.5GiB"; memory only
+backend    = "memory"       # or "filesystem": keeps plugin state, never events
+path       = "/data/tommy"  # required when any scope is "filesystem"
 # [storage.plugin_capacity]  mail = 2000
+# [storage.plugins.s3]                 backend = "memory"
+# [storage.plugins.s3.providers.http]  backend = "..."  (only for a provider with state)
 
 default_enabled = true      # what an unmentioned plugin/provider does
 
@@ -756,8 +844,9 @@ func (s *Server) Describe() ([]plugin.PluginInfo, error)
 func Run(ctx context.Context, opts Options) error
 ```
 
-`New` binds first, so `Addrs()` is valid before anything is served — that is
-what makes ephemeral ports usable. It fails when an ingress route collides or a
+`New` restores persistent plugin state (`BindStorage`, above) and then binds,
+so `Addrs()` is valid before anything is served — that is what makes ephemeral
+ports usable — and a failed restore leaves no port bound. It fails when an ingress route collides or a
 declared endpoint is unreachable. `Start` runs every HTTP listener plus every
 `ListenerProvider` in its own goroutine; `Shutdown` cancels their context,
 gracefully stops the HTTP servers, and waits (5s by default).
@@ -794,7 +883,9 @@ Returns resolved `UIURL`, `APIURL`, `IngressURL`, plus `Store`, `Blobs`,
 down through `t.Cleanup`.
 
 Helpers: `Get`, `GetBody`, `GetJSON`, `PostJSON`, `Do`, `Events(q)`,
-`WaitForEvents(n, q, timeout)`, and the URL builders `API`, `UI`, `Ingress`.
+`WaitForEvents(n, q, timeout)`, the URL builders `API`, `UI`, `Ingress`, and
+`Stop()`, which shuts the instance down before cleanup so a restart test can
+boot a second instance over the same `storage.path`.
 
 `core/testutil/fakeplugin` is a complete worked example — an HTTP provider, a
 TCP `ListenerProvider`, endpoints, snippets, a plugin API route and no UI (so it
@@ -814,6 +905,11 @@ exercises the generic view). Read it before writing a plugin.
   `--ftp-passive-ports`, `--mailjet-api-key`, …), contributed only when the flag
   was actually changed so an unset flag never overrides a provider default.
   Naming a provider that `--enabled-providers` excluded is an error.
+- Storage, on `serve` and every shortcut: `--persist PATH` (filesystem backend
+  rooted at PATH, made absolute against the working directory) and
+  `--storage SCOPE=BACKEND`, repeatable, SCOPE being `global`, `<plugin>` or
+  `<plugin>/<provider>`. `TOMMY_PERSIST=PATH` is `--persist` for a container's
+  default command. Precedence: flag > environment > config file.
 - Every command is `cobra.NoArgs`: a stray positional argument is rejected
   rather than ignored.
 

@@ -98,6 +98,18 @@ func Start(t testing.TB, cfg *config.Config, plugins ...plugin.Plugin) *Instance
 	}
 }
 
+// Stop shuts the instance down now rather than at cleanup, for a test that
+// restarts tommy over the same storage.path and must release it first. The
+// cleanup registered by Start still runs and is a no-op afterwards.
+func (i *Instance) Stop() {
+	i.TB.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := i.Server.Shutdown(ctx); err != nil {
+		i.TB.Errorf("testutil: stop: %v", err)
+	}
+}
+
 // Get performs a GET and returns the response. The body must be closed.
 func (i *Instance) Get(url string) *http.Response {
 	i.TB.Helper()
