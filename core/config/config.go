@@ -6,6 +6,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // Defaults.
@@ -41,6 +43,26 @@ type ListenerConfig struct {
 	H2C *bool `toml:"h2c"`
 }
 
+// StorageBackend says where a stateful plugin's own state is kept. It never
+// applies to captured events, which are always held in memory.
+type StorageBackend string
+
+const (
+	// StorageMemory keeps state for the life of the process. The default.
+	StorageMemory StorageBackend = "memory"
+	// StorageFilesystem keeps state under StorageConfig.Path, so it survives a
+	// restart.
+	StorageFilesystem StorageBackend = "filesystem"
+)
+
+// StorageScopeConfig is a `[storage.plugins.<name>]` override, and its nested
+// `[storage.plugins.<name>.providers.<provider>]` overrides. An empty Backend
+// inherits from the enclosing scope.
+type StorageScopeConfig struct {
+	Backend   StorageBackend
+	Providers map[string]StorageScopeConfig
+}
+
 // StorageConfig configures retention.
 type StorageConfig struct {
 	// Capacity is the number of events retained per plugin.
@@ -49,6 +71,14 @@ type StorageConfig struct {
 	PluginCapacity map[string]int
 	// BlobLimit caps the total bytes held by the blob store.
 	BlobLimit ByteSize
+	// Backend is the default for every stateful plugin and provider.
+	Backend StorageBackend
+	// Path is the root directory of the filesystem backend, required when
+	// any scope uses it. A relative path is resolved against the config
+	// file's directory; see Config.StoragePath.
+	Path string
+	// Plugins overrides Backend per plugin, and per provider within one.
+	Plugins map[string]StorageScopeConfig
 }
 
 // PluginConfig is one `[plugins.<name>]` section.
@@ -190,6 +220,12 @@ func (c *Config) ApplyDefaults() {
 	if c.Storage.BlobLimit == 0 {
 		c.Storage.BlobLimit = DefaultBlobLimit
 	}
+	if c.Storage.Backend == "" {
+		c.Storage.Backend = StorageMemory
+	}
+	if c.Storage.Plugins == nil {
+		c.Storage.Plugins = map[string]StorageScopeConfig{}
+	}
 	if c.DefaultEnabled == nil {
 		c.DefaultEnabled = Bool(true)
 	}
@@ -329,4 +365,83 @@ func (c *Config) CapacityFor(plugin string) int {
 		return n
 	}
 	return c.Storage.Capacity
+}
+
+// BackendFor resolves the backend for a plugin (provider == "") or one of its
+// providers: provider override, then plugin override, then the global default.
+func (s StorageConfig) BackendFor(plugin, provider string) StorageBackend {
+	backend := s.Backend
+	if override, ok := s.Plugins[plugin]; ok {
+		if override.Backend != "" {
+			backend = override.Backend
+		}
+		if providerOverride, ok := override.Providers[provider]; provider != "" && ok && providerOverride.Backend != "" {
+			backend = providerOverride.Backend
+		}
+	}
+	if backend == "" {
+		return StorageMemory
+	}
+	return backend
+}
+
+// UsesFilesystem reports whether any scope selects the filesystem backend,
+// which is what makes Path required.
+func (s StorageConfig) UsesFilesystem() bool {
+	if s.Backend == StorageFilesystem {
+		return true
+	}
+	for _, plugin := range s.Plugins {
+		if plugin.Backend == StorageFilesystem {
+			return true
+		}
+		for _, provider := range plugin.Providers {
+			if provider.Backend == StorageFilesystem {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// StoragePath is Storage.Path resolved against the directory of the config
+// file it came from, the way a relative path in any config file is read. A
+// path given on the command line has no file and stays relative to the
+// working directory.
+func (c *Config) StoragePath() string {
+	if c.Storage.Path == "" || filepath.IsAbs(c.Storage.Path) || c.Source == "" {
+		return c.Storage.Path
+	}
+	return filepath.Join(filepath.Dir(c.Source), c.Storage.Path)
+}
+
+// SetStorageOverride sets the backend for a scope named the way the command
+// line names it: "global" (or "") for the default, "<plugin>" or
+// "<plugin>/<provider>" for an override.
+func (c *Config) SetStorageOverride(scope string, backend StorageBackend) error {
+	scope = strings.TrimSpace(scope)
+	if scope == "" || scope == "global" {
+		c.Storage.Backend = backend
+		return nil
+	}
+	parts := strings.Split(scope, "/")
+	if len(parts) > 2 || parts[0] == "" || (len(parts) == 2 && parts[1] == "") {
+		return fmt.Errorf("storage: invalid override scope %q", scope)
+	}
+	if c.Storage.Plugins == nil {
+		c.Storage.Plugins = map[string]StorageScopeConfig{}
+	}
+	plugin := c.Storage.Plugins[parts[0]]
+	if len(parts) == 1 {
+		plugin.Backend = backend
+	} else {
+		if plugin.Providers == nil {
+			plugin.Providers = map[string]StorageScopeConfig{}
+		}
+		provider := plugin.Providers[parts[1]]
+		provider.Backend = backend
+		plugin.Providers[parts[1]] = provider
+	}
+	c.Storage.Plugins[parts[0]] = plugin
+	return nil
 }

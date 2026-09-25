@@ -391,3 +391,259 @@ func TestH2CRoundTripsThroughTOML(t *testing.T) {
 		t.Error("h2c = false did not survive a marshal/parse round trip")
 	}
 }
+
+const storageSample = `
+[ui]
+port = 8811
+
+[ingress]
+port = 8822
+
+[storage]
+backend = "filesystem"
+path = "/var/lib/tommy"
+
+[storage.plugins.s3]
+backend = "memory"
+
+[storage.plugins.mail]
+backend = "filesystem"
+
+[storage.plugins.mail.providers.smtp]
+backend = "memory"
+`
+
+func TestStorageParse(t *testing.T) {
+	c, err := config.Parse([]byte(storageSample))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if c.Storage.Backend != config.StorageFilesystem {
+		t.Errorf("storage.backend = %q, want %q", c.Storage.Backend, config.StorageFilesystem)
+	}
+	if c.Storage.Path != "/var/lib/tommy" {
+		t.Errorf("storage.path = %q", c.Storage.Path)
+	}
+	if got := c.Storage.BackendFor("s3", ""); got != config.StorageMemory {
+		t.Errorf("s3 backend = %q, want %q", got, config.StorageMemory)
+	}
+	if got := c.Storage.BackendFor("mail", ""); got != config.StorageFilesystem {
+		t.Errorf("mail backend = %q, want %q", got, config.StorageFilesystem)
+	}
+	if got := c.Storage.BackendFor("mail", "smtp"); got != config.StorageMemory {
+		t.Errorf("mail/smtp backend = %q, want %q", got, config.StorageMemory)
+	}
+	if got := c.Storage.BackendFor("mail", "mailjet"); got != config.StorageFilesystem {
+		t.Errorf("mail/mailjet (no override) backend = %q, want the plugin's %q", got, config.StorageFilesystem)
+	}
+	if got := c.Storage.BackendFor("files", ""); got != config.StorageFilesystem {
+		t.Errorf("unmentioned plugin backend = %q, want the global %q", got, config.StorageFilesystem)
+	}
+	if !c.Storage.UsesFilesystem() {
+		t.Error("UsesFilesystem should be true when the global backend is filesystem")
+	}
+}
+
+func TestStorageRoundTripsThroughTOML(t *testing.T) {
+	c, err := config.Parse([]byte(storageSample))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	data, err := c.Marshal()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	back, err := config.Parse(data)
+	if err != nil {
+		t.Fatalf("re-parse marshaled config: %v\n%s", err, data)
+	}
+	for _, tc := range []struct{ plugin, provider string }{
+		{"s3", ""}, {"mail", ""}, {"mail", "smtp"}, {"mail", "mailjet"}, {"files", ""},
+	} {
+		got, want := back.Storage.BackendFor(tc.plugin, tc.provider), c.Storage.BackendFor(tc.plugin, tc.provider)
+		if got != want {
+			t.Errorf("%s/%s: round-tripped backend = %q, want %q", tc.plugin, tc.provider, got, want)
+		}
+	}
+	if back.Storage.Path != c.Storage.Path {
+		t.Errorf("round-tripped path = %q, want %q", back.Storage.Path, c.Storage.Path)
+	}
+}
+
+func TestStorageProgrammaticMatchesTOML(t *testing.T) {
+	fromTOML, err := config.Parse([]byte(storageSample))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	built := &config.Config{
+		UI:      config.ListenerConfig{Port: config.Int(8811)},
+		Ingress: config.ListenerConfig{Port: config.Int(8822)},
+		Storage: config.StorageConfig{
+			Backend: config.StorageFilesystem,
+			Path:    "/var/lib/tommy",
+		},
+	}
+	built.ApplyDefaults()
+	if err := built.SetStorageOverride("s3", config.StorageMemory); err != nil {
+		t.Fatalf("set s3 override: %v", err)
+	}
+	if err := built.SetStorageOverride("mail", config.StorageFilesystem); err != nil {
+		t.Fatalf("set mail override: %v", err)
+	}
+	if err := built.SetStorageOverride("mail/smtp", config.StorageMemory); err != nil {
+		t.Fatalf("set mail/smtp override: %v", err)
+	}
+	if err := built.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	for _, tc := range []struct{ plugin, provider string }{
+		{"s3", ""}, {"mail", ""}, {"mail", "smtp"}, {"mail", "mailjet"},
+	} {
+		got, want := built.Storage.BackendFor(tc.plugin, tc.provider), fromTOML.Storage.BackendFor(tc.plugin, tc.provider)
+		if got != want {
+			t.Errorf("%s/%s: built backend = %q, toml backend = %q", tc.plugin, tc.provider, got, want)
+		}
+	}
+}
+
+func TestStorageDefaults(t *testing.T) {
+	c := config.Default()
+	if c.Storage.Backend != config.StorageMemory {
+		t.Errorf("default storage.backend = %q, want %q", c.Storage.Backend, config.StorageMemory)
+	}
+	if c.Storage.Path != "" {
+		t.Errorf("default storage.path = %q, want empty", c.Storage.Path)
+	}
+	if c.Storage.UsesFilesystem() {
+		t.Error("a default config must not use the filesystem backend")
+	}
+	if c.Storage.Plugins == nil {
+		t.Error("ApplyDefaults must initialize an empty Plugins map, not leave it nil")
+	}
+}
+
+func TestStorageValidationMessages(t *testing.T) {
+	tests := []struct {
+		name string
+		toml string
+		want string
+	}{
+		{
+			name: "unknown global backend",
+			toml: "[storage]\nbackend = \"bogus\"\n",
+			want: "storage.backend:",
+		},
+		{
+			name: "unknown plugin backend names the exact setting",
+			toml: "[storage.plugins.s3]\nbackend = \"bogus\"\n",
+			want: "storage.plugins.s3.backend:",
+		},
+		{
+			name: "unknown provider backend names the exact setting",
+			toml: "[storage.plugins.mail.providers.smtp]\nbackend = \"bogus\"\n",
+			want: "storage.plugins.mail.providers.smtp.backend:",
+		},
+		{
+			name: "filesystem anywhere without a path",
+			toml: "[storage]\nbackend = \"filesystem\"\n",
+			want: "storage.path:",
+		},
+		{
+			name: "filesystem on a plugin scope without a global path",
+			toml: "[storage.plugins.s3]\nbackend = \"filesystem\"\n",
+			want: "storage.path:",
+		},
+		{
+			name: "filesystem on a provider scope without a global path",
+			toml: "[storage.plugins.mail.providers.smtp]\nbackend = \"filesystem\"\n",
+			want: "storage.path:",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := config.Parse([]byte(tc.toml))
+			if err == nil {
+				t.Fatalf("expected an error containing %q", tc.want)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestStoragePath(t *testing.T) {
+	tests := []struct {
+		name   string
+		path   string
+		source string
+		want   string
+	}{
+		{"empty path stays empty", "", "/etc/tommy/tommy.toml", ""},
+		{"relative path with no source stays relative", "data", "", "data"},
+		{"relative path resolves against the config file's directory", "data", "/etc/tommy/tommy.toml", "/etc/tommy/data"},
+		{"absolute path is untouched even with a source", "/var/lib/tommy", "/etc/tommy/tommy.toml", "/var/lib/tommy"},
+		{"nested relative path resolves fully", "../data", "/etc/tommy/conf/tommy.toml", "/etc/tommy/data"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &config.Config{Storage: config.StorageConfig{Path: tc.path}, Source: tc.source}
+			if got := c.StoragePath(); got != tc.want {
+				t.Errorf("StoragePath() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSetStorageOverride(t *testing.T) {
+	t.Run("global via empty string", func(t *testing.T) {
+		c := &config.Config{}
+		if err := c.SetStorageOverride("", config.StorageFilesystem); err != nil {
+			t.Fatalf("set: %v", err)
+		}
+		if c.Storage.Backend != config.StorageFilesystem {
+			t.Errorf("global backend = %q", c.Storage.Backend)
+		}
+	})
+	t.Run("global via the word global", func(t *testing.T) {
+		c := &config.Config{}
+		if err := c.SetStorageOverride("global", config.StorageFilesystem); err != nil {
+			t.Fatalf("set: %v", err)
+		}
+		if c.Storage.Backend != config.StorageFilesystem {
+			t.Errorf("global backend = %q", c.Storage.Backend)
+		}
+	})
+	t.Run("plugin scope", func(t *testing.T) {
+		c := &config.Config{}
+		if err := c.SetStorageOverride("s3", config.StorageFilesystem); err != nil {
+			t.Fatalf("set: %v", err)
+		}
+		if got := c.Storage.Plugins["s3"].Backend; got != config.StorageFilesystem {
+			t.Errorf("plugins.s3.backend = %q", got)
+		}
+	})
+	t.Run("plugin/provider scope", func(t *testing.T) {
+		c := &config.Config{}
+		if err := c.SetStorageOverride("mail/smtp", config.StorageMemory); err != nil {
+			t.Fatalf("set: %v", err)
+		}
+		if got := c.Storage.Plugins["mail"].Providers["smtp"].Backend; got != config.StorageMemory {
+			t.Errorf("plugins.mail.providers.smtp.backend = %q", got)
+		}
+		// Setting a provider must not implicitly set the plugin's own backend.
+		if got := c.Storage.Plugins["mail"].Backend; got != "" {
+			t.Errorf("plugins.mail.backend = %q, want empty (unset)", got)
+		}
+	})
+	t.Run("malformed scopes are rejected", func(t *testing.T) {
+		for _, scope := range []string{"a/b/c", "/x", "x/", "//"} {
+			c := &config.Config{}
+			if err := c.SetStorageOverride(scope, config.StorageFilesystem); err == nil {
+				t.Errorf("SetStorageOverride(%q) succeeded, want an error", scope)
+			}
+		}
+	})
+}

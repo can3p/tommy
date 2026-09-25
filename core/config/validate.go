@@ -38,6 +38,33 @@ func (c *Config) Validate() error {
 	if c.Storage.BlobLimit <= 0 {
 		errs = append(errs, fmt.Errorf("storage: blob_limit must be > 0, got %s", c.Storage.BlobLimit))
 	}
+	validBackend := func(scope string, backend StorageBackend) {
+		if backend != StorageMemory && backend != StorageFilesystem {
+			errs = append(errs, fmt.Errorf("%s.backend: must be %q or %q, got %q", scope, StorageMemory, StorageFilesystem, backend))
+		}
+	}
+	validBackend("storage", c.Storage.Backend)
+	for plugin, scope := range c.Storage.Plugins {
+		if strings.TrimSpace(plugin) == "" {
+			errs = append(errs, errors.New("storage.plugins: empty plugin name"))
+			continue
+		}
+		if scope.Backend != "" {
+			validBackend("storage.plugins."+plugin, scope.Backend)
+		}
+		for provider, override := range scope.Providers {
+			if strings.TrimSpace(provider) == "" {
+				errs = append(errs, fmt.Errorf("storage.plugins.%s.providers: empty provider name", plugin))
+				continue
+			}
+			if override.Backend != "" {
+				validBackend("storage.plugins."+plugin+".providers."+provider, override.Backend)
+			}
+		}
+	}
+	if c.Storage.UsesFilesystem() && strings.TrimSpace(c.Storage.Path) == "" {
+		errs = append(errs, errors.New("storage.path: required when any storage backend is \"filesystem\""))
+	}
 
 	// Dedicated provider ports must not collide with each other or with a core
 	// listener. Port 0 is "ephemeral", so it never collides.

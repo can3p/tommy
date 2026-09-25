@@ -23,9 +23,21 @@ type wireConfig struct {
 }
 
 type wireStorage struct {
-	Capacity       int            `toml:"capacity"`
-	PluginCapacity map[string]int `toml:"plugin_capacity"`
-	BlobLimit      any            `toml:"blob_limit"`
+	Capacity       int                         `toml:"capacity"`
+	PluginCapacity map[string]int              `toml:"plugin_capacity"`
+	BlobLimit      any                         `toml:"blob_limit"`
+	Backend        StorageBackend              `toml:"backend"`
+	Path           string                      `toml:"path"`
+	Plugins        map[string]wireStorageScope `toml:"plugins"`
+}
+
+type wireStorageScope struct {
+	Backend   StorageBackend                      `toml:"backend"`
+	Providers map[string]wireStorageProviderScope `toml:"providers"`
+}
+
+type wireStorageProviderScope struct {
+	Backend StorageBackend `toml:"backend"`
 }
 
 type wirePlugin struct {
@@ -50,6 +62,9 @@ func Parse(data []byte) (*Config, error) {
 		Storage: StorageConfig{
 			Capacity:       w.Storage.Capacity,
 			PluginCapacity: w.Storage.PluginCapacity,
+			Backend:        w.Storage.Backend,
+			Path:           w.Storage.Path,
+			Plugins:        map[string]StorageScopeConfig{},
 		},
 		Plugins: map[string]PluginConfig{},
 	}
@@ -69,6 +84,14 @@ func Parse(data []byte) (*Config, error) {
 		c.Storage.BlobLimit = ByteSize(v)
 	default:
 		return nil, fmt.Errorf("storage.blob_limit: byte size must be an integer or a string like \"256MB\", got %T", v)
+	}
+
+	for name, ws := range w.Storage.Plugins {
+		scope := StorageScopeConfig{Backend: ws.Backend, Providers: map[string]StorageScopeConfig{}}
+		for provider, override := range ws.Providers {
+			scope.Providers[provider] = StorageScopeConfig{Backend: override.Backend}
+		}
+		c.Storage.Plugins[name] = scope
 	}
 
 	for name, wp := range w.Plugins {
@@ -99,9 +122,19 @@ func (c *Config) Marshal() ([]byte, error) {
 			Capacity:       c.Storage.Capacity,
 			PluginCapacity: c.Storage.PluginCapacity,
 			BlobLimit:      c.Storage.BlobLimit.String(),
+			Backend:        c.Storage.Backend,
+			Path:           c.Storage.Path,
+			Plugins:        map[string]wireStorageScope{},
 		},
 		DefaultEnabled: c.DefaultEnabled,
 		Plugins:        map[string]wirePlugin{},
+	}
+	for name, scope := range c.Storage.Plugins {
+		ws := wireStorageScope{Backend: scope.Backend, Providers: map[string]wireStorageProviderScope{}}
+		for provider, override := range scope.Providers {
+			ws.Providers[provider] = wireStorageProviderScope{Backend: override.Backend}
+		}
+		w.Storage.Plugins[name] = ws
 	}
 	for name, pc := range c.Plugins {
 		wp := wirePlugin{Enabled: pc.Enabled, Providers: map[string]map[string]any{}}
