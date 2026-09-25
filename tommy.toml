@@ -368,6 +368,8 @@ enabled = true
 # credentials and SigV4 signature are accepted and recorded, never verified.
 enabled = true
 port = 9000               # the provider's own listener, not the shared ingress. CLI: --s3-port
+# buckets = ["media", "exports"]  # created before the listener accepts requests, without
+                                    # emitting events. CLI: --s3-buckets; env: TOMMY_S3_BUCKETS
 #
 # The rest are tuning knobs nobody needs to flip per test run, so they stay
 # file-only (no CLI flag):

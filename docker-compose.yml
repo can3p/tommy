@@ -24,6 +24,10 @@ services:
     # Overriding `command` is how you lose --bind 0.0.0.0 and make every
     # published port answer nothing - narrow tommy through the mounted config
     # below instead.
+    #
+    # Pre-create S3 buckets without an init container by uncommenting:
+    # environment:
+    #   TOMMY_S3_BUCKETS: media,exports
 
     ports:
       # Every port a default tommy listens on. The list comes from

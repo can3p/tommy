@@ -53,6 +53,8 @@ SDK clients must use path-style addressing. With AWS SDK for Go v2, set `BaseEnd
 
 The provider inherits the top-level `bind` value. It listens on TCP port 9000 by default; `port = 0` asks the operating system for an ephemeral test port.
 
+`buckets = ["media", "exports"]` creates those buckets before the listener accepts requests. Existing buckets are left alone, so the setting is safe across restarts; a bucket deleted at runtime is created again on the next start. Configuration creates state directly and emits no `s3.bucket.create` events. The shortcut flag is `tommy s3 --s3-buckets media,exports`. `TOMMY_S3_BUCKETS=media,exports` provides the same setting to `tommy serve` and container deployments; the environment overrides TOML, while the shortcut flag overrides the environment. An explicitly empty environment value clears a TOML list.
+
 All additional settings are optional and belong under `[plugins.s3.providers.http]`: catalogue and request limits (`max_buckets`, `max_objects`, `max_active_uploads`, `max_parts`, `max_bucket_bytes`, `max_key_bytes`, `max_metadata_bytes`, `max_object_bytes`, `max_xml_bytes`, `max_header_bytes`) and timeout values in seconds (`read_header_timeout`, `read_timeout`, `write_timeout`, `idle_timeout`, `shutdown_timeout`). The default maximum object size is 64 MiB.
 
 The wire server accepts unsigned requests and arbitrary SigV4 credentials. It validates payload checksums when `Content-MD5` or an `x-amz-checksum-*` header is present. AWS's encoded `aws-chunked` streaming framing is rejected with an S3-shaped `NotImplemented` response rather than being stored as object data.

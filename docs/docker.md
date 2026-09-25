@@ -162,6 +162,28 @@ long as the same `/data` volume is attached — the fingerprint at
 docker rm -f tommy
 ```
 
+### Create S3 buckets at startup
+
+Set `TOMMY_S3_BUCKETS` when a compose stack needs buckets before the application
+starts. The binary reads it directly, so the image's distroless base needs no
+shell or entrypoint wrapper:
+
+```bash
+docker run -d --rm --name tommy-s3 \
+  -p 8811:8811 -p 9000:9000 \
+  -e TOMMY_S3_BUCKETS=media,exports \
+  can3p/tommy:latest
+export AWS_ACCESS_KEY_ID=tommy AWS_SECRET_ACCESS_KEY=tommy AWS_DEFAULT_REGION=us-east-1
+aws --endpoint-url http://127.0.0.1:9000 s3api head-bucket --bucket media
+docker rm -f tommy-s3
+```
+
+The same value in compose is `environment: { TOMMY_S3_BUCKETS: media,exports }`.
+Configured buckets produce no create events, and deleting one only removes it
+until the next container start. Mount a config and set
+`[plugins.s3.providers.http] buckets = [...]` instead when an environment
+variable is not convenient; the environment wins when both are present.
+
 ### Narrow it to one plugin
 
 The image ships the repository's `tommy.toml`, so narrowing is one read-only

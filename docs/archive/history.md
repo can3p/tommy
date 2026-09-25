@@ -1187,6 +1187,23 @@ records the access key, region and signed headers, but checking signatures is
 policy. Reads are not events: the plugin captures what was sent, and a GET
 sends nothing.
 
+## S3 startup buckets
+
+**Built:** an optional `buckets` list for the S3 HTTP provider, the matching
+`tommy s3 --s3-buckets` flag, and `TOMMY_S3_BUCKETS` for `serve` and the
+container image. The provider validates the complete list and creates missing
+buckets before it binds, so readiness means the application can upload without
+an init container. Existing buckets make restart idempotent, while deleting one
+at runtime still causes configuration to recreate it on the next start.
+
+**Configuration is not application activity.** Startup buckets go straight
+through the catalog rather than the event-producing session. The official AWS
+SDK integration test verifies that `HeadBucket` and `ListBuckets` see them while
+the S3 event stream remains empty. Environment handling stayed deliberately
+narrow: tommy has no general environment configuration system, and adding one
+for a single comma-separated setting would have made this small feature own an
+unrelated configuration framework.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project
