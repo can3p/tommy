@@ -13,6 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/can3p/tommy/core/state"
+
 	"github.com/can3p/tommy/core/blob"
 	blobmem "github.com/can3p/tommy/core/blob/memory"
 	"github.com/can3p/tommy/core/event"
@@ -226,6 +228,11 @@ type Store struct {
 	blobMu   sync.RWMutex
 	blobs    blob.BlobStore
 	attached bool
+
+	state     state.Store
+	persistMu sync.Mutex
+	revision  uint64
+	persisted uint64
 }
 
 // Option configures a Store.
@@ -313,16 +320,20 @@ func (s *Store) CreateBucket(name string) (Bucket, error) {
 		return Bucket{}, err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if _, ok := s.buckets[name]; ok {
+		s.mu.Unlock()
 		return Bucket{}, fmt.Errorf("%w: %s", ErrBucketExists, name)
 	}
 	if len(s.buckets) >= s.limits.MaxBuckets {
+		s.mu.Unlock()
 		return Bucket{}, ErrBucketLimit
 	}
 	created := s.now()
 	s.buckets[name] = &bucketState{created: created, objects: map[string]Object{}}
-	return Bucket{Name: name, CreationTime: created}, nil
+	s.changed()
+	s.mu.Unlock()
+	bucket := Bucket{Name: name, CreationTime: created}
+	return bucket, s.persist(context.Background())
 }
 
 func (s *Store) HeadBucket(name string) (Bucket, error) {
@@ -392,7 +403,11 @@ func (s *Store) DeleteBucket(ctx context.Context, name string, force bool) (Buck
 		delete(s.uploads, up.ID)
 	}
 	delete(s.buckets, name)
+	s.changed()
 	s.mu.Unlock()
+	if err := s.persist(ctx); err != nil {
+		return removed, err
+	}
 	s.discardAll(ctx, refs)
 	return removed, nil
 }
@@ -427,7 +442,11 @@ func (s *Store) ClearBucket(ctx context.Context, name string) (int, error) {
 		}
 		delete(s.uploads, id)
 	}
+	s.changed()
 	s.mu.Unlock()
+	if err := s.persist(ctx); err != nil {
+		return count, err
+	}
 	s.discardAll(ctx, refs)
 	return count, nil
 }
@@ -510,7 +529,11 @@ func (s *Store) PutObject(ctx context.Context, bucket, key string, r io.Reader, 
 	if !replacing {
 		s.objects++
 	}
+	s.changed()
 	s.mu.Unlock()
+	if err := s.persist(ctx); err != nil {
+		return cloneObject(obj), err
+	}
 	if replacing && prev.Blob.ID != ref.ID {
 		s.discard(ctx, prev.Blob)
 	}
@@ -547,7 +570,11 @@ func (s *Store) DeleteObject(ctx context.Context, bucket, key string) (Object, b
 	}
 	delete(b.objects, key)
 	s.objects--
+	s.changed()
 	s.mu.Unlock()
+	if err := s.persist(ctx); err != nil {
+		return cloneObject(obj), true, err
+	}
 	s.discard(ctx, obj.Blob)
 	return cloneObject(obj), true, nil
 }
@@ -579,7 +606,13 @@ func (s *Store) DeleteObjects(ctx context.Context, bucket string, keys []string)
 			s.objects--
 		}
 	}
+	if len(removed) > 0 {
+		s.changed()
+	}
 	s.mu.Unlock()
+	if err := s.persist(ctx); err != nil {
+		return removed, err
+	}
 	refs := make([]blob.Ref, len(removed))
 	for i := range removed {
 		refs[i] = removed[i].Blob
@@ -667,11 +700,12 @@ func (s *Store) CreateMultipart(bucket, key string, opts PutOptions) (MultipartU
 		return MultipartUpload{}, err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if _, ok := s.buckets[bucket]; !ok {
+		s.mu.Unlock()
 		return MultipartUpload{}, fmt.Errorf("%w: %s", ErrBucketNotFound, bucket)
 	}
 	if len(s.uploads) >= s.limits.MaxActiveUploads {
+		s.mu.Unlock()
 		return MultipartUpload{}, ErrUploadLimit
 	}
 	id := s.newID()
@@ -680,7 +714,9 @@ func (s *Store) CreateMultipart(bucket, key string, opts PutOptions) (MultipartU
 	}
 	up := MultipartUpload{ID: id, Bucket: bucket, Key: key, Initiated: s.now()}
 	s.uploads[id] = &uploadState{MultipartUpload: up, opts: clonePutOptions(opts), parts: map[int]Part{}}
-	return up, nil
+	s.changed()
+	s.mu.Unlock()
+	return up, s.persist(context.Background())
 }
 
 func (s *Store) ListMultipartUploads(bucket string) ([]MultipartUpload, error) {
@@ -758,7 +794,11 @@ func (s *Store) PutPart(ctx context.Context, uploadID string, number int, r io.R
 		return Part{}, ErrObjectTooLarge
 	}
 	up.parts[number] = part
+	s.changed()
 	s.mu.Unlock()
+	if err := s.persist(ctx); err != nil {
+		return part, err
+	}
 	if replacing && prev.Blob.ID != ref.ID {
 		s.discard(ctx, prev.Blob)
 	}
@@ -857,7 +897,11 @@ func (s *Store) CompleteMultipart(ctx context.Context, uploadID string, complete
 		s.objects++
 	}
 	delete(s.uploads, uploadID)
+	s.changed()
 	s.mu.Unlock()
+	if err := s.persist(ctx); err != nil {
+		return cloneObject(obj), err
+	}
 
 	refs := make([]blob.Ref, 0, len(parts)+1)
 	for _, part := range up.parts {
@@ -931,7 +975,11 @@ func (s *Store) AbortMultipart(ctx context.Context, uploadID string) error {
 	for _, part := range up.parts {
 		refs = append(refs, part.Blob)
 	}
+	s.changed()
 	s.mu.Unlock()
+	if err := s.persist(ctx); err != nil {
+		return err
+	}
 	s.discardAll(ctx, refs)
 	return nil
 }

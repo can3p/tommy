@@ -1,8 +1,14 @@
-// Package s3 is tommy's shared in-memory S3 state and logical event model.
-// Object bytes live in the core blob store, independently of event retention.
+// Package s3 is tommy's shared S3 state and logical event model.
+//
+// The catalog is held in memory and, when the plugin's storage is the
+// filesystem backend, saved after every change and restored on start (see
+// persistence.go). Object bytes live in the plugin's own blob store,
+// independently of event retention; the events themselves are never kept
+// across a restart.
 package s3
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 
@@ -55,11 +61,19 @@ func NewWithStore(store *Store, providers ...plugin.Provider) *Plugin {
 
 func (p *Plugin) Store() *Store { return p.store }
 
+// BindStorage gives the shared catalog its storage and restores it. It runs
+// before any provider serves, so the catalog's bytes go to the plugin's own
+// scope rather than to whichever deps first reach Attach.
+func (p *Plugin) BindStorage(ctx context.Context, st plugin.Storage) error {
+	p.store.Attach(st.Blobs)
+	return p.store.BindState(ctx, st.State)
+}
+
 func (p *Plugin) Name() string  { return PluginName }
 func (p *Plugin) Title() string { return "S3" }
 func (p *Plugin) Description() string {
 	return "Accepts S3-compatible bucket and object operations without sending data to cloud storage, and keeps the resulting object catalog available for inspection. " +
-		"Logical bucket and object mutations are also captured as searchable events while object bytes remain in the independent blob store."
+		"Logical bucket and object mutations are also captured as searchable events, while the catalog and its bytes can be kept across restarts with filesystem storage."
 }
 
 func (p *Plugin) Providers() []plugin.Provider {

@@ -5,8 +5,9 @@
 Tommy's stand-in for Amazon S3, or any object store that speaks the same
 wire protocol — MinIO, Ceph RGW, Cloudflare R2, a self-hosted Garage. It
 accepts bucket and object operations over a real S3-compatible HTTP API and
-keeps them in an in-memory catalog you can browse, download from and assert
-against. Every bucket create/delete and object put/copy/delete is also
+keeps them in a catalog you can browse, download from and assert against —
+in memory by default, or on disk so buckets and objects survive a restart
+(see [Persistence](#persistence)). Every bucket create/delete and object put/copy/delete is also
 recorded as an event, so **the catalog shows what is there now and the log
 shows how it got that way** — the same split `files` makes between its tree
 and its event log.
@@ -97,7 +98,7 @@ nothing.
 
 ## API
 
-Mounted under `/api/v1/s3/`, reading from the shared in-memory catalog
+Mounted under `/api/v1/s3/`, reading from the shared catalog
 rather than the event log — so a client that writes an object and then reads
 it back through the API sees its own write immediately, even if the write's
 event has since scrolled out of the ring buffer.

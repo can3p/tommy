@@ -133,7 +133,7 @@ func (p *Provider) Name() string   { return ProviderName }
 func (p *Provider) Plugin() string { return s3.PluginName }
 func (p *Provider) Description() string {
 	return "A dedicated path-style S3-compatible HTTP server for local SDK and transfer-manager traffic. " +
-		"It keeps buckets, objects, metadata, checksums and multipart uploads in the shared in-memory S3 catalog and captures successful mutations as inspectable events."
+		"It keeps buckets, objects, metadata, checksums and multipart uploads in the shared S3 catalog and captures successful mutations as inspectable events."
 }
 func (p *Provider) Endpoints() []plugin.Endpoint            { return nil }
 func (p *Provider) RegisterIngress(plugin.Mux, plugin.Deps) {}
