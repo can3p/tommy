@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/can3p/tommy/core/config"
 	"github.com/can3p/tommy/plugins/all"
 	"github.com/can3p/tommy/plugins/s3"
 	s3http "github.com/can3p/tommy/plugins/s3/providers/http"
@@ -24,6 +25,8 @@ func resetFlags(t *testing.T) {
 	serveFlags.bind = ""
 	serveFlags.host = ""
 	serveFlags.logLevel = "info"
+	serveFlags.persist = ""
+	serveFlags.storage = nil
 }
 
 func writeConfig(t *testing.T, body string) string {
@@ -148,6 +151,150 @@ func TestEmptyS3BucketsEnvironmentClearsTOML(t *testing.T) {
 	}
 	if len(loaded.Buckets) != 0 {
 		t.Fatalf("buckets = %q, want explicit empty override", loaded.Buckets)
+	}
+}
+
+// TestPersistFlagSetsFilesystemStorage checks that --persist is shorthand for
+// storage.backend = "filesystem" plus storage.path = PATH.
+func TestPersistFlagSetsFilesystemStorage(t *testing.T) {
+	resetFlags(t)
+	serveFlags.persist = "/data/tommy"
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.Storage.Backend != config.StorageFilesystem {
+		t.Errorf("backend = %q, want %q", cfg.Storage.Backend, config.StorageFilesystem)
+	}
+	if cfg.Storage.Path != "/data/tommy" {
+		t.Errorf("path = %q, want /data/tommy", cfg.Storage.Path)
+	}
+}
+
+// TestPersistEnvOverlaysServe checks that TOMMY_PERSIST does what --persist
+// does when the flag itself was never given.
+func TestPersistEnvOverlaysServe(t *testing.T) {
+	resetFlags(t)
+	t.Setenv(persistEnv, "/data/from-env")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.Storage.Backend != config.StorageFilesystem || cfg.Storage.Path != "/data/from-env" {
+		t.Errorf("storage = %+v, want filesystem at /data/from-env", cfg.Storage)
+	}
+}
+
+// TestPersistFlagBeatsEnv checks the documented precedence: an explicit
+// --persist wins over TOMMY_PERSIST.
+func TestPersistFlagBeatsEnv(t *testing.T) {
+	resetFlags(t)
+	t.Setenv(persistEnv, "/data/from-env")
+	serveFlags.persist = "/data/from-flag"
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.Storage.Path != "/data/from-flag" {
+		t.Errorf("path = %q, want the flag's value to win over the environment", cfg.Storage.Path)
+	}
+}
+
+// TestStorageTOMLRetainedWithoutPersistOrEnv checks that neither --persist
+// nor TOMMY_PERSIST clobbers a TOML file's own [storage] when neither is
+// given.
+func TestStorageTOMLRetainedWithoutPersistOrEnv(t *testing.T) {
+	resetFlags(t)
+	unsetEnv(t, persistEnv)
+	serveFlags.configPath = writeConfig(t, "[storage]\nbackend = \"filesystem\"\npath = \"from-toml\"\n")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.Storage.Backend != config.StorageFilesystem || cfg.Storage.Path != "from-toml" {
+		t.Errorf("storage = %+v, want the TOML file's own filesystem/from-toml untouched", cfg.Storage)
+	}
+}
+
+// TestStorageFlagOverridesScope checks that --storage s3=memory combined with
+// --persist produces a global filesystem backend with a plugin-scoped
+// override back to memory for s3 - the combination the task description
+// calls out explicitly.
+func TestStorageFlagOverridesScope(t *testing.T) {
+	resetFlags(t)
+	serveFlags.persist = "/data/tommy"
+	serveFlags.storage = []string{"s3=memory"}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.Storage.Backend != config.StorageFilesystem {
+		t.Errorf("global backend = %q, want filesystem from --persist", cfg.Storage.Backend)
+	}
+	if got := cfg.Storage.Plugins["s3"].Backend; got != config.StorageMemory {
+		t.Errorf("s3 override = %q, want memory", got)
+	}
+	if got := cfg.Storage.BackendFor("s3", ""); got != config.StorageMemory {
+		t.Errorf("BackendFor(s3) = %q, want memory", got)
+	}
+	if got := cfg.Storage.BackendFor("files", ""); got != config.StorageFilesystem {
+		t.Errorf("BackendFor(files) = %q, want filesystem (the global default)", got)
+	}
+}
+
+// TestStorageFlagMalformedErrors checks that a --storage value with no '='
+// is rejected with a clear error naming the flag, rather than silently doing
+// nothing or panicking.
+func TestStorageFlagMalformedErrors(t *testing.T) {
+	resetFlags(t)
+	serveFlags.storage = []string{"s3-memory"}
+
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("expected an error for a malformed --storage value")
+	}
+	if !strings.Contains(err.Error(), "--storage") || !strings.Contains(err.Error(), "s3-memory") {
+		t.Errorf("err = %v, want it to name --storage and the bad value", err)
+	}
+}
+
+// TestStorageFlagUnknownScopeErrors checks that an invalid scope shape (more
+// than one '/') is reported, proving the CLI actually reaches
+// config.SetStorageOverride rather than swallowing its error.
+func TestStorageFlagUnknownScopeErrors(t *testing.T) {
+	resetFlags(t)
+	serveFlags.storage = []string{"a/b/c=filesystem"}
+
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("expected an error for an invalid override scope")
+	}
+}
+
+// TestPersistRelativePathStaysCwdRelative checks that a relative --persist
+// path is left alone when the config was never loaded from a file - see
+// Config.StoragePath, which only resolves a relative path against a config
+// file's own directory.
+// A relative path typed on the command line is relative to where the command
+// ran, even beside --config: only a path written in the file is read relative
+// to the file.
+func TestPersistRelativePathIsWorkingDirectoryRelative(t *testing.T) {
+	resetFlags(t)
+	serveFlags.configPath = writeConfig(t, "")
+	serveFlags.persist = "relative/tommy-data"
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	want, _ := filepath.Abs("relative/tommy-data")
+	if got := cfg.StoragePath(); got != want {
+		t.Errorf("StoragePath() = %q, want %q (working-directory relative, not config-relative)", got, want)
 	}
 }
 

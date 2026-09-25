@@ -28,6 +28,9 @@ services:
     # Pre-create S3 buckets without an init container by uncommenting:
     # environment:
     #   TOMMY_S3_BUCKETS: media,exports
+    #   TOMMY_PERSIST: /data/tommy   # keep S3 and Files state on the volume above,
+    #                                # across `docker compose up`/`down` (not `-v`).
+    #                                # Captured events are still in-memory only.
 
     ports:
       # Every port a default tommy listens on. The list comes from
@@ -51,8 +54,10 @@ services:
 
     volumes:
       # Everything tommy generates rather than captures: the AS2 identity a
-      # partner imports, and the SSH host key an sftp client pins. Captured
-      # events and blobs are in memory by design and are not here.
+      # partner imports, and the SSH host key an sftp client pins. With
+      # TOMMY_PERSIST set above, the S3 catalog/objects and the Files tree
+      # land here too, under /data/tommy. Captured events (mail, sms, ...)
+      # are always in memory and never land on this volume.
       - tommy-data:/data
       # Read-only on purpose: tommy never writes its configuration.
       - ./docker/tommy.toml:/etc/tommy/tommy.toml:ro

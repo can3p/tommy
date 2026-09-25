@@ -87,6 +87,28 @@ blob_limit = "256MiB"
 # mail = 2000
 # sms  = 1000
 
+# Where a *stateful* plugin's own state lives - today the S3 catalog and its
+# object bytes, and the Files tree. Captured events are never covered: they
+# always stay in memory.
+#
+# "memory" (the default) keeps that state for the life of the process;
+# "filesystem" keeps it under `path`, so it survives a restart. CLI: --persist
+# PATH sets both (TOMMY_PERSIST=PATH in a container); --storage SCOPE=BACKEND
+# sets one scope's backend.
+# backend = "memory"
+
+# Root directory for the filesystem backend, required whenever any scope uses
+# it. A relative path is read relative to this file's own directory.
+# path = "/data/tommy"
+
+# Per-plugin overrides of `backend`, e.g. keep S3 on disk but Files in memory.
+# A [storage.plugins.<name>.providers.<provider>] section overrides one
+# provider, which only means something for a provider with state of its own -
+# none has any today. An override that could not take effect (a plugin with no
+# state, an unknown name) is rejected at startup. CLI: --storage s3=memory.
+# [storage.plugins.s3]
+# backend = "memory"
+
 # What a plugin or provider does when its own [plugins.<x>] or
 # [plugins.<x>.providers.<y>] section is missing, or present with no `enabled`
 # key of its own. true (the default, shown here) means "unmentioned means

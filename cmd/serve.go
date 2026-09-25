@@ -30,6 +30,8 @@ var serveFlags struct {
 	logLevel    string
 	h2c         bool
 	as2CertDir  string
+	persist     string
+	storage     []string
 }
 
 var serveCmd = &cobra.Command{
@@ -152,6 +154,13 @@ func loadConfig() (*config.Config, error) {
 		setProviderOption(cfg, s3.PluginName, s3http.ProviderName, "buckets", buckets)
 	}
 
+	if err := applyPersistFlag(cfg, serveFlags.persist); err != nil {
+		return nil, err
+	}
+	if err := applyStorageOverrides(cfg, serveFlags.storage); err != nil {
+		return nil, err
+	}
+
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -192,6 +201,8 @@ func init() {
 		"serve cleartext HTTP/2 (h2c) on the ingress alongside HTTP/1.1; --h2c=false disables it")
 	f.StringVar(&serveFlags.as2CertDir, "as2-cert-dir", "",
 		"directory a generated AS2 certificate is written to and reused from (default: beside the config file, or the OS user config dir)")
+	f.StringVar(&serveFlags.persist, "persist", "", persistHelp)
+	f.StringArrayVar(&serveFlags.storage, "storage", nil, storageHelp)
 	serveFlagSet = f
 
 	rootCmd.AddCommand(serveCmd)

@@ -149,6 +149,7 @@ jobs:
 
           required = {
               "build", "run", "quickstart", "readback", "smtp", "as2", "stop",
+              "persist", "persist-write", "persist-restart", "persist-check", "persist-down",
               "narrow", "narrow-providers", "narrow-check", "shortcut",
               "compose-up", "ftp", "compose-down",
           }
@@ -216,6 +217,28 @@ jobs:
           grep -qE 'CN *= *tommy AS2' /tmp/as2.txt
           bash ci-docker/stop.sh
 
+      # TOMMY_PERSIST is the other thing that lands on /data: unlike the AS2
+      # identity above, it is opt-in, and it never covers captured events -
+      # only the S3 catalog/objects and the Files tree, which is the point
+      # being proved here in both directions.
+      - name: Keep S3 state on TOMMY_PERSIST across a restart
+        run: |
+          bash ci-docker/persist.sh
+          for _ in $(seq 30); do
+            curl -sf http://127.0.0.1:8811/api/v1/health >/dev/null && break
+            sleep 1
+          done
+          bash ci-docker/persist-write.sh
+          bash ci-docker/persist-restart.sh
+          for _ in $(seq 30); do
+            curl -sf http://127.0.0.1:8811/api/v1/health >/dev/null && break
+            sleep 1
+          done
+          bash ci-docker/persist-check.sh | tee /tmp/persist.txt
+          grep -q 'kept across restarts' /tmp/persist.txt
+          grep -q '^\[\]$' /tmp/persist.txt
+          bash ci-docker/persist-down.sh
+
       # The same image, narrowed by one read-only bind mount: what a team that
       # only wants mail actually runs, and proof that a disabled provider is
       # gone rather than merely hidden.
@@ -259,4 +282,5 @@ jobs:
         if: always()
         run: |
           bash ci-docker/compose-down.sh || docker compose down -v || true
-          docker rm -f tommy tommy-mail tommy-shortcut 2>/dev/null || true
+          docker rm -f tommy tommy-persist tommy-mail tommy-shortcut 2>/dev/null || true
+          docker volume rm tommy-persist-demo 2>/dev/null || true

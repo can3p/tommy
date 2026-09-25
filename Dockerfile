@@ -37,10 +37,13 @@ COPY LICENSE /LICENSE
 COPY tommy.toml /etc/tommy/tommy.toml
 
 # A writable directory for everything tommy generates rather than captures: the
-# AS2 identity today, and whatever persistence grows later. Taken from the base
-# image's own nonroot home so it arrives owned by uid 65532 - a distroless image
-# has no shell to mkdir with, and a /data that Docker creates for a volume would
-# be owned by root and unwritable by the user this image runs as.
+# AS2 identity, and - with TOMMY_PERSIST=/data/tommy (docs/docker.md) - the S3
+# catalog and the Files tree. Taken from the base image's own nonroot home so
+# it arrives owned by uid 65532 - a distroless image has no shell to mkdir
+# with, and a /data that Docker creates for a volume would be owned by root
+# and unwritable by the user this image runs as. That ownership is what lets
+# the same user create /data/tommy itself the first time a filesystem-backed
+# scope writes; nothing here pre-creates it.
 COPY --from=gcr.io/distroless/static:nonroot --chown=65532:65532 /home/nonroot /data
 VOLUME /data
 

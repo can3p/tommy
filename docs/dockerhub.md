@@ -56,6 +56,10 @@ Or open `http://127.0.0.1:8811/ui/` and look at it. Every response tommy sends
 also carries an `X-Tommy-Event-URL` header naming the page of what it just
 captured, so the link is already in your application's log.
 
+Set `TOMMY_PERSIST=/data/tommy` to keep the S3 catalog/objects and the Files
+tree on the `/data` volume across restarts; captured events are never
+persisted. Details: [`docs/docker.md`](https://github.com/can3p/tommy/blob/main/docs/docker.md).
+
 ## Ports
 
 | Port | What |
