@@ -76,6 +76,38 @@ else already running — the AWS CLI's `s3api`, `s3 cp`, `s3 presign` and
 `s3 rm`/`rb --force` subcommands, and a raw `curl` against the read-back and
 events APIs.
 
+## Persistence
+
+By default the catalog lives as long as the process. With filesystem storage
+buckets, objects, their metadata and unfinished multipart uploads are kept on
+disk and come back after a restart, so an application that stores object keys
+in its own database does not find them dangling. Captured **events are not
+kept**: after a restart the catalog shows what is there and the event log
+starts empty.
+
+`tommy s3 --persist ./tommy-data` turns it on (`TOMMY_PERSIST` in a container,
+see [`docs/docker.md`](../../docs/docker.md); `[storage]` in `tommy.toml`, where
+`[storage.plugins.s3]` overrides this plugin alone). Run from a cold start with
+the AWS CLI:
+
+```bash
+export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
+tommy s3 --persist ./tommy-data &
+aws --endpoint-url http://127.0.0.1:9000 s3 mb s3://media
+echo hello > hello.txt
+aws --endpoint-url http://127.0.0.1:9000 s3 cp hello.txt s3://media/hello.txt
+kill %1; tommy s3 --persist ./tommy-data &
+aws --endpoint-url http://127.0.0.1:9000 s3 cp s3://media/hello.txt -   # hello
+curl -s 'http://127.0.0.1:8811/api/v1/events?plugin=s3'                # []
+```
+
+A snapshot that cannot be restored — corrupt, from an unknown version, or
+naming bytes that are missing — stops startup with an error rather than
+starting with an empty catalog. Startup buckets (`buckets = [...]`) compose
+with it: existing ones are left alone. The mechanism is in
+[`docs/contracts.md`](../../docs/contracts.md); this plugin's side is
+`persistence.go`.
+
 ## Event types
 
 | Event | When |

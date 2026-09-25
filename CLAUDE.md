@@ -56,7 +56,7 @@ compiles the import that fails.
 | `docs/catalogue.md` | **Index of every plugin and provider**, what each is for, and a link to its own README. Start here when asking whether tommy covers something. |
 | `docs/openapi.json` | The OpenAPI 3.1 description of the **events API**, with `docs/openapi-<plugin>.json` for each plugin's own. **Generated — never edit them**; run `make openapi`. |
 | `website/` | The generator for the published documentation site — its own Go module, rendering the files above. `make website`. |
-| `core/` | Event, store, blob, plugin contracts, config, server (ui/api/ingress), testutil. |
+| `core/` | Event, store, blob, plugin contracts, config, server (ui/api/ingress), testutil; `state` and `persistence` for plugin-owned state. |
 | `plugins/` | One directory per content type; providers nested under each. |
 | `plugins/all/all.go` | The single shared wiring file. Every plugin and provider is registered here explicitly. |
 | `clienthelp/` | A stdlib-only `http.RoundTripper` for pointing SDKs at tommy. |
@@ -70,7 +70,9 @@ payload bytes in a separate **blob store**, so retention of the two can differ.
 A **UI** and a **REST + SSE API** read from both. A *plugin* owns a content type
 (canonical model, API routes, UI tab); a *provider* translates one vendor's wire
 format into that model. Providers never import each other — that is what lets
-them be built in parallel.
+them be built in parallel. A plugin that owns state beyond its events (the
+`s3` catalog, the `files` tree) can keep it across restarts through
+`[storage]`; captured events do not (a deferred decision).
 
 ## Rules for plugin and provider code
 
@@ -179,6 +181,17 @@ them be built in parallel.
     copy of them, so a documented command that stops working fails the build.
     What no test covers is prose: if you change what the image *does*, say so
     in `docs/docker.md` yourself.
+
+16. **State a plugin owns persists through `plugin.StorageBinder`, and nothing
+    else does.** A plugin whose data must outlive a restart saves opaque
+    snapshots to `Storage.State` and keeps bytes in `Storage.Blobs`; it never
+    chooses a path or a backend. Captured events and the bytes they carry
+    always stay in memory — persisting them is a recorded, deferred decision
+    (`docs/implementation-plan.md`), not an oversight to fix in passing. Write
+    bytes before the snapshot naming them, free superseded bytes only after a
+    snapshot that no longer does, never do disk I/O under the catalog's own
+    lock, and fail restore loudly rather than start empty. `plugins/s3/persistence.go`
+    is the worked example; `docs/contracts.md` has the full contract.
 
 ## Security invariants — do not weaken these
 

@@ -45,8 +45,9 @@ setting has a flag. Every plugin and provider carries user-facing documentation
 — what it is, what it is for, and commands that have been run — indexed in
 `docs/catalogue.md` and required from here on by `CLAUDE.md` rule 12.
 
-Everything through wave 13 is merged to `main`. Wave 13·1, the `s3` plugin, is
-on `feat/s3-plugin` awaiting review.
+Everything through wave 13·1 (the `s3` plugin) and startup buckets for `s3`
+(#41) is merged to `main`. Persistent plugin state (#40) is on
+`feat/persistent-storage` (PR #43).
 **Start each wave on its own branch**, named for what it builds, so a wave stays
 a reviewable unit — and merge it before starting the next, because a wave
 branched off an unreviewed tip inherits every diff below it.
@@ -204,11 +205,61 @@ Independent of each other and of the protocol work; each is one agent.
 | Task | Owns | Notes |
 |---|---|---|
 | **TLS ingress** | `core/server/**`, config | `--tls` with a self-signed certificate generated on first run and written beside the config so it can be trusted once. Print the fingerprint. **Wave 8 already built the half you need**: `Deps.ConfigDir` is the directory of the config file (empty for a config built in memory), and `plugins/as2/identity.go` is a worked example of loading-or-generating a key pair with the paths configurable — which they must be, because tommy may run in a cluster that already has its own CA. Generate on **first use, not at startup**: doing it eagerly is what put a private key in the user's own config directory during `make check`. This is the documented route for non-Go SDKs that will not take a base URL (see `docs/clients.md`). **The seam already exists**: Wave 7 built `newHTTPServer` + `listenerOptions` in `core/server/httpserver.go`, and TLS is a field added there rather than a second construction path. Use `net/http`'s `Server.Protocols` for ALPN, not `golang.org/x/net/http2` — that module's `h2c` package is deprecated and would fail the staticcheck gate. **It also owes `s3/http` an `aws-chunked` decoder**: that listener is plaintext today, and AWS SDKs send their default CRC32 as an `aws-chunked` trailer only over HTTPS, so the provider's current `NotImplemented` refusal becomes the default path the moment S3 is served over TLS (see wave 13·1 in the history). |
-| **Persistence** | `core/store/**`, `core/blob/**` | Opt-in `--persist <path>` snapshotting events and blobs. The `Store` and `BlobStore` interfaces were built for this; no plugin should need to change. Keep it dependency-free — files on disk, not SQLite — unless a real need appears. |
+| **Persisting event history** | — | **Deferred, not scheduled.** Plugin state (the `s3` catalog, the `files` tree) became persistent in #40; captured events deliberately did not. See *Deferred: persisting captured events* below before picking this up — it is not the one-task job this row used to describe. |
 | **Search** | `core/server/api`, `core/server/ui` | Full-text across captured bodies. Currently `Query.Search` is a substring match; if that stops being enough, this is where it goes. |
 | **Upstream: kleiner** | — | Fix `MaybeNotifyAboutNewVersion` in `can3p/kleiner`: it prints the error and falls through to dereference a nil version, panicking a released binary at startup when GitHub is unreachable. Second latent deref on the same path. Affects every project scaffolded from kleiner. The container image sets `TOMMY_NO_UPDATE_CHECK=1` so it cannot hit this, which removes the urgency but not the bug. |
 
+## Deferred: persisting captured events
+
+**Decision (#40):** `[storage] backend = "filesystem"` persists state a plugin
+*owns* — today the `s3` catalog and the `files` tree, with their bytes — and
+never captured events. After a restart the event list is empty and every
+plugin tab's activity history starts again. This is deliberate and tested
+(`TestBucketsAndObjectsSurviveARestartButEventsDoNot`, the files and
+integration restart tests), and the documentation says it in each place
+persistence is offered.
+
+It was deferred rather than rejected. Nothing in the storage contract prevents
+it: the event store would become one more consumer of `plugin.Storage`,
+scoped per plugin (which is already how capacity is configured), and every
+plugin would gain persistence at once without changing. What stops it is
+three pieces of work that deserve their own review, none of which the issue
+needed:
+
+1. **Payloads are typed Go values.** `Event.Payload` is `any` holding a
+   `*mail.Message`, `*sms.Message`, …, and nine plugins switch on the concrete
+   type. Saving is trivial; loading yields `map[string]any`, which every one of
+   those switches silently skips, so the UI would render nothing. Each plugin
+   must register its payload types for decoding, and `plugintest.Conformance`
+   should hold every payload to a save/load round trip.
+2. **Blobs of evicted events are never freed** (see the backlog item below).
+   In memory that resets on restart; on disk it would grow until the volume
+   is full. Persisting events needs the blob lifecycle fixed first: a
+   mark-and-sweep whose live set is every blob referenced by a retained event
+   plus every persistent plugin's own live set. Deleting an evicted event's
+   blobs directly is wrong, because an `s3` event points at the object's blob,
+   which the catalog still owns.
+3. **Scope granularity.** Event history can be overridden per plugin, never
+   per provider: a provider override would split one plugin's ring across
+   two backends. `validateStorageScopes` already refuses overrides that have
+   no effect, and would need to learn that events make every plugin stateful.
+
+Reopen this when someone asks for captured history across restarts — a
+mailcatcher-style inbox that survives `docker compose restart` is the likely
+request — and do item 2 first, because it fixes a live bug on its own.
+
 ## Backlog — small, unblocked, good first tasks
+
+- **Free the blobs of evicted events.** `core/store/memory` drops an evicted
+  event from its ring but never deletes the blobs the event references, and
+  `core/blob/memory` deliberately never evicts on its own (a dropped blob
+  would break the download link of a message still listed), so a long-running tommy stops
+  storing attachments once it has held `storage.blob_limit` bytes over its
+  lifetime — not at any one time. Needs a notion of which blobs an event
+  owns (an `s3` event references a catalog-owned blob it must not delete), so
+  it is a mark-and-sweep over retained events and each persistent plugin's
+  live set rather than a delete on eviction. It is also the first step of the
+  deferred event persistence above.
 
 - **Link each plugin's OpenAPI description from its tab.** The shell links the
   events document from the status bar; a per-plugin link needs either the

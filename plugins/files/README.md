@@ -82,21 +82,15 @@ client uploaded is still listed and downloadable after tommy restarts. Captured
 **events are not kept**: they are always in memory, so after a restart the tree
 shows what is there and the event log starts empty.
 
-```toml
-[storage]
-backend = "filesystem"
-path = "./data"          # relative to the config file
-```
-
-The `--persist PATH` flag and the `TOMMY_PERSIST` environment variable set the
-same thing from the command line, and `[storage.plugins.files]` overrides the
-backend for this plugin alone. Verified against a live instance on non-default
-ports:
+`tommy files --persist ./tommy-data` turns it on from the command line
+(`TOMMY_PERSIST` in a container; `[storage] backend = "filesystem"` and `path`
+in `tommy.toml`, where `[storage.plugins.files]` overrides this plugin alone).
+Run from a cold start:
 
 ```bash
-tommy serve --config tommy.toml          # the [storage] above, plus [plugins.files]
+tommy files --persist ./tommy-data &
 curl -T ./local.txt ftp://localhost:2121/keep/local.txt --ftp-create-dirs -u any:any
-# stop tommy (Ctrl-C) and start it again with the same config, then:
+kill %1; tommy files --persist ./tommy-data &
 curl -s http://localhost:8811/api/v1/files/content/keep/local.txt   # the bytes you uploaded
 curl -s 'http://localhost:8811/api/v1/events?plugin=files'          # []
 ```

@@ -1204,6 +1204,66 @@ narrow: tommy has no general environment configuration system, and adding one
 for a single comma-separated setting would have made this small feature own an
 unrelated configuration framework.
 
+## Persistent plugin state (#40) · 1 session, then 3 agents in parallel
+
+**Built:** a global `[storage] backend` — `memory`, still the default
+everywhere including the image, or `filesystem` under `storage.path` — with
+per-plugin and per-provider overrides, `--persist`/`--storage` on every
+command and `TOMMY_PERSIST` for the container. A plugin that owns state
+implements `plugin.StorageBinder` and is handed `plugin.Storage`: an opaque
+`state.Store` for snapshots and a blob store of its own. `s3` (buckets,
+objects, metadata, unfinished multipart uploads) and `files` (the tree and its
+bytes) restore before any listener binds and save after every logical change.
+The issue asked for an S3-only `data_dir`; the owner's comment on it asked
+instead for one coherent setting with overrides and plugins that never see
+the layout, which is what this built.
+
+**Captured events do not persist, on purpose.** Nothing in the contract
+prevents it — the event store would be one more binder, and every plugin
+would gain it at once — but it needs payload types registered for decoding
+(`Event.Payload` is `any`, and loading JSON back yields maps that every
+plugin's type switch silently skips), a blob lifecycle that frees the bytes of
+evicted events (it never has, a live leak recorded in the plan's backlog), and
+per-plugin-only scoping. Each deserves its own review, so it is recorded as a
+deferred decision in `docs/implementation-plan.md` rather than dropped, and
+every restart test asserts the event list comes back empty.
+
+**What the first design got wrong.** An initial implementation routed every
+plugin's and provider's blob writes to its configured backend, through a table
+mapping blob ids to backends, with one quota shared between memory and disk.
+Review found that under a global `filesystem` setting the raw bytes of every
+captured mail attachment would go to disk — and, since events are not
+restored, never be referenced or deleted again, counting against the shared
+quota until startup failed. The rework separated the two kinds of data by
+construction: events and their bytes always use the in-memory core store, and
+only a binder receives persistent storage, in a directory of its own. That one
+change removed the routing table and the shared quota (`blob_limit` is a
+memory cap again; disk is bounded by each plugin's own limits) and made orphan
+cleanup safe: after restoring, the owner sweeps its own directory with its
+live set, and cannot reach a plugin that is not running this time.
+
+**Whole snapshots were kept, knowingly.** Each change rewrites the plugin's
+whole snapshot, which is quadratic in bytes written for a sequential bulk
+upload. A keyed journal was designed and turned down: tommy is a development
+tool, a snapshot never grows past the plugin's limits because each replaces
+the last, and the `state.Store` interface admits a journalling backend later
+without touching a plugin. Correctness rules that did make it in: a revision
+counter so a slow save never overwrites a newer snapshot, no disk I/O under the
+catalog lock, saves that ignore request cancellation, bytes written before the
+snapshot naming them and freed only after one that does not, and a restore
+that fails startup on anything it cannot account for instead of resetting.
+
+**Smaller corrections found on the way.** A relative `--persist` path beside
+`--config conf/tommy.toml` would have resolved under `conf/`, because a
+relative `storage.path` is read relative to its file; command-line paths are
+now made absolute first. Overrides that cannot take effect —
+`[storage.plugins.mail]`, or any provider override, since no provider owns
+state — are refused at startup, because a silently ignored one would let
+someone believe their mail survives a restart. The first live restart check
+"showed" events surviving: the harness's `pkill` matched nothing, the old
+process kept serving and the new one failed to bind. The test was wrong, not
+the code.
+
 ## Open items carried forward
 
 - **Upstream:** the kleiner startup panic (Wave 0), which affects every project
