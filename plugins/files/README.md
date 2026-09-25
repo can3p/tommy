@@ -74,14 +74,47 @@ This is verified end to end (upload, download, diff, tree, events) in the
 `ftp`, `sftp` and `tftp` provider READMEs, executed against a live instance on
 non-default ports so as not to collide with anything else already running.
 
+## Persistence
+
+By default the tree lives as long as the process. Configure storage as
+`filesystem` and the tree and every file's bytes are kept on disk, so what a
+client uploaded is still listed and downloadable after tommy restarts. Captured
+**events are not kept**: they are always in memory, so after a restart the tree
+shows what is there and the event log starts empty.
+
+```toml
+[storage]
+backend = "filesystem"
+path = "./data"          # relative to the config file
+```
+
+The `--persist PATH` flag and the `TOMMY_PERSIST` environment variable set the
+same thing from the command line, and `[storage.plugins.files]` overrides the
+backend for this plugin alone. Verified against a live instance on non-default
+ports:
+
+```bash
+tommy serve --config tommy.toml          # the [storage] above, plus [plugins.files]
+curl -T ./local.txt ftp://localhost:2121/keep/local.txt --ftp-create-dirs -u any:any
+# stop tommy (Ctrl-C) and start it again with the same config, then:
+curl -s http://localhost:8811/api/v1/files/content/keep/local.txt   # the bytes you uploaded
+curl -s 'http://localhost:8811/api/v1/events?plugin=files'          # []
+```
+
+A snapshot that cannot be restored - corrupt, from an unknown version, naming
+a path `Resolve` rejects or bytes that are missing - stops startup with an
+error instead of starting with an empty tree. How storage is resolved and
+handed to a plugin is described in [`docs/contracts.md`](../../docs/contracts.md);
+this plugin's side of it is `persistence.go`.
+
 ## Two stores, two lifetimes
 
 This is the first stateful plugin, and the design turns on one distinction:
 
 | | What it is | Where it lives | When it goes away |
 |---|---|---|---|
-| **VFS** | the tree as it is right now | `vfs.go`, in memory | when something deletes it, or `DELETE /tree` |
-| **Blobs** | the bytes of every file in the tree | `core/blob` | when the file is deleted or overwritten |
+| **VFS** | the tree as it is right now | `vfs.go`, in memory; also on disk with filesystem storage | when something deletes it, or `DELETE /tree` |
+| **Blobs** | the bytes of every file in the tree | `core/blob`; the plugin's own store with filesystem storage | when the file is deleted or overwritten |
 | **Events** | the history of what happened | `core/store` ring buffer | when the buffer wraps |
 
 So a file stays listed and downloadable long after the `files.upload` event that
@@ -120,8 +153,11 @@ in any provider — is allowed to interpret a path. It:
 - enforces the depth, name-length and path-length limits.
 
 There is no host filesystem underneath any of it: the tree is a map in memory
-and the VFS never opens a real file, so even a bug here cannot read or write
-anything of the machine's. `path_test.go` runs a table of hostile paths through
+and the VFS never opens a real file by a client's path, so even a bug here
+cannot read or write anything of the machine's. (With filesystem storage the
+snapshot and the bytes go to disk through opaque storage keyed by ids, never
+by these paths, and a restored snapshot is re-validated through `Resolve`.)
+`path_test.go` runs a table of hostile paths through
 `Resolve` and then through every operation.
 
 ### Bounds
@@ -139,6 +175,14 @@ step, so a slow transfer never stalls a listing and a listing never sees a
 half-written file. Freeing a replaced blob happens after the new node is
 visible, and the blob store hands out snapshots, so an in-flight download is
 never torn. `concurrency_test.go` runs the lot under `-race`.
+
+With filesystem storage, each committed mutation also bumps a revision under
+that lock and saves the snapshot after releasing it. Saves are serialized and
+always write the newest revision, so a slow save never overwrites a newer one;
+new bytes are stored before the snapshot naming them, and replaced bytes are
+freed only after the snapshot that no longer names them is saved. A crash in
+between leaves orphaned bytes, which the next startup sweeps. An open write
+handle is not a commit: only its `Close` is.
 
 ## Writing from a provider
 

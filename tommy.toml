@@ -193,8 +193,8 @@ enabled = true
 
 # -----------------------------------------------------------------------------
 # files - captures files your application uploads over FTP, SFTP or TFTP into a
-# shared in-memory virtual filesystem, downloadable back over the API or the
-# UI. Shortcut: `tommy files`.
+# shared virtual filesystem (kept across restarts with [storage] above),
+# downloadable back over the API or the UI. Shortcut: `tommy files`.
 # -----------------------------------------------------------------------------
 
 [plugins.files]

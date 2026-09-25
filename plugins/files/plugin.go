@@ -1,5 +1,7 @@
-// Package files is tommy's file-transfer content type: one in-memory virtual
-// filesystem every provider shares, a read-back API, and a file-browser tab.
+// Package files is tommy's file-transfer content type: one virtual filesystem
+// every provider shares, a read-back API, and a file-browser tab. The tree is
+// held in memory and, when storage is configured as persistent, also saved as
+// a snapshot so that it and its bytes survive a restart.
 //
 // It is the first plugin that is stateful. Mail and SMS are pure event
 // streams - something arrives, you look at it - but people create directories
@@ -15,7 +17,8 @@
 //     just happened" view stay uniform across plugins.
 //
 // The consequence that matters: a file stays listed and downloadable long
-// after the event announcing it has been evicted from the ring buffer.
+// after the event announcing it has been evicted from the ring buffer - and,
+// with persistent storage, after a restart that forgot every event.
 //
 // The plugin is named for what it holds rather than for one protocol. SFTP is
 // an SSH subsystem, not FTP-with-TLS, and FTPS is a third thing again, so
@@ -25,6 +28,7 @@
 package files
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 
@@ -83,6 +87,23 @@ func NewWithVFS(v *VFS, providers ...plugin.Provider) *Plugin {
 		}
 	}
 	return p
+}
+
+var _ plugin.StorageBinder = (*Plugin)(nil)
+
+// BindStorage gives the shared tree its storage and restores it. It runs
+// before any provider serves or any surface mounts, so the tree's bytes go to
+// the plugin's own scope rather than to whichever deps first reach Attach.
+func (p *Plugin) BindStorage(ctx context.Context, st plugin.Storage) error {
+	if st.State == nil {
+		// A memory scope: nothing to restore and nothing to save.
+		p.vfs.Attach(st.Blobs)
+		return nil
+	}
+	if err := p.vfs.bindBlobs(st.Blobs); err != nil {
+		return err
+	}
+	return p.vfs.BindState(ctx, st.State)
 }
 
 // VFS returns the shared filesystem. Providers normally receive it through
