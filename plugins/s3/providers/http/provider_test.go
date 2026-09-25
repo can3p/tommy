@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -38,6 +39,10 @@ type testServer struct {
 }
 
 func startTestServer(t *testing.T, values map[string]any) *testServer {
+	return startTestServerWithStore(t, values, nil)
+}
+
+func startTestServerWithStore(t *testing.T, values map[string]any, catalog *s3.Store) *testServer {
 	t.Helper()
 	if values == nil {
 		values = map[string]any{}
@@ -46,7 +51,9 @@ func startTestServer(t *testing.T, values map[string]any) *testServer {
 	values["port"] = 0
 	values["shutdown_timeout"] = 2
 	var ids atomic.Int64
-	catalog := s3.NewStore(s3.WithClock(func() time.Time { return testNow }), s3.WithIDFunc(func() string { return fmt.Sprintf("upload-%d", ids.Add(1)) }))
+	if catalog == nil {
+		catalog = s3.NewStore(s3.WithClock(func() time.Time { return testNow }), s3.WithIDFunc(func() string { return fmt.Sprintf("upload-%d", ids.Add(1)) }))
+	}
 	p := New()
 	p.BindStore(catalog)
 	events := storemem.New(100)
@@ -120,16 +127,25 @@ func TestConformance(t *testing.T) {
 }
 
 func TestConfigDefaultsOverridesAndEphemeralAddress(t *testing.T) {
-	defaults := LoadConfig(plugin.ProviderConfig{})
+	defaults, err := LoadConfig(plugin.ProviderConfig{})
+	if err != nil {
+		t.Fatalf("defaults: %v", err)
+	}
 	if defaults.Bind != DefaultBind || defaults.Port != DefaultPort || defaults.MaxObjectBytes != s3.DefaultLimits.MaxObjectBytes || defaults.MaxObjectBytes != DefaultMaxObjectBytes || defaults.MaxXMLBytes != DefaultMaxXMLBytes {
 		t.Fatalf("defaults = %#v", defaults)
 	}
-	configured := LoadConfig(config.NewProviderConfig(map[string]any{
-		"bind": "0.0.0.0", "port": 0, "max_object_bytes": 1234, "max_xml_bytes": 456,
+	configured, err := LoadConfig(config.NewProviderConfig(map[string]any{
+		"bind": "0.0.0.0", "port": 0, "buckets": []string{" first ", "second"}, "max_object_bytes": 1234, "max_xml_bytes": 456,
 		"read_header_timeout": 6, "read_timeout": 7, "write_timeout": 8, "idle_timeout": 9, "shutdown_timeout": 10,
 	}))
+	if err != nil {
+		t.Fatalf("configured: %v", err)
+	}
 	if configured.ListenAddr() != "0.0.0.0:0" || configured.MaxObjectBytes != 1234 || configured.Limits.MaxObjectBytes != 1234 || configured.MaxXMLBytes != 456 || configured.ReadHeaderTimeout != 6*time.Second || configured.ReadTimeout != 7*time.Second || configured.WriteTimeout != 8*time.Second {
 		t.Fatalf("configured = %#v", configured)
+	}
+	if fmt.Sprint(configured.Buckets) != "[first second]" {
+		t.Fatalf("buckets = %q", configured.Buckets)
 	}
 	if got := New().ListenPort(config.NewProviderConfig(map[string]any{"port": 0})); got.Port != 0 || got.Network != "tcp" {
 		t.Fatalf("ephemeral ListenPort = %#v", got)
@@ -138,6 +154,60 @@ func TestConfigDefaultsOverridesAndEphemeralAddress(t *testing.T) {
 	server := startTestServer(t, nil)
 	if strings.HasSuffix(server.baseURL, ":9000") || strings.HasSuffix(server.baseURL, ":0") {
 		t.Fatalf("test listener did not use a resolved ephemeral address: %s", server.baseURL)
+	}
+}
+
+func TestConfigRejectsInvalidBucketLists(t *testing.T) {
+	for name, buckets := range map[string][]string{
+		"empty":     {"valid", " "},
+		"duplicate": {"same", " same "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := LoadConfig(config.NewProviderConfig(map[string]any{"buckets": buckets})); err == nil {
+				t.Fatal("expected invalid buckets to fail")
+			}
+		})
+	}
+}
+
+func TestConfiguredBucketsAreValidatedBeforeCatalogMutation(t *testing.T) {
+	catalog := s3.NewStore()
+	provider := New()
+	provider.BindStore(catalog)
+	err := provider.Listen(context.Background(), plugin.Deps{Config: config.NewProviderConfig(map[string]any{
+		"buckets": []string{"one", "two"}, "max_buckets": 1,
+	})})
+	if !errors.Is(err, s3.ErrBucketLimit) {
+		t.Fatalf("err = %v, want bucket limit", err)
+	}
+	if got := catalog.Stats().Buckets; got != 0 {
+		t.Fatalf("catalog has %d buckets after validation failure", got)
+	}
+}
+
+func TestConfiguredBucketsExistBeforeListenerReadinessWithoutEvents(t *testing.T) {
+	catalog := s3.NewStore()
+	if _, err := catalog.CreateBucket("existing"); err != nil {
+		t.Fatal(err)
+	}
+	server := startTestServerWithStore(t, map[string]any{"buckets": []string{"existing", "media", "exports"}}, catalog)
+	for _, name := range []string{"existing", "media", "exports"} {
+		if _, err := server.store.HeadBucket(name); err != nil {
+			t.Errorf("configured bucket %q is unavailable after listener readiness: %v", name, err)
+		}
+	}
+	events, err := server.events.List(context.Background(), corestore.Query{Plugin: s3.PluginName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("configured buckets emitted %d events", len(events))
+	}
+	body := requireStatus(t, server.request(t, stdhttp.MethodGet, "/", nil, nil), stdhttp.StatusOK)
+	for _, name := range []string{"existing", "media", "exports"} {
+		if !strings.Contains(body, "<Name>"+name+"</Name>") {
+			t.Errorf("list buckets response does not include %q: %s", name, body)
+		}
 	}
 }
 

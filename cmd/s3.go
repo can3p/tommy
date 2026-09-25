@@ -6,6 +6,9 @@
 package cmd
 
 import (
+	"os"
+	"strings"
+
 	"github.com/can3p/tommy/core/plugin"
 	"github.com/can3p/tommy/plugins/s3"
 	s3http "github.com/can3p/tommy/plugins/s3/providers/http"
@@ -15,10 +18,11 @@ import (
 var s3Flags singlePluginFlags
 
 // s3HTTPOptionFlags are the http provider's own CLI flags - the counterpart
-// of [plugins.s3.providers.http] in tommy.toml. Port is the only flag-worthy
-// setting; body, object-count and timeout limits are config-only tuning knobs.
+// of [plugins.s3.providers.http] in tommy.toml. Listener location and startup
+// buckets are flag-worthy; body, object-count and timeout limits are tuning knobs.
 type s3HTTPOptionFlags struct {
-	port int
+	port    int
+	buckets []string
 }
 
 var s3HTTPFlags s3HTTPOptionFlags
@@ -26,6 +30,33 @@ var s3HTTPFlags s3HTTPOptionFlags
 func registerS3HTTPOptionFlags(cmd *cobra.Command, f *s3HTTPOptionFlags) {
 	cmd.Flags().IntVar(&f.port, "s3-port", s3http.DefaultPort,
 		"port for the S3 provider's dedicated HTTP listener (0 picks a free one)")
+	cmd.Flags().StringSliceVar(&f.buckets, "s3-buckets", nil,
+		"comma-separated buckets to create when the S3 listener starts")
+}
+
+const s3BucketsEnv = "TOMMY_S3_BUCKETS"
+
+func s3BucketsFromEnv() ([]string, bool) {
+	raw, ok := os.LookupEnv(s3BucketsEnv)
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(raw) == "" {
+		return []string{}, true
+	}
+	parts := strings.Split(raw, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts, true
+}
+
+func addS3HTTPOptions(cmd *cobra.Command, opts *providerOptionBuilder, f s3HTTPOptionFlags) {
+	if buckets, ok := s3BucketsFromEnv(); ok && !cmd.Flags().Changed("s3-buckets") {
+		opts.options[s3http.ProviderName] = map[string]any{"buckets": buckets}
+	}
+	opts.set(s3http.ProviderName, "s3-port", "port", f.port)
+	opts.set(s3http.ProviderName, "s3-buckets", "buckets", f.buckets)
 }
 
 // s3Providers returns fresh instances of every s3 provider this binary ships,
@@ -56,7 +87,7 @@ same bootstrap. With no --enabled-providers the http provider is enabled.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		providers := s3Providers()
 		opts := newProviderOptionBuilder(cmd)
-		opts.set(s3http.ProviderName, "s3-port", "port", s3HTTPFlags.port)
+		addS3HTTPOptions(cmd, opts, s3HTTPFlags)
 		return runSinglePlugin(cmd, s3.PluginName, func() plugin.Plugin {
 			return s3.New(s3http.New())
 		}, providerNames(providers), s3Flags, opts.options)
