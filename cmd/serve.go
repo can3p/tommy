@@ -14,6 +14,8 @@ import (
 	"github.com/can3p/tommy/plugins/all"
 	"github.com/can3p/tommy/plugins/as2"
 	as2http "github.com/can3p/tommy/plugins/as2/providers/http"
+	"github.com/can3p/tommy/plugins/s3"
+	s3http "github.com/can3p/tommy/plugins/s3/providers/http"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -145,6 +147,9 @@ func loadConfig() (*config.Config, error) {
 	// config, and the shipped config is the repository's own (docs/docker.md).
 	if serveFlags.as2CertDir != "" {
 		setProviderOption(cfg, as2.Name, as2http.Name, "cert_dir", serveFlags.as2CertDir)
+	}
+	if buckets, ok := s3BucketsFromEnv(); ok {
+		setProviderOption(cfg, s3.PluginName, s3http.ProviderName, "buckets", buckets)
 	}
 
 	cfg.ApplyDefaults()

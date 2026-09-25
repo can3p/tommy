@@ -8,6 +8,7 @@ import (
 	"net"
 	stdhttp "net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +37,7 @@ const (
 type Config struct {
 	Bind              string
 	Port              int
+	Buckets           []string
 	Limits            s3.Limits
 	MaxObjectBytes    int64
 	MaxXMLBytes       int64
@@ -47,12 +49,33 @@ type Config struct {
 	ShutdownTimeout   time.Duration
 }
 
-func LoadConfig(pc plugin.ProviderConfig) Config {
+func LoadConfig(pc plugin.ProviderConfig) (Config, error) {
+	var raw struct {
+		Buckets []string `toml:"buckets"`
+	}
+	if err := pc.Decode(&raw); err != nil {
+		return Config{}, fmt.Errorf("s3 http: %w", err)
+	}
+	buckets := make([]string, 0, len(raw.Buckets))
+	seen := make(map[string]struct{}, len(raw.Buckets))
+	for i, name := range raw.Buckets {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return Config{}, fmt.Errorf("s3 http: buckets[%d] is empty", i)
+		}
+		if _, ok := seen[name]; ok {
+			return Config{}, fmt.Errorf("s3 http: bucket %q is configured more than once", name)
+		}
+		seen[name] = struct{}{}
+		buckets = append(buckets, name)
+	}
+
 	d := s3.DefaultLimits
 	maxObjectBytes := int64(positive(pc.Int("max_object_bytes", DefaultMaxObjectBytes), DefaultMaxObjectBytes))
 	return Config{
-		Bind: pc.String("bind", DefaultBind),
-		Port: pc.Int("port", DefaultPort),
+		Bind:    pc.String("bind", DefaultBind),
+		Port:    pc.Int("port", DefaultPort),
+		Buckets: buckets,
 		Limits: s3.Limits{
 			MaxBuckets:       positive(pc.Int("max_buckets", d.MaxBuckets), d.MaxBuckets),
 			MaxObjects:       positive(pc.Int("max_objects", d.MaxObjects), d.MaxObjects),
@@ -71,7 +94,7 @@ func LoadConfig(pc plugin.ProviderConfig) Config {
 		WriteTimeout:      seconds(pc, "write_timeout", DefaultWriteTimeout),
 		IdleTimeout:       seconds(pc, "idle_timeout", DefaultIdleTimeout),
 		ShutdownTimeout:   seconds(pc, "shutdown_timeout", DefaultShutdownTimeout),
-	}
+	}, nil
 }
 
 func positive(value, fallback int) int {
@@ -115,7 +138,7 @@ func (p *Provider) Description() string {
 func (p *Provider) Endpoints() []plugin.Endpoint            { return nil }
 func (p *Provider) RegisterIngress(plugin.Mux, plugin.Deps) {}
 func (p *Provider) ListenPort(pc plugin.ProviderConfig) plugin.ListenPort {
-	return plugin.ListenPort{Port: LoadConfig(pc).Port, Network: "tcp"}
+	return plugin.ListenPort{Port: pc.Int("port", DefaultPort), Network: "tcp"}
 }
 
 func (p *Provider) Snippets() []plugin.Snippet {
@@ -195,7 +218,10 @@ func (p *Provider) ServeHTTP(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 
 func (p *Provider) Listen(ctx context.Context, d plugin.Deps) error {
 	d = d.Normalize().WithLogger("plugin", s3.PluginName, "provider", ProviderName)
-	cfg := LoadConfig(d.Config)
+	cfg, err := LoadConfig(d.Config)
+	if err != nil {
+		return err
+	}
 
 	p.mu.Lock()
 	store := p.store
@@ -203,6 +229,19 @@ func (p *Provider) Listen(ctx context.Context, d plugin.Deps) error {
 		store = s3.NewStore(s3.WithLimits(cfg.Limits))
 		p.store = store
 	}
+	p.mu.Unlock()
+	validation := s3.NewStore(s3.WithLimits(cfg.Limits))
+	for _, name := range cfg.Buckets {
+		if _, err := validation.CreateBucket(name); err != nil {
+			return fmt.Errorf("s3 http: invalid configured bucket %q: %w", name, err)
+		}
+	}
+	for _, name := range cfg.Buckets {
+		if _, err := store.CreateBucket(name); err != nil && !errors.Is(err, s3.ErrBucketExists) {
+			return fmt.Errorf("s3 http: create configured bucket %q: %w", name, err)
+		}
+	}
+	p.mu.Lock()
 	p.handler = newHandler(store, d, cfg)
 	p.mu.Unlock()
 

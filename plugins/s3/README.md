@@ -44,20 +44,22 @@ Start tommy with the s3 plugin, and point the AWS CLI at its dedicated
 listener with path-style addressing:
 
 ```bash
-TOMMY_NO_UPDATE_CHECK=1 go run . s3
+TOMMY_NO_UPDATE_CHECK=1 TOMMY_S3_BUCKETS=example go run . s3
 # then open http://localhost:8811/ui/s3/
 ```
 
 ```bash
 export AWS_ACCESS_KEY_ID=tommy AWS_SECRET_ACCESS_KEY=tommy AWS_DEFAULT_REGION=us-east-1
-aws --endpoint-url http://localhost:9000 s3api create-bucket --bucket example
+aws --endpoint-url http://localhost:9000 s3api head-bucket --bucket example
 printf 'captured by tommy\n' > /tmp/tommy-s3.txt
 aws --endpoint-url http://localhost:9000 s3 cp /tmp/tommy-s3.txt s3://example/hello.txt
 aws --endpoint-url http://localhost:9000 s3 cp s3://example/hello.txt -
 ```
 
-See the same object land three ways — the tab, the read-back API, and the
-event log:
+`example` exists before the listener accepts requests. Configured buckets do
+not emit `s3.bucket.create`, so the event log still describes only what the
+application did. See the same object land three ways — the tab, the read-back
+API, and the event log:
 
 ```bash
 open http://localhost:8811/ui/s3/

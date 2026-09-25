@@ -38,6 +38,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
+	tommyconfig "github.com/can3p/tommy/core/config"
 	"github.com/can3p/tommy/core/store"
 	"github.com/can3p/tommy/core/testutil"
 	tommys3 "github.com/can3p/tommy/plugins/s3"
@@ -99,6 +100,36 @@ func newS3Client(t *testing.T, inst *testutil.Instance, optFns ...func(*s3.Optio
 func md5Hex(data []byte) string {
 	sum := md5.Sum(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func TestS3SDKConfiguredBucketsExistWithoutEvents(t *testing.T) {
+	cfg := tommyconfig.Ephemeral()
+	cfg.SetProvider(tommys3.PluginName, s3http.ProviderName, tommyconfig.NewProviderConfig(map[string]any{
+		"port": 0, "buckets": []string{"media", "exports"},
+	}))
+	inst := testutil.Start(t, cfg, tommys3.New(s3http.New()))
+	client := newS3Client(t, inst)
+	ctx := context.Background()
+	for _, name := range []string{"media", "exports"} {
+		if _, err := client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(name)}); err != nil {
+			t.Fatalf("HeadBucket(%q): %v", name, err)
+		}
+	}
+	listed, err := client.ListBuckets(ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(listed.Buckets))
+	for _, bucket := range listed.Buckets {
+		got = append(got, aws.ToString(bucket.Name))
+	}
+	sort.Strings(got)
+	if fmt.Sprint(got) != "[exports media]" {
+		t.Fatalf("buckets = %v", got)
+	}
+	if events := inst.Events(store.Query{Plugin: tommys3.PluginName}); len(events) != 0 {
+		t.Fatalf("configured buckets emitted %d events", len(events))
+	}
 }
 
 // s3EventPayload waits for at least n events of typ and returns the payload

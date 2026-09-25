@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/can3p/tommy/plugins/all"
+	"github.com/can3p/tommy/plugins/s3"
+	s3http "github.com/can3p/tommy/plugins/s3/providers/http"
 )
 
 func resetFlags(t *testing.T) {
@@ -31,6 +33,21 @@ func writeConfig(t *testing.T, body string) string {
 		t.Fatalf("write config: %v", err)
 	}
 	return path
+}
+
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	value, set := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if set {
+			_ = os.Setenv(key, value)
+		} else {
+			_ = os.Unsetenv(key)
+		}
+	})
 }
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -80,6 +97,57 @@ func TestFlagsOverrideTheConfigFile(t *testing.T) {
 	}
 	if cfg.Host != "tommy.test" {
 		t.Errorf("host = %q", cfg.Host)
+	}
+}
+
+func TestS3BucketsEnvironmentOverridesTOML(t *testing.T) {
+	resetFlags(t)
+	t.Setenv(s3BucketsEnv, "media, exports")
+	serveFlags.configPath = writeConfig(t, "[plugins.s3.providers.http]\nbuckets = [\"from-file\"]\n")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := s3http.LoadConfig(cfg.Provider(s3.PluginName, s3http.ProviderName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(loaded.Buckets, ","); got != "media,exports" {
+		t.Fatalf("buckets = %q, want environment value", got)
+	}
+}
+
+func TestS3BucketsTOMLSurvivesWithoutEnvironmentOverride(t *testing.T) {
+	resetFlags(t)
+	unsetEnv(t, s3BucketsEnv)
+	serveFlags.configPath = writeConfig(t, "[plugins.s3.providers.http]\nbuckets = [\"from-file\"]\n")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := s3http.LoadConfig(cfg.Provider(s3.PluginName, s3http.ProviderName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(loaded.Buckets, ","); got != "from-file" {
+		t.Fatalf("buckets = %q, want TOML value", got)
+	}
+}
+
+func TestEmptyS3BucketsEnvironmentClearsTOML(t *testing.T) {
+	resetFlags(t)
+	t.Setenv(s3BucketsEnv, "")
+	serveFlags.configPath = writeConfig(t, "[plugins.s3.providers.http]\nbuckets = [\"from-file\"]\n")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := s3http.LoadConfig(cfg.Provider(s3.PluginName, s3http.ProviderName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Buckets) != 0 {
+		t.Fatalf("buckets = %q, want explicit empty override", loaded.Buckets)
 	}
 }
 

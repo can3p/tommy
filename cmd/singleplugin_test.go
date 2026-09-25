@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/can3p/tommy/core/config"
 	"github.com/can3p/tommy/plugins/files/providers/ftp"
 	"github.com/can3p/tommy/plugins/files/providers/sftp"
 	"github.com/can3p/tommy/plugins/mail/providers/mailjet"
@@ -190,8 +191,8 @@ func TestMailSMTPFlagsLandInSMTPSection(t *testing.T) {
 }
 
 // TestS3PortFlagLandsInHTTPSection drives the S3 command's shared provider
-// selector and sole provider-specific flag through Cobra, then verifies the
-// integer override lands only at plugins.s3.providers.http.port.
+// selector and provider-specific flags through Cobra, then verifies the
+// overrides land only at plugins.s3.providers.http.
 func TestS3PortFlagLandsInHTTPSection(t *testing.T) {
 	cmd := &cobra.Command{Use: "test"}
 	var common singlePluginFlags
@@ -218,6 +219,41 @@ func TestS3PortFlagLandsInHTTPSection(t *testing.T) {
 	}
 	if got := cfg.Provider(s3.PluginName, s3http.ProviderName).Port; got != 9100 {
 		t.Errorf("configured s3 http port = %d, want 9100", got)
+	}
+}
+
+func TestS3BucketsFlagOverridesEnvironment(t *testing.T) {
+	t.Setenv(s3BucketsEnv, "from-env")
+	cmd := &cobra.Command{Use: "test"}
+	var f s3HTTPOptionFlags
+	registerS3HTTPOptionFlags(cmd, &f)
+	if err := cmd.ParseFlags([]string{"--s3-buckets", "media,exports"}); err != nil {
+		t.Fatal(err)
+	}
+	opts := newProviderOptionBuilder(cmd)
+	addS3HTTPOptions(cmd, opts, f)
+	cfg, err := s3http.LoadConfig(config.NewProviderConfig(opts.options[s3http.ProviderName]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.Buckets, ","); got != "media,exports" {
+		t.Fatalf("buckets = %q, want flag value", got)
+	}
+}
+
+func TestS3BucketsEnvironmentConfiguresShortcut(t *testing.T) {
+	t.Setenv(s3BucketsEnv, "media, exports")
+	cmd := &cobra.Command{Use: "test"}
+	var f s3HTTPOptionFlags
+	registerS3HTTPOptionFlags(cmd, &f)
+	opts := newProviderOptionBuilder(cmd)
+	addS3HTTPOptions(cmd, opts, f)
+	cfg, err := s3http.LoadConfig(config.NewProviderConfig(opts.options[s3http.ProviderName]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.Buckets, ","); got != "media,exports" {
+		t.Fatalf("buckets = %q, want environment value", got)
 	}
 }
 
