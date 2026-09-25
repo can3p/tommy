@@ -197,7 +197,7 @@ func (s *Store) changed() { s.revision++ }
 // persist saves the catalog if it has changed since the last save. Callers
 // have released s.mu, so no disk I/O happens under the catalog lock.
 //
-// Saves are serialised, and each writes the newest revision rather than the
+// Saves are serialized, and each writes the newest revision rather than the
 // caller's own, so a slow save can never overwrite a newer snapshot, and
 // callers that queue behind one save find their change already written.
 //

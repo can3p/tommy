@@ -1,7 +1,7 @@
 // Package state is the save/load contract a stateful plugin persists through.
 //
 // A plugin that owns state beyond its captured events (the S3 catalog, the
-// Files tree) serialises it into opaque snapshots under keys of its own
+// Files tree) serializes it into opaque snapshots under keys of its own
 // choosing. It never learns where they are kept: the configured storage
 // backend decides that, which is what lets one setting make every stateful
 // plugin persistent at once.

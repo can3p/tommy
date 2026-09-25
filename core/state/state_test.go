@@ -87,19 +87,19 @@ func TestStoreContract(t *testing.T) {
 				}
 			})
 
-			t.Run("cancelled context", func(t *testing.T) {
+			t.Run("canceled context", func(t *testing.T) {
 				s := newStore(t)
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel()
 
 				if err := s.Save(ctx, "widget", []byte("x")); err == nil {
-					t.Error("Save with a cancelled context should fail")
+					t.Error("Save with a canceled context should fail")
 				}
 				if _, err := s.Load(ctx, "widget"); err == nil {
-					t.Error("Load with a cancelled context should fail")
+					t.Error("Load with a canceled context should fail")
 				}
 				if err := s.Delete(ctx, "widget"); err == nil {
-					t.Error("Delete with a cancelled context should fail")
+					t.Error("Delete with a canceled context should fail")
 				}
 			})
 		})

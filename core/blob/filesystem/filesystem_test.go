@@ -213,7 +213,7 @@ func TestHostileIDsStayInsideTheDirectory(t *testing.T) {
 		".",
 		"/etc/passwd",
 		"a\x00b",
-		"héllo-​unicode", // zero-width space, an "empty-looking" unicode id
+		"héllo-\u200bunicode", // zero-width space, an "empty-looking" unicode id
 	}
 	for _, id := range ids {
 		ref, err := s.Put(ctx, strings.NewReader("payload-"+id), blob.Ref{ID: id})
@@ -441,7 +441,7 @@ func TestConcurrentPutNeverYieldsAMixedRead(t *testing.T) {
 	}
 }
 
-func TestPutWithCancelledContextLeavesNothingBehind(t *testing.T) {
+func TestPutWithCanceledContextLeavesNothingBehind(t *testing.T) {
 	dir := t.TempDir()
 	s, err := filesystem.New(dir)
 	if err != nil {
@@ -450,8 +450,8 @@ func TestPutWithCancelledContextLeavesNothingBehind(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if _, err := s.Put(ctx, strings.NewReader("x"), blob.Ref{ID: "cancelled"}); err == nil {
-		t.Fatal("Put with a cancelled context should fail")
+	if _, err := s.Put(ctx, strings.NewReader("x"), blob.Ref{ID: "canceled"}); err == nil {
+		t.Fatal("Put with a canceled context should fail")
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -463,7 +463,7 @@ func TestPutWithCancelledContextLeavesNothingBehind(t *testing.T) {
 		for i, e := range entries {
 			names[i] = e.Name()
 		}
-		t.Errorf("directory has leftover entries after a cancelled Put: %v", names)
+		t.Errorf("directory has leftover entries after a canceled Put: %v", names)
 	}
 }
 
