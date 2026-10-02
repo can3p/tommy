@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"net/http"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -538,6 +540,27 @@ func TestUIStreamCarriesMailEvents(t *testing.T) {
 		}
 		if strings.TrimSpace(line) == "event: "+mail.TypeMessage {
 			sawNamedFrame = true
+		}
+	}
+}
+
+// An HTML body that sets no background of its own assumes white, as every mail
+// client renders it; on tommy's dark theme a themed frame left black text on
+// dark grey (issue #45).
+func TestHTMLFrameKeepsALightCanvasInDarkMode(t *testing.T) {
+	src, err := os.ReadFile("ui/inbox.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`\.mail-html\s*\{([^}]*)\}`)
+	m := re.FindSubmatch(src)
+	if m == nil {
+		t.Fatal("no .mail-html rule in ui/inbox.html")
+	}
+	rule := string(m[1])
+	for _, want := range []string{"background: #fff", "color-scheme: light"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf(".mail-html rule %q lacks %q", rule, want)
 		}
 	}
 }

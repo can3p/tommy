@@ -11,7 +11,9 @@ restricted sandboxed iframe, which is the only place it is ever rendered.
 {{define "mail-inbox"}}
 <div class="mail-inbox">
 <style>
-.mail-html { width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+/* Mail is authored for a white canvas: a body with no background of its own
+   assumes one, so the frame stays light whatever tommy's theme is. */
+.mail-html { width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 8px; background: #fff; color-scheme: light; }
 .mail-views { display: flex; gap: 6px; margin: 12px 0 8px; }
 .mail-views .view-btn.active { border-color: currentColor; font-weight: 600; }
 .mail-text { white-space: pre-wrap; }
