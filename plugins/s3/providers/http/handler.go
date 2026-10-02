@@ -216,14 +216,16 @@ func (h *handler) getObject(w stdhttp.ResponseWriter, r *stdhttp.Request, reques
 		h.writeStoreError(w, r, requestID, bucket+"/"+key, err)
 		return
 	}
-	writeObjectHeaders(w.Header(), obj, checksumRequested(r))
+	start, end, partial, rangeErr := parseRange(r.Header.Get("Range"), int64(len(data)))
+	// S3 omits the whole-object checksum from a ranged read: it does not
+	// describe the bytes in the body, and the SDK validates it against them.
+	writeObjectHeaders(w.Header(), obj, checksumRequested(r) && !partial)
 	w.Header().Set("Accept-Ranges", "bytes")
 	if status := evaluateConditions(r.Header, obj); status != 0 {
 		w.WriteHeader(status)
 		return
 	}
 
-	start, end, partial, rangeErr := parseRange(r.Header.Get("Range"), int64(len(data)))
 	if rangeErr != nil {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", len(data)))
 		h.writeError(w, r, requestID, s3Error{"InvalidRange", "The requested range is not satisfiable.", stdhttp.StatusRequestedRangeNotSatisfiable, rangeErr, bucket + "/" + key})

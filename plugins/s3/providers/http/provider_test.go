@@ -284,9 +284,18 @@ func TestRangesConditionsChecksumsAndErrors(t *testing.T) {
 	crcValue := base64.StdEncoding.EncodeToString([]byte{byte(crc >> 24), byte(crc >> 16), byte(crc >> 8), byte(crc)})
 	requireStatus(t, server.request(t, stdhttp.MethodPut, "/bucket/key", []byte("abcdef"), map[string]string{"x-amz-checksum-crc32": crcValue}), stdhttp.StatusOK)
 
-	ranged := server.request(t, stdhttp.MethodGet, "/bucket/key", nil, map[string]string{"Range": "bytes=1-3"})
+	full := server.request(t, stdhttp.MethodGet, "/bucket/key", nil, map[string]string{"x-amz-checksum-mode": "ENABLED"})
+	if requireStatus(t, full, stdhttp.StatusOK); full.Header.Get("x-amz-checksum-crc32") != crcValue {
+		t.Fatalf("full GET checksum = %q, want %q", full.Header.Get("x-amz-checksum-crc32"), crcValue)
+	}
+	ranged := server.request(t, stdhttp.MethodGet, "/bucket/key", nil, map[string]string{"Range": "bytes=1-3", "x-amz-checksum-mode": "ENABLED"})
 	if body := requireStatus(t, ranged, stdhttp.StatusPartialContent); body != "bcd" || ranged.Header.Get("Content-Range") != "bytes 1-3/6" {
 		t.Fatalf("range = %q, %q", body, ranged.Header.Get("Content-Range"))
+	}
+	// The stored checksum covers all six bytes; sending it with three makes
+	// the SDK reject the body, so a ranged read carries none.
+	if got := ranged.Header.Get("x-amz-checksum-crc32"); got != "" {
+		t.Fatalf("ranged GET sent whole-object checksum %q", got)
 	}
 	etag := ranged.Header.Get("ETag")
 	if response := server.request(t, stdhttp.MethodGet, "/bucket/key", nil, map[string]string{"If-None-Match": etag}); requireStatus(t, response, stdhttp.StatusNotModified) != "" {
